@@ -6,7 +6,7 @@ English | [中文](fork-foundation.zh.md)
 
 This personal fork explores DeepSeek Harness as a modular coding environment alongside native Codex, native Claude Code, portable Sensemaking Skills, and optional durable mission coordination. It does not select a permanent software-factory controller, override another repository's accepted decisions, or promise a unified agent session.
 
-The first usable experience is explicit delegation among three execution paths, bounded work, and review of the actual repository result. Implementation of new routing, adapters, storage, or orchestration is outside this foundation.
+The three-agent delegation setup is a candidate technical integration pilot, not a selected first usable product experience. The prior Divergent Exploration remains available for Coverage Assessment, Convergent Evaluation, Depth Exploration, and explicit product selection; this pilot does not preselect a direction. New routing, adapters, storage, or orchestration remain outside this foundation.
 
 ## Reusable capabilities
 
@@ -18,7 +18,7 @@ The first usable experience is explicit delegation among three execution paths, 
 | Core environment | [Base-backed profiles](architecture.md) compose Cordis plugins, model adapters, filesystem/shell providers, sandbox policy, approvals, and durable Session logs. | A profile layer replaces a row's whole config; plugin presence is not a live authentication or sandbox test. |
 | Reusable cognition | The [filesystem Skill provider](../packages/skill/skill-filesystem/README.md) scans project, custom, and user roots for `SKILL.md`, loading bodies on demand. | Skill visibility in DSH does not establish identical discovery or execution in native Codex and Claude Code. |
 
-The smallest candidate uses an existing base-backed Web or headless profile, its built-in DSH subagent tools, and the two optional native bundles. Enable the bundles through the supported profile/plugin mechanism; do not create another launcher or mount an application outside `dsh` profiles.
+A minimal pilot configuration could reuse a base-backed Web or headless profile, the built-in DSH subagent tools, and two optional native bundles. If this pilot is separately authorized, use the supported profile/plugin mechanism rather than a replacement launcher.
 
 ## Related repository responsibilities
 
@@ -44,27 +44,19 @@ These are possible relationships, not a ranking or an implementation authorizati
 
 [DSH workspace instructions](../packages/context/agent-instructions/README.md) load user-level and project-level `AGENTS.md` and `CLAUDE.md` candidates plus local overlays; the two root files in the inspected fork have identical content. Filenames alone therefore do not establish a conflict. Codex and Claude Code still apply their native instruction and permission systems, and project rules govern work in the target repository. No host's hooks, approvals, or session identifiers are interchangeable by default.
 
-Keep one canonical Sensemaking Skill source. DSH can consume a shared `.agents/skills` directory or configured `customSkillDirs`; verify the native hosts' actual discovery separately rather than maintaining independent edited copies. A parent must authorize the bounded task and constrain the child to no greater authority, even when a native runtime could technically request more.
+Keep one canonical Sensemaking Skill source. DSH can consume a shared `.agents/skills` directory or configured `customSkillDirs`; verify each native host's discovery independently rather than maintaining edited copies. **Intended authority rule:** a parent should delegate no authority it does not possess. **Unverified enforcement:** the native providers use host-specific credentials, permission modes, and sandbox controls; this reconnaissance did not demonstrate that parent limits constrain worker operations. Until verified, use conservative native permissions and read-only tasks.
 
 Both native bundles run without interactive human prompts and return selected final text or safe diagnostics rather than a detailed child activity stream. They can modify the same working directory, do not automatically revert effects, and need explicit worktree/path isolation before concurrent writes. Begin with sequential, explicitly selected, low-risk tasks.
 
-## Reproducibility record
+## Development and verification
 
-Inspection date: 2026-11-06. The GitHub API showed fork `master` and upstream `master` at the same starting revision; the immutable identifier is captured in the foundation PR's base metadata and description rather than embedded here, consistent with the repository-reference checker. Remote comparison found no fork divergence. The user's own local worktree and uncommitted modifications could not be inspected from this environment.
+Use the compatible Node.js and pnpm versions declared by [the root manifest](../package.json) and follow the [development guide](development.md) for checkout and installation. For any change to this document, maintain the English/Chinese pair and consistency record according to the [bilingual documentation contract](i18n/README.md); run the [repository documentation checks](AGENTS.md) before claiming verification or merging.
 
-| Observation | Result |
-| --- | --- |
-| Available execution host | Linux x86_64; `node --version` returned `v22.16.0`; `git --version` returned `2.47.3`; `corepack --version` returned `0.32.0`. |
-| Package manager | `pnpm` not installed; root `package.json` requires Node `>=24.9.0` and `pnpm@11.28.5`; published DSH root version is `0.2.2-rc.1`. |
-| Local checkout | No fork checkout mounted; `git -C /mnt/data status --porcelain` failed because that directory is not a Git repository. Network Git access could not resolve `github.com`. |
-| Verification actually performed | GitHub source, package manifests, cross-repository documentation, current branch metadata, and provider contracts were inspected; the Node/Git/Corepack version commands were run. |
-| Verification not performed | No `pnpm install --frozen-lockfile`, `pnpm run test:docs`, `pnpm run doc-sync`, `pnpm run lint`, `pnpm run build`, `pnpm dsh --profile web --dump-config`, or model-backed run. None can be called passed. |
+Run-specific revisions, environment probes, executed commands, CI status, and blockers belong in the PR verification record, not in this maintained architecture reference.
 
-On an accessible checkout with compatible Node and pnpm, use the repository's existing instructions to run `pnpm install --frozen-lockfile`, `pnpm run test:docs`, `pnpm run doc-sync`, `pnpm run lint`, `pnpm run build`, and `pnpm dsh --profile web --dump-config`. Use the existing source launch for a bounded model task only after configuring credentials outside Git; preserve the output and failure diagnostics. This paragraph is a reproduction procedure, not an execution receipt.
+## Candidate technical integration pilot
 
-## Next bounded responsibility
-
-Configure and verify one personal DSH profile with the existing DSH child path and both native subagent bundles, without changing provider code. Confirm the resolved profile through `--dump-config`; verify each provider with one explicitly selected, read-only repository question in a separate safe workspace; compare each returned answer with the repository source; record authentication blockers, native approval behavior, observable Session events, and unchanged working-tree state. Do not introduce a router, shared session database, automatic factory mission dispatch, or concurrent write delegation.
+After the foundation passes its applicable verification and the pilot is separately selected, configure one personal DSH profile with the existing DSH child path and both native subagent bundles, without changing provider code. Inspect the resolved profile and verify each path using an explicitly selected, read-only repository question in an isolated workspace. Compare answers with source and record permission behavior and workspace effects without presuming authority inheritance. The product's first usable experience remains subject to the prior exploration and subsequent product-selection stages. Do not introduce automatic routing, shared sessions, durable factory control, or concurrent writes.
 
 ## Dev Note
 
