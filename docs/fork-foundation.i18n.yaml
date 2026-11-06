@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for fork-foundation.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/fork-foundation.md
+/personal-fork-foundation-multi-harness-options:
+  en: 549e4779edc9c55b
+  zh: 6f03b6a11d499cf8
+/personal-fork-foundation-multi-harness-options/summary:
+  en: 3e14ea0b72fbd66d
+  zh: 54701b773587dd06
+/personal-fork-foundation-multi-harness-options/reusable-capabilities:
+  en: 30a5ee9a7883f999
+  zh: 1d5e623e57d87735
+/personal-fork-foundation-multi-harness-options/related-repository-responsibilities:
+  en: ea12bfa82226b7d5
+  zh: d3a622a0d1775b7c
+/personal-fork-foundation-multi-harness-options/unselected-architectural-relationships:
+  en: 6a1a487d762b8cfb
+  zh: 3c9c627f1551ba80
+/personal-fork-foundation-multi-harness-options/instructions-shared-skills-and-authority:
+  en: 5070a26af403876b
+  zh: c835a9a7eb79e4fc
+/personal-fork-foundation-multi-harness-options/reproducibility-record:
+  en: dfa3629178f99ffb
+  zh: 65a01c69ea4615fe
+/personal-fork-foundation-multi-harness-options/next-bounded-responsibility:
+  en: d8fb522df5e77193
+  zh: 430e9f090312382f
+/personal-fork-foundation-multi-harness-options/dev-note:
+  en: 4125a07118f44111
+  zh: c98481bc11e8c38c
