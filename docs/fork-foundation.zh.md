@@ -15,7 +15,7 @@
 | DSH 原生 agent | [受管理 DSH subagent](../packages/subagent/subagent/README.zh.md) 可以启动、fork、通信并冷恢复可继续的进程内 agent；独立的 [DSH SDK provider](../packages/subagent/subagent-dsh-sdk/README.zh.md) 会启动另一套 Harness 运行时。 | 两种 DSH 后端的会话和工具可见性不同。 |
 | 原生 Codex | [Codex bundle](../packages/subagent/subagent-codex/README.zh.md) 使用固定版本的原生 app-server 进程和单个临时 thread/turn，提供 `subagent_codex`。 | 仅一次性执行；认证和模型设置归原生系统；无子任务 transcript、原生恢复或回滚。 |
 | 原生 Claude Code | [Claude Code bundle](../packages/subagent/subagent-claude-code/README.zh.md) 使用固定版本的原生 SDK/CLI 查询，提供 `subagent_claude_code`。 | 仅一次性执行；认证和设置归原生系统；无子任务 transcript、原生恢复或回滚。 |
-| 核心环境 | [基于 base 的 Profile](architecture.zh.md#profiles-and-bundles) 组合 Cordis 插件、模型适配器、文件系统和 shell provider、sandbox 策略、审批以及持久 Session 日志。 | Profile 层会整体替换目标配置行；插件存在不等于已经验证认证或 sandbox。 |
+| 核心环境 | [基于 base 的 Profile](architecture.zh.md) 组合 Cordis 插件、模型适配器、文件系统和 shell provider、sandbox 策略、审批以及持久 Session 日志。 | Profile 层会整体替换目标配置行；插件存在不等于已经验证认证或 sandbox。 |
 | 可复用认知能力 | [文件系统 Skill provider](../packages/skill/skill-filesystem/README.zh.md) 扫描项目、自定义和用户目录中的 `SKILL.md`，按需加载正文。 | DSH 能发现 Skill，并不证明原生 Codex 与 Claude Code 的发现或执行方式完全相同。 |
 
 最小候选方案复用现有基于 base 的 Web 或 headless Profile、内置 DSH subagent 工具及两个可选的原生 bundle。通过受支持的 Profile/插件机制启用 bundle；不要另造启动器，也不要绕过 `dsh` Profile 直接挂载应用。
