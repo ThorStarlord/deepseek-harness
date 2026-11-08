@@ -429,3 +429,22 @@ it('rejects a name for a caller-delivered external run that never enters the cat
   backend.cleanup.resolve(undefined)
   await unnamed.dispose()
 })
+
+it('notifies a parent-delivered creator with an aborted settlement after interrupt', async () => {
+  const backend = execution()
+  const aborted: SubagentResult = { output: [], stopReason: 'aborted' }
+  const dispose = vi.fn(() => {
+    backend.result.resolve(aborted)
+    return backend.dispose()
+  })
+  const fixture = await setup(async () => ({ ...backend.run, dispose }))
+  const activation = await fixture.start('parent')
+  fixture.ctx.subagents.interrupt(activation.childId, { kind: 'user' })
+  await backend.cleaning.promise
+  backend.cleanup.resolve(undefined)
+  await expect(activation.result).resolves.toEqual(aborted)
+  await vi.waitFor(() => {
+    expect(fixture.parent.inbox.nextTurn).toHaveLength(1)
+    expect(fixture.parent.inbox.nextTurn[0]?.source).toMatchObject({ kind: 'subagent-settled', stopReason: 'aborted' })
+  })
+})
