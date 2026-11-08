@@ -530,4 +530,17 @@ describe('real @openai/codex 0.153.4 product', () => {
     await run.dispose()
     await expectQuiescent(harness.handles)
   }, 60_000)
+
+  it('interrupts a held real run through the manager and settles aborted', async () => {
+    const { harness, fixture } = await realHarness([{ kind: 'hold' }])
+    const run = await startExternalActivation(harness.ctx, 'codex', {
+      prompt: [{ type: 'text', text: 'Wait for interrupt.' }],
+      parent: harness.parent,
+      signal: new AbortController().signal,
+    })
+    await fixture.requestStarted
+    harness.ctx.subagents.interrupt(run.childId, { kind: 'user' })
+    await expect(run.result).resolves.toMatchObject({ stopReason: 'aborted' })
+    await expectQuiescent(harness.handles)
+  }, 60_000)
 })
