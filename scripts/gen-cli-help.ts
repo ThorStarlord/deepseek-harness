@@ -17,6 +17,9 @@ import { defaultParallelism } from './parallelism.ts'
 const root = resolve(import.meta.dirname, '..')
 const paths = translationPairPaths('docs/cli-help.md')
 const execFileAsync = promisify(execFile)
+// Profile boot dominates `acp --help`: about 10 s on an idle host and about 64 s with six
+// CPUs saturated, which exceeded the former 30 s budget. The budget only bounds hangs.
+const HELP_INVOCATION_TIMEOUT_MS = 120_000
 
 /** Complete help text and the immediate subcommands it advertises. */
 export interface CliHelp {
@@ -211,7 +214,7 @@ async function collectHelp(): Promise<HelpPage[]> {
     const help = execFileAsync(process.execPath, [
       '--import', 'tsx/esm', 'apps/cli/src/bin.ts', ...args, '--help',
     ], {
-      cwd: root, env: environment, encoding: 'utf8', timeout: 30_000,
+      cwd: root, env: environment, encoding: 'utf8', timeout: HELP_INVOCATION_TIMEOUT_MS,
       killSignal: 'SIGKILL', maxBuffer: 2 * 1024 * 1024,
     })
     // Killing directly, not through execFile's signal option, settles the read only after the child closes.
