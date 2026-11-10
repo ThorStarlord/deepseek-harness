@@ -4243,7 +4243,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-tool-multi-repository`
 
 - `inject`: `tools` · `agents` · `workspaceRegistry` · `subagents` · `sandbox` · `sandboxPolicy` · `subprocess` · `shell` · `fs`
-- `source`: [`packages/workspace/tool-multi-repository/src/index.ts:35`](../packages/workspace/tool-multi-repository/src/index.ts)
+- `source`: [`packages/workspace/tool-multi-repository/src/index.ts:36`](../packages/workspace/tool-multi-repository/src/index.ts)
 
 ```ts config-catalog
 /** Provider name used by the repository-scoped child activations. */

@@ -11,6 +11,8 @@ kind: "package-reference"
 
 `coordinate_repositories` 会为恰好两个选定的 Workspace Git 仓库各启动一个全新的进程内 DSH 子 Session。每个子级都在从捕获的提交创建的独立干净克隆中工作，变更会保留以供审查。父级会收到带有源仓库身份、子运行 id 和 Git 证据的两项结果，然后可在一条答复中协调这些变更。
 
+准备克隆前，父级必须批准一项列出两个仓库根目录和共同任务的一次性请求；仅注册 Workspace 不会授予写入权限。
+
 ## 目录
 
 - [使用本包](#use-this-package)
@@ -30,6 +32,8 @@ kind: "package-reference"
 ### 适用场景
 
 当调用方可以指定恰好两个仓库根目录，并需要独立的子 Session、克隆和结果时，选择此插件。Web 应用的标准配置已挂载此插件；其他组合必须提供 Workspace registry、沙箱文件系统和 shell、subprocess 与 sandbox policy 服务，以及声明支持 `permissionRoot` 的进程内 subagent 提供方。
+
+其他组合还必须提供带有面向用户应答器的 approval 服务；没有可用应答器或审批被拒绝时，工具会在准备克隆前停止。
 
 ### 最小配置
 
@@ -53,6 +57,8 @@ kind: "package-reference"
 
 -----
 
+父级工具调用会在准备克隆前进入现有 approval 流程。一次性提示会列出两个选定根目录和任务；策略为 `never`、用户拒绝、取消或应答器不可用时，都不会创建克隆或子 Session。
+
 <a id="understand-the-implementation"></a>
 ## 了解实现
 
@@ -70,6 +76,8 @@ Subagent 提供方能力会将子 Session 不可变的 `cwd` 设为其 DSH `work
 </details>
 
 -----
+
+预执行门会在工具主体运行前，针对模型提交的确切根目录和任务要求一次性批准。协调器随后验证仓库身份和 Git 状态，准备两个独立克隆，为每个克隆启动一个由调用方接收结果的 DSH 子 Session，等待两个结果，然后将独立的仓库结果行返回给父级。批准不会更改父 Session 的沙箱模式。
 
 <a id="further-exploration"></a>
 ## 深入探索
@@ -89,6 +97,8 @@ Subagent 提供方能力会将子 Session 不可变的 `cwd` 设为其 DSH `work
 #### 模型看到的内容
 
 每条父级请求都会包含 `coordinate_repositories` 工具 schema，参数为恰好两个 Workspace 根目录和一项任务；生成的[工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-multi-repository)列出精确参数和结果字段。调用会为每个仓库返回一行，包含其源 Git 身份与提交、子 Session 和运行 id、克隆分支、执行结果、最终 Git 状态及子级报告。
+
+调用前会向用户显示两个根目录和共同任务，以便用户为本次确切操作作出一次性决定。
 
 ##### Tool call example
 
@@ -111,6 +121,7 @@ Tool arguments: {"repositories":["/workspace/api","/workspace/cli"],"task":"Add 
 此工具受现有 DSH 组合提供的权限和执行提供方限制。
 
 - **文件读取范围仍然较广** — DSH 允许读取 Session 根目录之外的路径，因此选择仓库不能阻止子级读取其他路径。
+- **注册不会授予写入权限** — 每次具备写入能力的调用都需要针对确切的两个根目录和任务进行一次性批准；缺少批准或批准被拒绝时，会在准备克隆前停止。
 - **临时路径仍有写入权限** — 当前 DSH 沙箱允许写入操作系统临时目录，包括其中未注册的仓库。
 - **写入支持取决于强制执行能力** — Windows ACL 报告强制执行不完整，工具会拒绝准备克隆；原生 Codex 和 Claude Code 提供方未声明 DSH `permissionRoot` 能力。
 - **变更保留在克隆中** — 两个源仓库开始时都必须干净；工具不会创建 pull request、合并分支或修改源检出。

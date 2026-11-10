@@ -2654,7 +2654,7 @@ Source: [`packages/skill/tool-workspace-dependencies/src/index.ts`](../packages/
 
 ### `coordinate_repositories`
 
-Coordinate one coding task across exactly two explicitly selected local Git Workspaces. Supply the two absolute Workspace roots. DSH starts one fresh child Session per repository in separate clean clones, waits for both results, and returns each repository, child Session, run ID, and Git evidence. The roots must be registered Workspaces, Git repository roots, and clean at the selected commit. Child writes require a sandbox backend that reports full enforcement; DSH does not restrict filesystem reads outside a Session root.
+Coordinate one coding task across exactly two explicitly selected local Git Workspaces. Supply the two absolute Workspace roots. DSH starts one fresh child Session per repository in separate clean clones, waits for both results, and returns each repository, child Session, run ID, and Git evidence. The roots must be registered Workspaces, Git repository roots, and clean at the selected commit. Before cloning, DSH requests one approval that names both roots and the shared task. Child writes require a sandbox backend that reports full enforcement; DSH does not restrict filesystem reads outside a Session root.
 
 ```json
 {

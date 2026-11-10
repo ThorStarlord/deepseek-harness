@@ -9,8 +9,8 @@
   en: 825dd0f1d1e0804e
   zh: 159d5763b9d5f289
 /deepseek-ai-dsh-tool-multi-repository/summary:
-  en: 4d263bc5b6337b30
-  zh: 731107ec2e7d921b
+  en: 03acdc60da8f0457
+  zh: f928f987834f4481
 /deepseek-ai-dsh-tool-multi-repository/table-of-contents:
   en: d152484eb41ac6b4
   zh: 44010ab539de04b1
@@ -18,14 +18,14 @@
   en: 3dac9b85655c789c
   zh: 3a16f4ed145df76b
 /deepseek-ai-dsh-tool-multi-repository/use-this-package/when-to-choose-it:
-  en: 5e103a4d16223312
-  zh: 8bf2d16b3e3fbd88
+  en: 5452936d1f09396f
+  zh: f2a54a3849b8f47c
 /deepseek-ai-dsh-tool-multi-repository/use-this-package/minimal-configuration:
-  en: 03e9fde00b30a7cb
-  zh: f081686a2fe27555
+  en: 022a92bb28f351f8
+  zh: 4ac9f8965ad470d3
 /deepseek-ai-dsh-tool-multi-repository/understand-the-implementation:
-  en: eeaee5df82e95b3e
-  zh: 1bdd89f608edd0e9
+  en: 273e882821bb0d28
+  zh: c7fc7350aee87a3d
 /deepseek-ai-dsh-tool-multi-repository/further-exploration:
   en: b165e03cfe182cfa
   zh: 64e5ba787dfbfc95
@@ -36,8 +36,8 @@
   en: 5389a85fa40dc2e6
   zh: cc05ba8cec28e382
 /deepseek-ai-dsh-tool-multi-repository/model-experience/coordination-tool/what-the-model-sees:
-  en: c9f24c83f97c735a
-  zh: d27479a1211abfff
+  en: 2e13b6b5b6f61ab0
+  zh: 2e8f95d6381faf65
 /deepseek-ai-dsh-tool-multi-repository/model-experience/coordination-tool/what-the-model-sees/tool-call-example:
   en: f8a6d77e5761668a
   zh: f8a6d77e5761668a
@@ -48,8 +48,8 @@
   en: 7316590c9d81b2f6
   zh: 528a49dede528b56
 /deepseek-ai-dsh-tool-multi-repository/known-limitations-and-deferred-work:
-  en: d8dd9ffb9d511b37
-  zh: 34bf3ee607df45bb
+  en: 73e273f48a48df7f
+  zh: 4114aeb63eaad45e
 /deepseek-ai-dsh-tool-multi-repository/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 8ec3e73528ddb1a6

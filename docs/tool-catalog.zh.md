@@ -2661,7 +2661,7 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 ### `coordinate_repositories`
 
-跨恰好两个显式选择的本地 Git Workspace 协调一项编码任务。提供两个绝对 Workspace 根路径。DSH 为每个仓库在独立的干净克隆中启动全新的子 Session，等待两个结果，并返回每个仓库、子 Session、运行 id 和 Git 证据。根路径必须是已注册的 Workspace、Git 仓库根目录，且所选提交处的工作树干净。子级写入要求沙箱报告完整强制执行；DSH 不限制读取 Session 根目录之外的文件。
+跨恰好两个显式选择的本地 Git Workspace 协调一项编码任务。提供两个绝对 Workspace 根路径。DSH 为每个仓库在独立的干净克隆中启动全新的子 Session，等待两个结果，并返回每个仓库、子 Session、运行 id 和 Git 证据。根路径必须是已注册的 Workspace、Git 仓库根目录，且所选提交处的工作树干净。克隆前，DSH 会请求用户对两个根目录和共同任务作出一次性批准。子级写入要求沙箱报告完整强制执行；DSH 不限制读取 Session 根目录之外的文件。
 
 ```json
 {

@@ -12,12 +12,13 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ConfinedSandboxMode, SandboxEnforcement, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentActivation, SubagentResult, SubagentRunId } from '@deepseek-ai/dsh-subagent'
-import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { PreToolDecision, ToolDefinition, ToolExecution } from '@deepseek-ai/dsh-tools'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import type { Workspace, WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { ShellExecutor } from '@deepseek-ai/dsh-shell'
@@ -38,6 +39,8 @@ export interface Config {
 }
 
 export const Config = z.object({ providerName: z.string().default('spawn') })
+
+const TOOL_NAME = 'coordinate_repositories'
 
 interface GitCommandResult {
   readonly stdout: string
@@ -79,6 +82,19 @@ interface RepositoryOutcome {
   readonly diffStat: string | null
   readonly setupEnforcement: SandboxEnforcement
   readonly evidenceError?: string
+}
+
+interface ApprovedRepository {
+  readonly workspaceId: string
+  readonly workspaceTitle: string
+  readonly root: string
+  readonly commonGitDirectory: string
+  readonly head: string
+}
+
+interface ApprovedSelection {
+  readonly repositories: readonly [ApprovedRepository, ApprovedRepository]
+  readonly task: string
 }
 
 interface ToolArgs {
@@ -133,14 +149,19 @@ const outputSchema: JsonSchemaNode = {
   },
 }
 
-function createTool(ctx: Context, configuredProviderName: string): ToolDefinition {
+function createTool(
+  ctx: Context,
+  configuredProviderName: string,
+  approvedSelections: Map<ToolCallId, ApprovedSelection>,
+): ToolDefinition {
   const tool: ToolDefinition = {
-    name: 'coordinate_repositories',
+    name: TOOL_NAME,
     description: [
       'Coordinate one coding task across exactly two explicitly selected local Git Workspaces. Supply the two absolute Workspace roots.',
       'DSH starts one fresh child Session per repository in separate clean clones, waits for both results, and returns each repository,',
       'child Session, run ID, and Git evidence. The roots must be registered Workspaces, Git repository roots, and clean at the selected',
-      'commit. Child writes require a sandbox backend that reports full enforcement; DSH does not restrict filesystem reads outside a Session root.',
+      'commit. Before cloning, DSH requests one approval that names both roots and the shared task. Child writes require a sandbox backend that reports full enforcement;',
+      'DSH does not restrict filesystem reads outside a Session root.',
     ].join(' '),
     parameters: {
       repositories: {
@@ -223,6 +244,11 @@ function createTool(ctx: Context, configuredProviderName: string): ToolDefinitio
       if (parent.session.header.parentSession !== undefined) {
         throw new MultiRepositoryError('repository coordination is available only to a conversation started by the user', 'DELEGATED_COORDINATION_DENIED')
       }
+      const authorization = approvedSelections.get(exec.callId)
+      approvedSelections.delete(exec.callId)
+      if (authorization === undefined || authorization.task !== args.task) {
+        throw new MultiRepositoryError('repository coordination requires one-shot approval for this exact task and repository selection', 'WRITE_AUTHORIZATION_REQUIRED')
+      }
       assertExecutionServices(ctx)
       const provider = ctx.subagents.getProvider(configuredProviderName)
       if (provider === undefined || !provider.capabilities.permissionRoot
@@ -239,6 +265,8 @@ function createTool(ctx: Context, configuredProviderName: string): ToolDefinitio
         inspectSource(ctx.fs, ctx.subprocess, ctx.sandbox, workspaces, firstPath, exec.signal),
         inspectSource(ctx.fs, ctx.subprocess, ctx.sandbox, workspaces, secondPath, exec.signal),
       ])
+      assertApprovedSource(firstSource, authorization.repositories[0])
+      assertApprovedSource(secondSource, authorization.repositories[1])
       const sources = [firstSource, secondSource]
       if (await sameRepository(firstSource, secondSource, ctx.fs)) {
         throw new MultiRepositoryError('the two selected Workspaces resolve to the same Git repository identity', 'DUPLICATE_REPOSITORY')
@@ -322,7 +350,7 @@ function createTool(ctx: Context, configuredProviderName: string): ToolDefinitio
           const activation = await ctx.subagents.startActivation({
             provider: configuredProviderName,
             label: `Repository ${repo.workspace.title}`,
-            name: `repo-${randomUUID()}`,
+            name: `repo-${randomUUID().replaceAll('-', '').slice(0, 27)}`,
             parent,
             cwd: repo.cloneRoot,
             permissionRoot: repo.cloneRoot,
@@ -386,10 +414,125 @@ function createTool(ctx: Context, configuredProviderName: string): ToolDefinitio
  * @param config - in-process provider name used for both repository children.
  */
 export function apply(ctx: Context, config: Config): void {
-  const tool = createTool(ctx, config.providerName ?? 'spawn')
+  const approvedSelections = new Map<ToolCallId, ApprovedSelection>()
+  const tool = createTool(ctx, config.providerName ?? 'spawn', approvedSelections)
   ctx.effect(() => {
     return ctx.tools.register(tool)
   })
+  ctx.effect(() => {
+    const stopBeforeExecute = ctx.on('tools/pre-execute', (execution, next) => {
+      if (execution.name !== TOOL_NAME) return next()
+      if (execution.agent === undefined) {
+        return Promise.resolve({ kind: 'deny', reason: 'repository coordination requires a live user conversation' })
+      }
+      if (execution.agent.session.header.parentSession !== undefined) return next()
+      return repositoryApprovalDecision(ctx, execution, approvedSelections)
+    })
+    const stopAfterResult = ctx.on('tools/result', (execution) => {
+      if (execution.name === TOOL_NAME) approvedSelections.delete(execution.callId)
+    })
+    return () => {
+      approvedSelections.clear()
+      stopBeforeExecute()
+      stopAfterResult()
+    }
+  })
+}
+
+/** Identify the exact repositories before asking for one-call write authorization. */
+async function repositoryApprovalDecision(
+  ctx: Context,
+  execution: ToolExecution,
+  approvedSelections: Map<ToolCallId, ApprovedSelection>,
+): Promise<PreToolDecision> {
+  const args = readToolArgs(execution.arguments)
+  if (args === undefined) {
+    return { kind: 'deny', reason: 'repository coordination requires exactly two Workspace roots and one task' }
+  }
+  assertExecutionServices(ctx)
+  const workspaces = ctx.workspaceRegistry.list()
+  const [firstSource, secondSource] = await Promise.all([
+    inspectSource(ctx.fs, ctx.subprocess, ctx.sandbox, workspaces, args.repositories[0], execution.signal),
+    inspectSource(ctx.fs, ctx.subprocess, ctx.sandbox, workspaces, args.repositories[1], execution.signal),
+  ])
+  if (await sameRepository(firstSource, secondSource, ctx.fs)) {
+    return { kind: 'deny', reason: 'the two selected Workspaces resolve to the same Git repository identity' }
+  }
+  const first = approvedRepository(firstSource)
+  const second = approvedRepository(secondSource)
+  const approvedRepositories: readonly [ApprovedRepository, ApprovedRepository] = [first, second]
+  const approved: ApprovedSelection = { repositories: approvedRepositories, task: args.task }
+  approvedSelections.set(execution.callId, approved)
+  const reason = `Write-capable repository coordination: ${JSON.stringify([
+    {
+      workspaceId: first.workspaceId,
+      workspaceTitle: first.workspaceTitle,
+      root: first.root,
+      gitDirectory: first.commonGitDirectory,
+      head: first.head,
+    },
+    {
+      workspaceId: second.workspaceId,
+      workspaceTitle: second.workspaceTitle,
+      root: second.root,
+      gitDirectory: second.commonGitDirectory,
+      head: second.head,
+    },
+  ])}; task ${JSON.stringify(args.task)}`
+  return {
+    kind: 'ask',
+    reason,
+    displayReason: {
+      en: [
+        'Allow one write-capable coding run in isolated clones of these repositories?',
+        `Repository 1: ${first.workspaceTitle} (${first.workspaceId}; ${first.root}) at ${first.head}`,
+        `Repository 2: ${second.workspaceTitle} (${second.workspaceId}; ${second.root}) at ${second.head}`,
+        `Shared task: ${args.task}`,
+      ].join('\n'),
+      zh: [
+        '是否允许在以下仓库的独立克隆中执行一次可写编码任务？',
+        `仓库 1：${first.workspaceTitle}（${first.workspaceId}；${first.root}），提交 ${first.head}`,
+        `仓库 2：${second.workspaceTitle}（${second.workspaceId}；${second.root}），提交 ${second.head}`,
+        `共同任务：${args.task}`,
+      ].join('\n'),
+    },
+  }
+}
+
+/** Ensure the repository did not change while one-shot authorization was pending. */
+function assertApprovedSource(source: RepositorySource, approved: ApprovedRepository): void {
+  if (String(source.workspace.id) !== approved.workspaceId || source.root !== approved.root
+    || source.commonGitDirectory !== approved.commonGitDirectory || source.head !== approved.head) {
+    throw new MultiRepositoryError('a selected repository changed after write authorization; ask again before retrying', 'APPROVED_REPOSITORY_CHANGED')
+  }
+}
+
+/** Capture only the repository identity needed to bind one approval to this checkout. */
+function approvedRepository(source: RepositorySource): ApprovedRepository {
+  return {
+    workspaceId: String(source.workspace.id),
+    workspaceTitle: source.workspace.title,
+    root: source.root,
+    commonGitDirectory: source.commonGitDirectory,
+    head: source.head,
+  }
+}
+
+/** Read the model-authored call arguments used to describe the approval request. */
+function readToolArgs(value: unknown): ToolArgs | undefined {
+  if (!isUnknownRecord(value)) return undefined
+  const repositories = value.repositories
+  if (!Array.isArray(repositories) || repositories.length !== 2) return undefined
+  const first: unknown = repositories[0]
+  const second: unknown = repositories[1]
+  const task = value.task
+  if (typeof first !== 'string' || typeof second !== 'string' || typeof task !== 'string') return undefined
+  return { repositories: [first, second], task }
+}
+
+/** Narrow one parsed model argument object without trusting its index fields. */
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function assertExecutionServices(ctx: Context): asserts ctx is Context & {
