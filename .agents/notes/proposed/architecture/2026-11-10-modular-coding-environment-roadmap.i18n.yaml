@@ -1,0 +1,49 @@
+# Bilingual-pair consistency record for 2026-11-10-modular-coding-environment-roadmap.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-11-10-modular-coding-environment-roadmap.md
+/agent-note-modular-coding-environment-roadmap:
+  en: 1c25c6547657978f
+  zh: e7449c6dc8b49181
+/agent-note-modular-coding-environment-roadmap/problem:
+  en: 2725c85d36d05a21
+  zh: 4b6328476f2f2f74
+/agent-note-modular-coding-environment-roadmap/proposal:
+  en: 7e927c42658685e9
+  zh: 30fd73a4e256e9c5
+/agent-note-modular-coding-environment-roadmap/existing-foundation-and-claim-limits:
+  en: d4791fc8933921b0
+  zh: 21a6d6c8e1b26afb
+/agent-note-modular-coding-environment-roadmap/candidate-source-repositories:
+  en: bb508a4de42899d5
+  zh: b0dd00149099c70f
+/agent-note-modular-coding-environment-roadmap/provisional-construction-priorities:
+  en: 7efda964f42b1c14
+  zh: 7b28142423a6ce08
+/agent-note-modular-coding-environment-roadmap/provisional-construction-priorities/1-multi-repository-orchestration-in-one-conversation:
+  en: e86ceebfb357ed02
+  zh: 180547798eb5bb3e
+/agent-note-modular-coding-environment-roadmap/provisional-construction-priorities/2-reusable-skills-agents-commands-and-hooks:
+  en: b41997c46803655d
+  zh: 5604d6eef05c044a
+/agent-note-modular-coding-environment-roadmap/provisional-construction-priorities/3-persistent-delegated-work-and-autonomous-continuation:
+  en: c76f43243303e0bc
+  zh: 6e4da8e3c485b5f7
+/agent-note-modular-coding-environment-roadmap/provisional-construction-priorities/4-adaptive-orchestration-memory-context-and-learning:
+  en: 9d12d6eaeec01634
+  zh: e30ecd15b2213ba6
+/agent-note-modular-coding-environment-roadmap/provisional-construction-priorities/5-advanced-sensemaking-and-optional-mission-coordination:
+  en: 58cd27cf069b772e
+  zh: 55bf3f589b31e356
+/agent-note-modular-coding-environment-roadmap/open-architectural-decisions:
+  en: 0c5545e23b014153
+  zh: 4035bb78cf27b339
+/agent-note-modular-coding-environment-roadmap/alternatives-considered:
+  en: a489efebbae7e9cf
+  zh: 35295bc553622483
+/agent-note-modular-coding-environment-roadmap/acceptance-criteria:
+  en: d0d8f47b58327065
+  zh: 91ddd1a8235bb662
+/agent-note-modular-coding-environment-roadmap/risks:
+  en: bec04419a6944797
+  zh: 3589a32b024e1be0
