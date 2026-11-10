@@ -1,9 +1,9 @@
 {
-  "AGENTS.md": 2080,
-  "docs/AGENTS.md": 1430,
-  "docs/architecture.md": 2410,
-  "docs/cordis-primer.md": 600,
-  "docs/testing.md": 1350,
-  "packages/AGENTS.md": 810,
-  "packages/README.md": 994
+  "AGENTS.md": { "target": 2080, "ceiling": 2080 },
+  "docs/AGENTS.md": { "target": 1430, "ceiling": 1430 },
+  "docs/architecture.md": { "target": 2400, "ceiling": 2410 },
+  "docs/cordis-primer.md": { "target": 600, "ceiling": 600 },
+  "docs/testing.md": { "target": 1300, "ceiling": 1350 },
+  "packages/AGENTS.md": { "target": 810, "ceiling": 810 },
+  "packages/README.md": { "target": 994, "ceiling": 994 }
 }
