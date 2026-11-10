@@ -1,0 +1,52 @@
+# Bilingual-pair consistency record for 2026-11-10-modular-coding-environment-roadmap.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-11-10-modular-coding-environment-roadmap.md
+/agent-note-modular-coding-environment-roadmap:
+  en: e3eeeb3f96520d77
+  zh: a151c386deff219d
+/agent-note-modular-coding-environment-roadmap/problem:
+  en: faaa22982e82b462
+  zh: 61114d4134a018c0
+/agent-note-modular-coding-environment-roadmap/proposal:
+  en: 1a6a4cb1dd17203c
+  zh: 0696a5413ecd31f5
+/agent-note-modular-coding-environment-roadmap/proposal/product-direction-and-capability-status:
+  en: c3a6089dbf5f3873
+  zh: 46bb10d1c3453db8
+/agent-note-modular-coding-environment-roadmap/proposal/candidate-source-repositories:
+  en: 13cee7e985a39618
+  zh: 137faa5a9e2931b2
+/agent-note-modular-coding-environment-roadmap/proposal/provisional-construction-priorities:
+  en: 9dbf241bb102ae21
+  zh: 3fa464bdd0f32424
+/agent-note-modular-coding-environment-roadmap/proposal/provisional-construction-priorities/1-multi-repository-orchestration-in-one-conversation:
+  en: 08577ce09dec8c07
+  zh: d4cf68807d5d2672
+/agent-note-modular-coding-environment-roadmap/proposal/provisional-construction-priorities/2-reusable-skills-specialized-agents-commands-and-configurable-hooks:
+  en: 4a3d784d45935048
+  zh: fc742bfe17c2974e
+/agent-note-modular-coding-environment-roadmap/proposal/provisional-construction-priorities/3-persistent-delegated-work-and-bounded-autonomous-continuation:
+  en: c5d69597d4d6c53f
+  zh: f1aea2a8a46c3fdb
+/agent-note-modular-coding-environment-roadmap/proposal/provisional-construction-priorities/4-adaptive-orchestration-memory-context-management-and-learning:
+  en: 2199f3263e0e3f75
+  zh: 06beec1eec55f50f
+/agent-note-modular-coding-environment-roadmap/proposal/provisional-construction-priorities/5-advanced-sensemaking-and-optional-mission-control-integration:
+  en: 4a956acea6a761fe
+  zh: b07e9a99a15324ec
+/agent-note-modular-coding-environment-roadmap/proposal/architectural-boundaries-and-unresolved-choices:
+  en: da2fcbac4c749868
+  zh: f1850527e9cbd580
+/agent-note-modular-coding-environment-roadmap/proposal/selecting-the-next-bounded-responsibility:
+  en: f94ebab8e6f55ade
+  zh: a85b3560ae97b6f4
+/agent-note-modular-coding-environment-roadmap/alternatives-considered:
+  en: 577a6c83a8742a9d
+  zh: 2332cade4b31495b
+/agent-note-modular-coding-environment-roadmap/acceptance-criteria:
+  en: d35997c01b984f71
+  zh: 36dcbf4cf9b654de
+/agent-note-modular-coding-environment-roadmap/risks:
+  en: 20b3cde5627131dc
+  zh: 5dfd26121b526ead

@@ -4,9 +4,9 @@
 
 ## 概述
 
-此个人 fork 探索将 DeepSeek Harness 作为模块化编程环境，与原生 Codex、原生 Claude Code、可移植的 Sensemaking Skills 以及可选的持久任务协调能力并用。本文件不选择永久的软件工厂控制器，不推翻其他仓库已接受的决策，也不承诺统一 agent 会话。
+所有者已选择 DeepSeek Harness 作为模块化编程环境的共同执行基础，支持多个 agent 运行时、多个仓库和可复用能力。[拟议开发路线图](../.agents/notes/proposed/feature/2026-11-10-modular-coding-environment-roadmap.zh.md)记录了发展方向、候选来源、暂定优先级和待决问题。该方向不会选择永久的软件工厂控制器，不会推翻其他仓库已接受的决策，也不承诺统一原生 agent 会话。
 
-三种 agent 委派方案是候选技术集成试点，并非已选定的首个可用产品体验。此前的 Divergent Exploration 仍为未来的 Coverage Assessment、Convergent Evaluation、Depth Exploration 和显式产品选择提供依据；试点不会预先决定产品方向。新增自动路由、适配器、存储或编排仍不属于本次基础工作。
+所有者确认的 Windows 多模型试点已经完成。该试点建立了本文所述的多模型委派基础；它并未建立多仓库编排、共享原生会话、共享认证或权限策略，也未建立任务控制系统。
 
 ## 可复用能力
 
@@ -17,8 +17,6 @@
 | 原生 Claude Code | [Claude Code bundle](../packages/subagent/subagent-claude-code/README.zh.md) 使用固定版本的原生 SDK/CLI 查询，提供 `subagent_claude_code`。 | 仅一次性执行；认证和设置归原生系统；无子任务 transcript、原生恢复或回滚。 |
 | 核心环境 | [基于 base 的 Profile](architecture.zh.md) 组合 Cordis 插件、模型适配器、文件系统和 shell provider、sandbox 策略、审批以及持久 Session 日志。 | Profile 层会整体替换目标配置行；插件存在不等于已经验证认证或 sandbox。 |
 | 可复用认知能力 | [文件系统 Skill provider](../packages/skill/skill-filesystem/README.zh.md) 扫描项目、自定义和用户目录中的 `SKILL.md`，按需加载正文。 | DSH 能发现 Skill，并不证明原生 Codex 与 Claude Code 的发现或执行方式完全相同。 |
-
-最小试点配置可以复用基于 base 的 Web 或 headless Profile、内置 DSH subagent 工具及两个可选原生 bundle。若另行授权该试点，应使用受支持的 Profile/插件机制，而不是开发替代启动器。
 
 ## 相关仓库的职责
 
@@ -54,10 +52,10 @@ Sensemaking Skill 应保持一个规范来源。DSH 可以使用共享 `.agents/
 
 特定运行的修订标识、环境探测、实际执行命令、CI 状态和阻塞原因应保存在 PR 验证记录中，而非这份长期维护的架构参考文档。
 
-## 候选技术集成试点
+## 已完成的 Windows 多模型试点
 
-只有在基础工作通过适用检查且试点另行得到选择后，才使用现有 DSH 子 agent 路径和两个原生 subagent bundle 配置一个个人 DSH Profile，不修改 provider 代码。检查解析后的 Profile，并在隔离工作区中为每条路径显式选择一个只读仓库问题。对照源码审查答案，记录权限行为与工作区副作用，不预设父子权限会自动继承。产品的首个可用体验仍需经过此前探索和后续产品选择阶段。不要引入自动路由、共享会话、持久工厂控制或并发写入。
+所有者确认的 Windows 试点通过现有 DSH 集成执行了多模型委派。完成试点证明了连接能力，但不证明不同 provider 共享会话、认证、权限策略、工作区隔离或权限。
 
 ## Dev Note
 
-待解问题：真实使用后 A/B/C 哪种关系适合、已安装的原生 host 版本能否以相同方式使用共享 Skill 目录、哪些执行事实能够成为持久语义证据，以及未来任何整合是否值得迁移现有 Dark Factory 状态。这些问题均未由本次纯文档勘察解决。
+待解问题：真实使用后 A/B/C 哪种关系适合、已安装的原生 host 版本能否以相同方式使用共享 Skill 目录、哪些执行事实能够成为持久语义证据，以及未来任何整合是否值得迁移现有 Dark Factory 状态。路线图记录了这些决策，但没有选定集成关系。
