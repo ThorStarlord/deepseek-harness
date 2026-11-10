@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Coordination entre dépôts",
+    "description": "Coordonne une tâche de programmation dans deux dépôts Git sélectionnés."
+  }
+}

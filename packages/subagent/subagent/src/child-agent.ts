@@ -130,6 +130,7 @@ export function resolveChildAgentOptions(
  * @param childDepth - the resolved delegation depth to persist.
  * @param isSeeded - whether this child inherits a parent-log prefix, including an explicitly empty one.
  * @param selectedPreset - independent selection, or omission to inherit the parent.
+ * @param permissionRoot - trusted in-process child's DSH workspace root, or omission to inherit the parent root.
  * @returns the `meta` for `ctx.agents.create()`.
  */
 export function childSessionMeta(
@@ -137,11 +138,13 @@ export function childSessionMeta(
   childDepth: number,
   isSeeded: boolean,
   selectedPreset?: string,
+  permissionRoot?: string,
 ): NonNullable<CreateAgentOptions['meta']> {
   const parentHeader = parent.session.header
   const agentPreset = selectedPreset ?? parent.ctx.get('agentPresets')?.composedPreset(parent.ctx)
+  const cwd = permissionRoot ?? parentHeader.cwd
   return {
-    ...parentHeader.cwd !== undefined ? { cwd: parentHeader.cwd } : {},
+    ...(cwd === undefined ? {} : { cwd }),
     ...agentPreset === undefined ? {} : { agentPreset },
     parentSession: parentHeader.id,
     isSeeded,
@@ -244,13 +247,18 @@ export interface DelegatedPolicyOverrides {
  * is captured — never deployment defaults or one-shot grants — and the approval
  * policy is pinned to `'never'` regardless of the parent's own policy.
  * @param parent - the delegating parent agent.
+ * @param permissionRoot - trusted child DSH workspace root. When present, the
+ * child's sandbox mode is pinned to `workspace-write` and inherited full-access
+ * presets are omitted.
  * @returns the sandbox override (or `undefined` without one) and the approval pin.
  */
-export function captureDelegatedPolicyOverrides(parent: Agent): DelegatedPolicyOverrides {
+export function captureDelegatedPolicyOverrides(parent: Agent, permissionRoot?: string): DelegatedPolicyOverrides {
   const preset = parent.ctx.get('permissionPresets')?.current(parent.session)
   return {
-    permissionPreset: preset === 'auto' || preset === 'danger-full-access' ? preset : undefined,
-    sandboxMode: parent.ctx.get('sandboxPolicy')?.overrideOf(parent.session),
+    permissionPreset: permissionRoot === undefined && (preset === 'auto' || preset === 'danger-full-access') ? preset : undefined,
+    sandboxMode: permissionRoot === undefined
+      ? parent.ctx.get('sandboxPolicy')?.overrideOf(parent.session)
+      : 'workspace-write',
     approvalPolicy: parent.ctx.get('approval') === undefined ? undefined : 'never',
   }
 }

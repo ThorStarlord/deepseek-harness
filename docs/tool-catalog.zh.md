@@ -53,6 +53,7 @@
 | `@deepseek-ai/dsh-experimental-tool-worktree` | `create_worktree` | `ctx.tools`, `ctx.worktrees`, `a calling Agent` | `tool/call`, `Git branch and checkout`, `working-directory/change`, `tool/result` | - | 在 Web 和 Desktop 上通过变更请求与工作树组合包启用；其他 profile 可以选择独立组合包。在现有写权限下从固定的本地提交创建新分支与检出目录，再改变 Session 工作目录。离开时保留分支与检出目录。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
+| `@deepseek-ai/dsh-tool-multi-repository` | `coordinate_repositories` | `ctx.tools`、`ctx.agents`、`ctx.workspaceRegistry`、`ctx.subagents`、`ctx.sandbox`、`ctx.sandboxPolicy`、`ctx.subprocess`、`ctx.shell`、`ctx.fs` | `tool/call`、`tool/result`、每个所选仓库一个子 Session、每个所选仓库一个独立 Git 克隆 | - | 此工具要求 `spawn` 提供方支持 DSH `permissionRoot` 能力。子级使用各自的克隆和 Session 权限根；原生 Codex 和 Claude Code 提供方不声明此权限保证。 |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
 
 <a id="deepseek-aidsh-plugin-manager"></a>
@@ -2653,6 +2654,39 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 ```
 
 来源：[`packages/skill/tool-workspace-dependencies/src/index.ts`](../packages/skill/tool-workspace-dependencies/src/index.ts)
+
+<a id="deepseek-aidsh-tool-multi-repository"></a>
+
+## `@deepseek-ai/dsh-tool-multi-repository`
+
+### `coordinate_repositories`
+
+跨恰好两个显式选择的本地 Git Workspace 协调一项编码任务。提供两个绝对 Workspace 根路径。DSH 为每个仓库在独立的干净克隆中启动全新的子 Session，等待两个结果，并返回每个仓库、子 Session、运行 id 和 Git 证据。根路径必须是已注册的 Workspace、Git 仓库根目录，且所选提交处的工作树干净。子级写入要求沙箱报告完整强制执行；DSH 不限制读取 Session 根目录之外的文件。
+
+```json
+{
+  "repositories": {
+    "type": "array",
+    "required": true,
+    "minItems": 2,
+    "maxItems": 2,
+    "items": {
+      "type": "string",
+      "description": "Absolute root path of one user-selected Workspace."
+    },
+    "description": "Exactly two absolute Workspace root paths, in the order whose results should be returned."
+  },
+  "task": {
+    "type": "string",
+    "required": true,
+    "description": "One self-contained coding task to perform independently in each selected repository."
+  }
+}
+```
+
+来源：[`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
+
+此工具要求 `spawn` 提供方支持 DSH `permissionRoot` 能力。子级使用各自的克隆和 Session 权限根；原生 Codex 和 Claude Code 提供方不声明此权限保证。
 
 <a id="deepseek-aidsh-tool-web"></a>
 

@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto'
 import { isAbsolute, resolve } from 'node:path'
 import type {} from '@deepseek-ai/dsh-working-directory'
+import type {} from '@deepseek-ai/dsh-fs'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentOptions, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -345,9 +346,12 @@ export class SubagentManager {
       })
       // Capture before the first await: a later parent switch belongs to the
       // parent's future, not to this child.
-      const delegatedPolicies = captureDelegatedPolicyOverrides(parent)
+      const delegatedPolicies = captureDelegatedPolicyOverrides(parent, spec.permissionRoot)
 
       const cwd = await this.resolveDirectory(spec, signal)
+      const permissionRoot = spec.permissionRoot === undefined
+        ? undefined
+        : await this.resolvePermissionRoot(spec.permissionRoot, cwd, signal)
       const prepared = await prepare({
         sessionId: childId,
         cwd,
@@ -383,7 +387,7 @@ export class SubagentManager {
             parent,
             cwd,
             seed,
-            meta: childSessionMeta(parent, childDepth, prepared.seed !== undefined, spec.agentPreset),
+            meta: childSessionMeta(parent, childDepth, prepared.seed !== undefined, spec.agentPreset, permissionRoot),
             inheritedEventCount,
             delegatedPolicies,
             descriptor,
@@ -492,6 +496,27 @@ export class SubagentManager {
       : resolve(await this.ctx.workingDirectory.ensure(request.parent, signal), request.cwd ?? '.')
     signal.throwIfAborted()
     return cwd
+  }
+
+  /** Resolve and validate the trusted child sandbox root against its starting directory. */
+  private async resolvePermissionRoot(path: string, cwd: string, signal: AbortSignal): Promise<string> {
+    if (!isAbsolute(path)) {
+      throw new SubagentError('a scoped subagent permission root must be absolute', 'INVALID_PERMISSION_ROOT')
+    }
+    const fs = this.ctx.get('fs')
+    if (fs === undefined) {
+      throw new SubagentError('a scoped subagent permission root requires the filesystem service', 'INVALID_PERMISSION_ROOT')
+    }
+    const root = await fs.resolve(path, { signal })
+    const info = await fs.stat(root, signal)
+    if (info?.type !== 'directory') {
+      throw new SubagentError(`scoped subagent permission root is not an existing directory: ${JSON.stringify(path)}`, 'INVALID_PERMISSION_ROOT')
+    }
+    const start = await fs.resolve(cwd, { signal })
+    if (!fs.contains(root, start)) {
+      throw new SubagentError('a scoped subagent must start inside its permission root', 'INVALID_PERMISSION_ROOT')
+    }
+    return fs.processPath(root)
   }
 
   /**
@@ -1145,6 +1170,7 @@ export class SubagentManager {
   private receipt(activation: Activation): SubagentActivation {
     return {
       childId: activation.childId,
+      runId: activation.runId,
       name: agentAddress(activation.path, activation.childId),
       result: activation.result.promise,
       dispose: () => this.dispose(activation),

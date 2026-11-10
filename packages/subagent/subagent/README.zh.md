@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-每次启动可传入可选的 `cwd`；相对路径以父级当前工作目录解析，省略时捕获该当前目录。子级保留父级的起始目录元数据与权限根目录。子级自己的目录值位于继承历史之后，在继续与重启后保留，并独立于父级之后的目录变化。
+每次启动可传入可选的 `cwd`；相对路径以父级当前工作目录解析，省略时捕获该当前目录。除非受信任的进程内调用方通过声明该能力的提供方请求 `permissionRoot`，否则子级会保留父级的起始目录元数据与权限根目录。此选项会将子 Session 不可变的 `cwd` 和 DSH `workspace-write` 根目录绑定到指定的绝对路径，将沙箱模式固定为 `workspace-write`，并省略继承的 full-access preset。外部提供方无法强制执行此 DSH 权限。子级自己的目录值位于继承历史之后，在继续与重启后保留，并独立于父级之后的目录变化。
 
 本包是每个委派组合都共享的约定。你通过把服务与一个或多个提供方后端以及面向模型的委派工具一起挂载来启用它；此后 agent 即可委派工作，服务会把每个请求路由到具名提供方。
 
@@ -58,7 +58,7 @@ kind: "package-reference"
 
 ### 本地与外部子级
 
-`startActivation({ provider, label, name?, prompt, parent, signal, delivery })` 返回 `{ childId, name, messageId?, result, dispose }`。提供 `childId` 会选择本地后端，并保证返回 `messageId`。本地子级接受后续消息并支持冷恢复；外部子级只暴露一次执行，拒绝继续输入。`agentOptions` 覆盖后端支持的子级模型设置。`delivery: 'parent'` 提供面向模型的完成通知；`delivery: 'caller'` 让工作流等待结果，不发送父级通知，也不附加初始返回指导。本地父级投递需要持久化，调用方投递可以使用临时本地会话；冷恢复需要持久化与 Session 查询服务。
+`startActivation({ provider, label, name?, prompt, parent, signal, delivery })` 返回 `{ childId, runId, name, messageId?, result, dispose }`。`runId` 标识此次激活，并与其 `subagent/start` 和 `subagent/end` 事件匹配；`childId` 标识跨激活保持不变的子 Session。提供 `childId` 会选择本地后端，并保证返回 `messageId`。本地子级接受后续消息并支持冷恢复；外部子级只暴露一次执行，拒绝继续输入。`agentOptions` 覆盖后端支持的子级模型设置。`delivery: 'parent'` 提供面向模型的完成通知；`delivery: 'caller'` 让工作流等待结果，不发送父级通知，也不附加初始返回指导。本地父级投递需要持久化，调用方投递可以使用临时本地 Session；冷恢复需要持久化与 Session 查询服务。
 
 `rootOf(agent)` 通过托管本地 Agent 已有的 Activation 解析树根，并校验子级和树根的确切存活实例。中间创建者退出不改变该树根；同 id 替代实例不能继承成员身份。普通存活 Agent 返回自身，非托管的委派 Agent 会被拒绝。查询不会激活 Session。
 

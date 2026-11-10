@@ -18,7 +18,7 @@ For each next responsibility, identify one bounded outcome, confirm the relevant
 
 ### Product direction and capability status
 
-The owner-selected direction is a modular coding environment that can combine multiple model and agent runtimes with work across repositories in a coherent development workflow. Users should be able to compose reusable Skills, specialized agents, commands, and configurable hooks; resume bounded work across sessions; and use adaptive delegation, context management, memory, learning, observability, verification, permissions, and evidence provenance. Advanced Sensemaking and durable mission coordination remain optional capabilities.
+The owner-selected direction is a modular coding environment that can combine multiple model and agent runtimes with work across repositories in a coherent development workflow. Users should be able to compose reusable Skills, specialized agents, commands, and configurable hooks; resume bounded work across sessions; and use adaptive delegation, context management, memory, learning, observability, verification, permissions, and source evidence. Advanced Sensemaking and durable mission coordination remain optional capabilities.
 
 The owner-confirmed multi-model Windows pilot is complete. It establishes a multi-model delegation foundation; it does not demonstrate one conversation orchestrating several repositories, shared native sessions, common provider authentication or permission policy, or a mission-control relationship.
 
@@ -55,7 +55,7 @@ The owner selected this initial order. Each group names a user outcome and compl
 
 **Existing substrate:** DSH has persistent workspace projects, filesystem and process providers, durable Sessions, and subagents. Workspace grouping alone does not make several repositories available to one conversation.
 
-**Dependencies and meaningful completion:** Specify repository membership, working directories or worktrees, branch ownership, per-repository permissions, and result attribution. Demonstrate a user task that reads and changes at least two selected repositories, records the provenance of each change, and respects each repository’s independent controls. Do not assume a common native session or credential context.
+**Dependencies and meaningful completion:** Specify repository membership, working directories or worktrees, branch ownership, per-repository permissions, and result attribution. Demonstrate a user task that reads and changes at least two selected repositories, records the source of each change, and respects each repository’s independent controls. Do not assume a common native session or credential context.
 
 #### 2. Reusable Skills, specialized agents, commands, and configurable hooks
 
@@ -105,7 +105,7 @@ The order of repository selection, worktree ownership, and branch integration fo
 
 ### Selecting the next bounded responsibility
 
-Choose one user or maintainer outcome from this roadmap only when repository evidence supports it. Inspect the current package owner and its documented behavior first. Check the candidate source and license when external material matters. Separate existing mechanisms from the actual gap, and state integrations, permissions, and provenance before choosing a design. Define a small, observable acceptance result and the relevant repository-prescribed verification. If authority, dependency, or user value is unresolved, record that decision boundary instead of implementing an assumption.
+Choose one user or maintainer outcome from this roadmap only when repository evidence supports it. Inspect the current package owner and its documented behavior first. Check the candidate source and license when external material matters. Separate existing mechanisms from the actual gap, and state integrations, permissions, and source tracking before choosing a design. Define a small, observable acceptance result and the relevant repository-prescribed verification. If authority, dependency, or user value is unresolved, record that decision boundary instead of implementing an assumption.
 
 ## Alternatives considered
 

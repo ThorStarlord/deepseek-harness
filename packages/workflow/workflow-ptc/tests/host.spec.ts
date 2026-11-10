@@ -9,6 +9,7 @@ import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentActivation, SubagentResult } from '@deepseek-ai/dsh-subagent'
+import { SubagentRunId } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import PtcWorkflowEngine from '../src/index.ts'
 import { fakeParent } from './setup.ts'
@@ -196,7 +197,7 @@ describe('workflow runtime outcomes', () => {
       return completed
     })
     const activation = vi.spyOn(ctx.subagents, 'startActivation').mockResolvedValue({
-      childId: SessionId('ready-child'), name: 'ready-child',
+      childId: SessionId('ready-child'), runId: SubagentRunId('ready-run'), name: 'ready-child',
       result: Promise.resolve({ output: [], structured: { answer: 42 }, stopReason: 'completed' }),
       dispose: () => { disposing.resolve(undefined); return released.promise },
     })
@@ -274,7 +275,7 @@ describe('workflow runtime outcomes', () => {
       return publication.promise
     })
     const child: SubagentActivation = {
-      childId: SessionId('late-child'), name: 'late-child',
+      childId: SessionId('late-child'), runId: SubagentRunId('late-run'), name: 'late-child',
       result: Promise.resolve({ output: [], stopReason: 'aborted' }),
       dispose: disposed,
     }
@@ -302,7 +303,7 @@ describe('workflow runtime outcomes', () => {
       return completed
     })
     vi.spyOn(ctx.subagents, 'startActivation').mockResolvedValue({
-      childId: SessionId('output-pending'), name: 'output-pending', result: childResult.promise, dispose: disposed,
+      childId: SessionId('output-pending'), runId: SubagentRunId('output-run'), name: 'output-pending', result: childResult.promise, dispose: disposed,
     })
     const handle = start()
     let settled = false

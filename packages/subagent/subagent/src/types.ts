@@ -49,6 +49,8 @@ export interface SubagentActivationSpec extends Omit<SubagentStartRequest, 'labe
 export interface SubagentActivation {
   /** Stable identity of the child. */
   readonly childId: SessionId
+  /** Unique identity of this activation, matching its `subagent/start` and `subagent/end` events. */
+  readonly runId: SubagentRunId
   /**
    * Model-facing name: slash-separated names from the root when every creator
    * below the root is named, otherwise the child Session id.
@@ -135,6 +137,8 @@ export interface SubagentCapabilities {
   readonly agentPreset: boolean
   readonly outputSchema: boolean
   readonly depthLimit: boolean
+  /** Supports a trusted caller binding an in-process child's immutable sandbox root. */
+  readonly permissionRoot?: boolean
 }
 
 /**
@@ -144,6 +148,12 @@ export interface SubagentCapabilities {
 export interface SubagentStartRequest {
   /** Initial child directory; relative paths resolve against the parent's current directory. Omitted inherits that directory at start. */
   readonly cwd?: string
+  /**
+   * Trusted in-process callers may bind the child's immutable Session cwd and
+   * DSH sandbox workspace root to this absolute directory. The provider must
+   * advertise `permissionRoot`; external backends cannot enforce this DSH permission.
+   */
+  readonly permissionRoot?: string
   /**
    * Independent preset id; omission joins the parent's current generation.
    * Requires a provider with `capabilities.agentPreset` that does not inherit

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Multi-repository coordination",
+    "description": "Coordinate one coding task across two selected Git repositories."
+  }
+}

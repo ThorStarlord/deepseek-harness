@@ -152,7 +152,7 @@ declare module '@deepseek-ai/cordis' {
      * Scope-filtered dispatch keys the carrier by the subagent tree root, so a
      * root-scoped listener observes all subagent tree activations. Paired with
      * `subagent/end`.
-     * @param info - provider, child identity, and durable direct creator `parentSessionId`.
+     * @param info - provider, child Session identity, run identity, and durable direct creator `parentSessionId`.
      * @mode emit
      */
     'subagent/start'(this: Scoped<SubagentRuntime>, info: SubagentRunInfo): void
@@ -581,6 +581,13 @@ export class SubagentRuntime extends TypertRemoteService {
     if (request.agentPreset !== undefined && (!provider.capabilities.agentPreset || provider.inheritsParentContext)) {
       throw new SubagentError(
         `subagent provider "${provider.name}" does not support independent agent preset selection`,
+        'UNSUPPORTED_CAPABILITY',
+      )
+    }
+    if (request.permissionRoot !== undefined
+      && (!provider.capabilities.permissionRoot || provider.prepareContinuable === undefined || provider.inheritsParentContext)) {
+      throw new SubagentError(
+        `subagent provider "${provider.name}" cannot enforce an independent DSH permission root`,
         'UNSUPPORTED_CAPABILITY',
       )
     }

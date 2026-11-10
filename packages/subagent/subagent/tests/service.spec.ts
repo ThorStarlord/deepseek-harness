@@ -304,6 +304,7 @@ describe('SubagentRuntime', () => {
     ['agentOptions', { agentOptions: { model: 'child-model' } }],
     ['outputSchema', { outputSchema: { type: 'object', properties: {} } }],
     ['depthLimit', { maxDepth: 1 }],
+    ['permissionRoot', { permissionRoot: '/isolated/root' }],
   ] as const)('rejects unsupported %s before provider startup', async (_capability, override) => {
     const { subagents } = await service()
     const provider = new StubProvider('weak', NO_CAPS)

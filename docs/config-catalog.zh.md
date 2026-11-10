@@ -4239,6 +4239,23 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-tool-lsp -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-tool-multi-repository -->
+<a id="deepseek-aidsh-tool-multi-repository"></a>
+
+## `@deepseek-ai/dsh-tool-multi-repository`
+
+- `inject`: `tools` · `agents` · `workspaceRegistry` · `subagents` · `sandbox` · `sandboxPolicy` · `subprocess` · `shell` · `fs`
+- `source`: [`packages/workspace/tool-multi-repository/src/index.ts:35`](../packages/workspace/tool-multi-repository/src/index.ts)
+
+```ts config-catalog
+/** Provider name used by the repository-scoped child activations. */
+export interface Config {
+  /** In-process DSH provider that advertises `permissionRoot` (default `spawn`). */
+  providerName?: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-tool-multi-repository -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-tool-present -->
 <a id="deepseek-aidsh-tool-present"></a>
 

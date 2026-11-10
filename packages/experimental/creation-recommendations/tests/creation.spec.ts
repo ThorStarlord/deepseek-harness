@@ -1,6 +1,7 @@
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { appendPluginRecord, SessionId } from '@deepseek-ai/dsh-session'
+import { SubagentRunId } from '@deepseek-ai/dsh-subagent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -204,7 +205,7 @@ describe('interface creation', () => {
     expect((await f.act('cancel')).status).toBe('settled')
     f.startActivation.mockImplementationOnce(async (retry) => {
       await writeBundle(retry.cwd!, f.current()!.bundleName!)
-      return { childId: retry.childId!, result: Promise.resolve({ output: [], stopReason: 'completed', structured: { ready: true } }),
+      return { childId: retry.childId!, runId: SubagentRunId('retry-run'), result: Promise.resolve({ output: [], stopReason: 'completed', structured: { ready: true } }),
         dispose: vi.fn(async () => {}) }
     })
     await f.act('create')

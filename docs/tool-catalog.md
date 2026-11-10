@@ -49,6 +49,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-experimental-tool-worktree` | `create_worktree` | `ctx.tools`, `ctx.worktrees`, `a calling Agent` | `tool/call`, `Git branch and checkout`, `working-directory/change`, `tool/result` | - | Enabled through the Change requests & worktrees bundle on Web and Desktop; other profiles can select the standalone bundle. Creates a new branch and checkout from a pinned local commit under existing write permissions, then changes the Session directory. Leaving retains the branch and checkout. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
+| `@deepseek-ai/dsh-tool-multi-repository` | `coordinate_repositories` | `ctx.tools`, `ctx.agents`, `ctx.workspaceRegistry`, `ctx.subagents`, `ctx.sandbox`, `ctx.sandboxPolicy`, `ctx.subprocess`, `ctx.shell`, `ctx.fs` | `tool/call`, `tool/result`, `one child Session per selected repository`, `one isolated Git clone per selected repository` | - | The tool requires the `spawn` provider with the DSH `permissionRoot` capability. Its children receive separate clones and Session roots; native Codex and Claude Code providers do not advertise this permission guarantee. |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
 
 <a id="deepseek-aidsh-plugin-manager"></a>
@@ -2646,6 +2647,39 @@ Get absolute paths to bundled Python and library directories, plus bundled Pytho
 ```
 
 Source: [`packages/skill/tool-workspace-dependencies/src/index.ts`](../packages/skill/tool-workspace-dependencies/src/index.ts)
+
+<a id="deepseek-aidsh-tool-multi-repository"></a>
+
+## `@deepseek-ai/dsh-tool-multi-repository`
+
+### `coordinate_repositories`
+
+Coordinate one coding task across exactly two explicitly selected local Git Workspaces. Supply the two absolute Workspace roots. DSH starts one fresh child Session per repository in separate clean clones, waits for both results, and returns each repository, child Session, run ID, and Git evidence. The roots must be registered Workspaces, Git repository roots, and clean at the selected commit. Child writes require a sandbox backend that reports full enforcement; DSH does not restrict filesystem reads outside a Session root.
+
+```json
+{
+  "repositories": {
+    "type": "array",
+    "required": true,
+    "minItems": 2,
+    "maxItems": 2,
+    "items": {
+      "type": "string",
+      "description": "Absolute root path of one user-selected Workspace."
+    },
+    "description": "Exactly two absolute Workspace root paths, in the order whose results should be returned."
+  },
+  "task": {
+    "type": "string",
+    "required": true,
+    "description": "One self-contained coding task to perform independently in each selected repository."
+  }
+}
+```
+
+Source: [`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
+
+The tool requires the `spawn` provider with the DSH `permissionRoot` capability. Its children receive separate clones and Session roots; native Codex and Claude Code providers do not advertise this permission guarantee.
 
 <a id="deepseek-aidsh-tool-web"></a>
 

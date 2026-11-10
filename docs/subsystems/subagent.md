@@ -8,7 +8,7 @@ The unified activation API manages local conversations and external executions. 
 
 Every backend uses startActivation. Capability flags validate request options; prepareContinuable selects local Agent creation, while start selects one external execution. The model-facing tool uses parent delivery. Workflow and code mode consumers can await caller results without injecting another parent message. Historical children with unavailable descriptors remain discoverable as `mode: 'unknown'` without granting continuation capabilities; the [package README](../../packages/subagent/subagent/README.md) defines catalog persistence.
 
-Optional `cwd` selects the child's initial directory; relative paths resolve against the parent's current effective directory. Omitting it captures that directory at admission. Local child Sessions retain the parent's original project, and cold resume retains their logged directory state.
+Optional `cwd` selects the child's initial directory; relative paths resolve against the parent's current effective directory. Omitting it captures that directory at admission. Local child Sessions retain the parent's original project, and cold resume retains their logged directory state. Trusted in-process callers may request `permissionRoot` from a provider that advertises it; this binds the child Session's immutable `cwd` and DSH `workspace-write` root to an absolute directory, pins that sandbox mode, and omits inherited full-access presets. External providers cannot enforce this DSH permission.
 
 ```ts type-equiv
 /**
@@ -23,6 +23,8 @@ interface SubagentCapabilities {
   readonly agentPreset: boolean
   readonly outputSchema: boolean
   readonly depthLimit: boolean
+  /** Supports a trusted caller binding an in-process child's immutable sandbox root. */
+  readonly permissionRoot?: boolean
 }
 ```
 
@@ -53,6 +55,8 @@ interface SubagentActivationSpec extends Omit<SubagentStartRequest, 'label' | 's
 interface SubagentActivation {
   /** Stable identity of the child. */
   readonly childId: SessionId
+  /** Unique identity of this activation, matching its `subagent/start` and `subagent/end` events. */
+  readonly runId: SubagentRunId
   /**
    * Model-facing name: slash-separated names from the root when every creator
    * below the root is named, otherwise the child Session id.
@@ -78,6 +82,12 @@ interface SubagentActivation {
 interface SubagentStartRequest {
   /** Initial child directory; relative paths resolve against the parent's current directory. Omitted inherits that directory at start. */
   readonly cwd?: string
+  /**
+   * Trusted in-process callers may bind the child's immutable Session cwd and
+   * DSH sandbox workspace root to this absolute directory. The provider must
+   * advertise `permissionRoot`; external backends cannot enforce this DSH permission.
+   */
+  readonly permissionRoot?: string
   /**
    * Independent preset id; omission joins the parent's current generation.
    * Requires a provider with `capabilities.agentPreset` that does not inherit
@@ -691,7 +701,7 @@ A provider established a published child. For in-process providers, `ctx.agents.
  * Scope-filtered dispatch keys the carrier by the subagent tree root, so a
  * root-scoped listener observes all subagent tree activations. Paired with
  * `subagent/end`.
- * @param info - provider, child identity, and durable direct creator `parentSessionId`.
+ * @param info - provider, child Session identity, run identity, and durable direct creator `parentSessionId`.
  * @mode emit
  */
 'subagent/start'(this: Scoped<SubagentRuntime>, info: SubagentRunInfo): void

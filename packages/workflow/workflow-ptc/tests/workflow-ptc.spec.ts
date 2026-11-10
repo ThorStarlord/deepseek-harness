@@ -11,6 +11,7 @@ import type { WorkflowMeta, WorkflowResult, WorkflowResultInfo, WorkflowRun, Wor
 import * as ptcEngineModule from '../src/index.ts'
 import PtcWorkflowEngine, { type Config } from '../src/index.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { SubagentRunId } from '@deepseek-ai/dsh-subagent'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 
 import { fakeParent, mountPtcRuntime } from './setup.ts'
@@ -513,7 +514,7 @@ describe('dsh-workflow-ptc', { timeout: 120_000 }, () => {
         stopReason: 'completed',
       } as unknown as SubagentResult
       const start = vi.spyOn(ctx.subagents, 'startActivation').mockResolvedValue({
-        childId: SessionId('raw-invalid-child'), name: 'raw-invalid-child',
+        childId: SessionId('raw-invalid-child'), runId: SubagentRunId('raw-invalid-run'), name: 'raw-invalid-child',
         result: Promise.resolve(invalid),
         dispose: () => Promise.resolve(),
       })

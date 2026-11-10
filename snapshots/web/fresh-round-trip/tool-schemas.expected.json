@@ -137,6 +137,35 @@
       }
     },
     {
+      "name": "coordinate_repositories",
+      "description": "Coordinate one coding task across exactly two explicitly selected local Git Workspaces. Supply the two absolute Workspace roots. DSH starts one fresh child Session per repository in separate clean clones, waits for both results, and returns each repository, child Session, run ID, and Git evidence. The roots must be registered Workspaces, Git repository roots, and clean at the selected commit. Child writes require a sandbox backend that reports full enforcement; DSH does not restrict filesystem reads outside a Session root.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repositories": {
+            "type": "array",
+            "required": true,
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "string",
+              "description": "Absolute root path of one user-selected Workspace."
+            },
+            "description": "Exactly two absolute Workspace root paths, in the order whose results should be returned."
+          },
+          "task": {
+            "type": "string",
+            "required": true,
+            "description": "One self-contained coding task to perform independently in each selected repository."
+          }
+        },
+        "required": [
+          "repositories",
+          "task"
+        ]
+      }
+    },
+    {
       "name": "create_goal",
       "description": "Create a persisted goal that keeps this session working across automatic continuation rounds. Use it when the direct human request is a long-running objective, even if the user did not say \"goal\"; not for single-turn work.",
       "parameters": {

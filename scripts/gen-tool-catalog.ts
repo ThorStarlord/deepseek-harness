@@ -88,6 +88,7 @@ import type { WorkflowRun, WorkflowStartRequest } from '@deepseek-ai/dsh-workflo
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
 import * as ToolWorkflow from '@deepseek-ai/dsh-tool-workflow'
 import * as ToolWorkspaceDependencies from '@deepseek-ai/dsh-tool-workspace-dependencies'
+import * as ToolMultiRepository from '@deepseek-ai/dsh-tool-multi-repository'
 import { githubSlug } from './verify-md-links.ts'
 
 /** Attachment seam marker that makes the attachments-conditional `read_image` schema harvestable. */
@@ -144,10 +145,10 @@ function unavailableCatalogPersistence(): never {
  * mount under their shipped defaults (tool-subagent's default numeric maxDepth
  * requires `depthLimit`).
  */
-function registerCatalogSubagentProvider(ctx: Context, name: string): void {
+function registerCatalogSubagentProvider(ctx: Context, name: string, permissionRoot = false): void {
   const provider: SubagentProvider = {
     name,
-    capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true },
+    capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true, permissionRoot },
     inheritsParentContext: false,
     start: () => Promise.reject(new Error('tool-catalog provider cannot start a child')),
     // Declared so consumers configured for continuable background mode mount.
@@ -711,6 +712,25 @@ const TOOL_PACKAGES: ToolPackage[] = [
       // Schema harvest never prepares a payload; the directory need not exist.
       await ctx.plugin(ToolWorkspaceDependencies, { source: resolve(root, '.tmp/tool-catalog/primary-runtime') })
     },
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-multi-repository',
+    dir: 'tool-multi-repository',
+    source: 'packages/workspace/tool-multi-repository/src/index.ts',
+    requires: ['ctx.tools', 'ctx.agents', 'ctx.workspaceRegistry', 'ctx.subagents', 'ctx.sandbox', 'ctx.sandboxPolicy', 'ctx.subprocess', 'ctx.shell', 'ctx.fs'],
+    writes: ['tool/call', 'tool/result', 'one child Session per selected repository', 'one isolated Git clone per selected repository'],
+    async mount(ctx) {
+      await ctx.plugin(AgentRegistry)
+      await ctx.plugin(SubagentRuntime)
+      registerCatalogSubagentProvider(ctx, 'spawn', true)
+      ctx.provide('workspaceRegistry', { list: () => [] })
+      await ctx.plugin(LocalSandboxProvider)
+      await ctx.plugin(SandboxPolicy)
+      await ctx.plugin(LocalSubprocessRuntime)
+      await ctx.plugin(LocalBashExecutor)
+      await ctx.plugin(ToolMultiRepository)
+    },
+    note: 'The tool requires the `spawn` provider with the DSH `permissionRoot` capability. Its children receive separate clones and Session roots; native Codex and Claude Code providers do not advertise this permission guarantee.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-web',

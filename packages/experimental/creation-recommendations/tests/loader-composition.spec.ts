@@ -23,6 +23,7 @@ import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
 import Access from '@deepseek-ai/dsh-api-remote-access'
 import * as ActionCards from '@deepseek-ai/dsh-action-cards'
 import type { SubagentActivation, SubagentActivationSpec } from '@deepseek-ai/dsh-subagent'
+import { SubagentRunId } from '@deepseek-ai/dsh-subagent'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as Recommendations from '../src/index.ts'
 import { RESULT_TEXT, writeBundle } from './fixture.ts'
@@ -73,7 +74,7 @@ it.each(['portable-bundle', 'foreign-nested-row'] as const)('validates and insta
         await rename(join(spec.cwd!, 'index.js'), join(spec.cwd!, 'runtime.mjs'))
         await symlink('./runtime.mjs', join(spec.cwd!, 'index.js'))
       }
-      return { childId: spec.childId!, name: 'agent-1', dispose: async () => {},
+      return { childId: spec.childId!, runId: SubagentRunId('fixture-run'), name: 'agent-1', dispose: async () => {},
         result: Promise.resolve({ output: [], stopReason: 'completed', structured: { ready: true } }) }
     } })
     Object.assign(ctx.loader.builtins, { sessions: Sessions, projections: Projections, llm: Llm, prompt: SystemPrompt, tools: Tools,

@@ -8,7 +8,7 @@
 
 所有后端都使用 startActivation。能力标记校验请求选项；prepareContinuable 选择本地 Agent 创建，start 选择一次外部执行。面向模型的工具采用 parent 回传。Workflow 与 code mode 消费者可以等待 caller 结果，不额外向父代理注入消息。历史子会话的 descriptor 不可用时，以 `mode: 'unknown'` 保持可发现性，但不授予继续执行能力；[包 README](../../packages/subagent/subagent/README.zh.md) 定义目录持久化语义。
 
-可选的 `cwd` 指定子级的初始目录；相对路径以父级当前有效目录为基准解析。省略时，在准入阶段捕获该目录。本地子 Session 保留父级的原始项目，冷恢复保留其日志中的目录状态。
+可选的 `cwd` 指定子级的初始目录；相对路径以父级当前有效目录为基准解析。省略时，在准入阶段捕获该目录。本地子 Session 保留父级的原始项目，冷恢复保留其日志中的目录状态。受信任的进程内调用方可向声明此能力的提供方请求 `permissionRoot`；它会将子 Session 不可变的 `cwd` 和 DSH `workspace-write` 根目录绑定到绝对路径，固定该沙箱模式，并省略继承的 full-access preset。外部提供方无法强制执行此 DSH 权限。
 
 ```ts type-equiv
 /**
@@ -23,6 +23,8 @@ interface SubagentCapabilities {
   readonly agentPreset: boolean
   readonly outputSchema: boolean
   readonly depthLimit: boolean
+  /** Supports a trusted caller binding an in-process child's immutable sandbox root. */
+  readonly permissionRoot?: boolean
 }
 ```
 
@@ -53,6 +55,8 @@ interface SubagentActivationSpec extends Omit<SubagentStartRequest, 'label' | 's
 interface SubagentActivation {
   /** Stable identity of the child. */
   readonly childId: SessionId
+  /** Unique identity of this activation, matching its `subagent/start` and `subagent/end` events. */
+  readonly runId: SubagentRunId
   /**
    * Model-facing name: slash-separated names from the root when every creator
    * below the root is named, otherwise the child Session id.
@@ -78,6 +82,12 @@ interface SubagentActivation {
 interface SubagentStartRequest {
   /** Initial child directory; relative paths resolve against the parent's current directory. Omitted inherits that directory at start. */
   readonly cwd?: string
+  /**
+   * Trusted in-process callers may bind the child's immutable Session cwd and
+   * DSH sandbox workspace root to this absolute directory. The provider must
+   * advertise `permissionRoot`; external backends cannot enforce this DSH permission.
+   */
+  readonly permissionRoot?: string
   /**
    * Independent preset id; omission joins the parent's current generation.
    * Requires a provider with `capabilities.agentPreset` that does not inherit
@@ -693,7 +703,7 @@ A provider established a published child. For in-process providers, `ctx.agents.
  * Scope-filtered dispatch keys the carrier by the subagent tree root, so a
  * root-scoped listener observes all subagent tree activations. Paired with
  * `subagent/end`.
- * @param info - provider, child identity, and durable direct creator `parentSessionId`.
+ * @param info - provider, child Session identity, run identity, and durable direct creator `parentSessionId`.
  * @mode emit
  */
 'subagent/start'(this: Scoped<SubagentRuntime>, info: SubagentRunInfo): void

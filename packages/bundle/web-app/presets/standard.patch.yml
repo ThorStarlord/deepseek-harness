@@ -103,6 +103,8 @@
                 config:
                   provider: fork
                   toolName: subagent_fork
+              - id: tool-multi-repository
+                name: '@deepseek-ai/dsh-tool-multi-repository'
               - id: workflow-ptc
                 name: '@deepseek-ai/dsh-workflow-ptc'
                 config:
