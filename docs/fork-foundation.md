@@ -6,7 +6,7 @@ English | [中文](fork-foundation.zh.md)
 
 This personal fork explores DeepSeek Harness as a modular coding environment alongside native Codex, native Claude Code, portable Sensemaking Skills, and optional durable mission coordination. It does not select a permanent software-factory controller, override another repository's accepted decisions, or promise a unified agent session.
 
-The three-agent delegation setup is a candidate technical integration pilot, not a selected first usable product experience. The prior Divergent Exploration remains available for Coverage Assessment, Convergent Evaluation, Depth Exploration, and explicit product selection; this pilot does not preselect a direction. New routing, adapters, storage, or orchestration remain outside this foundation.
+**Owner-reported pilot status:** The Windows multi-model pilot using DSH, native Codex and native Claude Code is complete. It establishes a bounded delegation foundation, not unified native Sessions, inherited permissions, or multi-repository orchestration. The owner's modular development direction and revisable priorities live in the [proposed architecture Agent Note](../.agents/notes/proposed/architecture/2026-11-10-modular-coding-environment-roadmap.md). New routing, adapters, storage, or autonomous mission control require separate decisions.
 
 ## Reusable capabilities
 
@@ -54,9 +54,9 @@ Use the compatible Node.js and pnpm versions declared by [the root manifest](../
 
 Run-specific revisions, environment probes, executed commands, CI status, and blockers belong in the PR verification record, not in this maintained architecture reference.
 
-## Candidate technical integration pilot
+## Technical pilot and qualification ceiling
 
-After the foundation passes its applicable verification and the pilot is separately selected, configure one personal DSH profile with the existing DSH child path and both native subagent bundles, without changing provider code. Inspect the resolved profile and verify each path using an explicitly selected, read-only repository question in an isolated workspace. Compare answers with source and record permission behavior and workspace effects without presuming authority inheritance. The product's first usable experience remains subject to the prior exploration and subsequent product-selection stages. Do not introduce automatic routing, shared sessions, durable factory control, or concurrent writes.
+The owner reports completion of the Windows three-agent technical pilot. Its run-specific commands and verification receipts belong in their original execution records, not this maintained reference. The pilot does not by itself establish shared native child Sessions, authentication transfer, host-independent permission controls, automatic rollback, or multi-repository orchestration. Any future pilot should investigate a decision-changing user experience, use supported DSH profile/plugin composition, isolate workspaces, and record source revisions, permission behavior and side effects. See the [proposed modular roadmap](../.agents/notes/proposed/architecture/2026-11-10-modular-coding-environment-roadmap.md) for subsequent priorities.
 
 ## Dev Note
 

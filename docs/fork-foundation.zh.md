@@ -6,7 +6,7 @@
 
 此个人 fork 探索将 DeepSeek Harness 作为模块化编程环境，与原生 Codex、原生 Claude Code、可移植的 Sensemaking Skills 以及可选的持久任务协调能力并用。本文件不选择永久的软件工厂控制器，不推翻其他仓库已接受的决策，也不承诺统一 agent 会话。
 
-三种 agent 委派方案是候选技术集成试点，并非已选定的首个可用产品体验。此前的 Divergent Exploration 仍为未来的 Coverage Assessment、Convergent Evaluation、Depth Exploration 和显式产品选择提供依据；试点不会预先决定产品方向。新增自动路由、适配器、存储或编排仍不属于本次基础工作。
+**所有者报告的试点状态：** Windows 上使用 DSH、原生 Codex 和原生 Claude Code 的多模型试点已经完成。这为有界委派提供了基础，但不能证明原生 Session 统一、权限继承或多仓库编排。所有者的模块化开发方向和可修订的优先级记录在[拟议架构 Agent Note](../.agents/notes/proposed/architecture/2026-11-10-modular-coding-environment-roadmap.zh.md)中。新的路由、适配器、存储或自主任务控制仍需另行决策。
 
 ## 可复用能力
 
@@ -54,9 +54,9 @@ Sensemaking Skill 应保持一个规范来源。DSH 可以使用共享 `.agents/
 
 特定运行的修订标识、环境探测、实际执行命令、CI 状态和阻塞原因应保存在 PR 验证记录中，而非这份长期维护的架构参考文档。
 
-## 候选技术集成试点
+## 技术试点与验证边界
 
-只有在基础工作通过适用检查且试点另行得到选择后，才使用现有 DSH 子 agent 路径和两个原生 subagent bundle 配置一个个人 DSH Profile，不修改 provider 代码。检查解析后的 Profile，并在隔离工作区中为每条路径显式选择一个只读仓库问题。对照源码审查答案，记录权限行为与工作区副作用，不预设父子权限会自动继承。产品的首个可用体验仍需经过此前探索和后续产品选择阶段。不要引入自动路由、共享会话、持久工厂控制或并发写入。
+所有者报告 Windows 三 agent 技术试点已完成。实际运行命令及验证记录应保留在原始执行记录中，而非这份长期维护的参考文档。试点本身不能证明原生子 Session 共用、认证可转移、宿主间权限控制一致、自动回滚或多仓库编排。未来的试点应调查能够影响决策的用户体验，使用受支持的 DSH profile/插件组合，隔离工作区，并记录源码修订、权限行为与副作用。后续优先级见[拟议模块化路线图](../.agents/notes/proposed/architecture/2026-11-10-modular-coding-environment-roadmap.zh.md)。
 
 ## Dev Note
 
