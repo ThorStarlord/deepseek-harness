@@ -878,6 +878,10 @@ function docSyncLeafGates(options: {
       label: 'documentation standard tests',
       quick: true,
     }),
+    pnpmExec('doc-budget-tests', ['vitest', 'run', 'scripts/doc-budgets.spec.ts'], {
+      label: 'documentation budget tests',
+      quick: true,
+    }),
     pnpmExec('docs-site-projection', [
       'vitest', 'run', 'scripts/project-doc-site.spec.ts', 'scripts/verify-doc-site-fragments.spec.ts',
       'website/tests/mermaid-viewer.spec.ts',
