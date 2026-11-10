@@ -4,9 +4,9 @@ English | [中文](fork-foundation.zh.md)
 
 ## Summary
 
-This personal fork explores DeepSeek Harness as a modular coding environment alongside native Codex, native Claude Code, portable Sensemaking Skills, and optional durable mission coordination. It does not select a permanent software-factory controller, override another repository's accepted decisions, or promise a unified agent session.
+The owner selected DeepSeek Harness as the common execution foundation for a modular coding environment with multiple agent runtimes, repositories, and reusable capabilities. The [proposed development roadmap](../.agents/notes/proposed/feature/2026-11-10-modular-coding-environment-roadmap.md) records the intended direction, candidate sources, provisional priorities, and open decisions. The direction does not select a permanent software-factory controller, override another repository's accepted decisions, or promise a unified native agent session.
 
-The three-agent delegation setup is a candidate technical integration pilot, not a selected first usable product experience. The prior Divergent Exploration remains available for Coverage Assessment, Convergent Evaluation, Depth Exploration, and explicit product selection; this pilot does not preselect a direction. New routing, adapters, storage, or orchestration remain outside this foundation.
+The owner-confirmed multi-model Windows pilot is complete. It establishes the multi-model delegation foundation described here; it does not establish multi-repository orchestration, shared native sessions, shared authentication or permission policy, or mission control.
 
 ## Reusable capabilities
 
@@ -17,8 +17,6 @@ The three-agent delegation setup is a candidate technical integration pilot, not
 | Native Claude Code | The [Claude Code bundle](../packages/subagent/subagent-claude-code/README.md) exposes `subagent_claude_code` using a pinned native SDK/CLI query. | One-shot only; native authentication and settings; no child transcript, native resume, or rollback. |
 | Core environment | [Base-backed profiles](architecture.md) compose Cordis plugins, model adapters, filesystem/shell providers, sandbox policy, approvals, and durable Session logs. | A profile layer replaces a row's whole config; plugin presence is not a live authentication or sandbox test. |
 | Reusable cognition | The [filesystem Skill provider](../packages/skill/skill-filesystem/README.md) scans project, custom, and user roots for `SKILL.md`, loading bodies on demand. | Skill visibility in DSH does not establish identical discovery or execution in native Codex and Claude Code. |
-
-A minimal pilot configuration could reuse a base-backed Web or headless profile, the built-in DSH subagent tools, and two optional native bundles. If this pilot is separately authorized, use the supported profile/plugin mechanism rather than a replacement launcher.
 
 ## Related repository responsibilities
 
@@ -54,10 +52,10 @@ Use the compatible Node.js and pnpm versions declared by [the root manifest](../
 
 Run-specific revisions, environment probes, executed commands, CI status, and blockers belong in the PR verification record, not in this maintained architecture reference.
 
-## Candidate technical integration pilot
+## Completed multi-model Windows pilot
 
-After the foundation passes its applicable verification and the pilot is separately selected, configure one personal DSH profile with the existing DSH child path and both native subagent bundles, without changing provider code. Inspect the resolved profile and verify each path using an explicitly selected, read-only repository question in an isolated workspace. Compare answers with source and record permission behavior and workspace effects without presuming authority inheritance. The product's first usable experience remains subject to the prior exploration and subsequent product-selection stages. Do not introduce automatic routing, shared sessions, durable factory control, or concurrent writes.
+The owner-confirmed Windows pilot exercised multi-model delegation through the existing DSH integrations. Its completion is evidence of connectivity, not evidence that different providers share a session, authentication, permission policy, workspace isolation, or authority.
 
 ## Dev Note
 
-Open questions: which of A/B/C is appropriate after real use, whether a shared Skill directory is supported identically by the installed native host versions, which execution facts can be promoted into durable semantic evidence, and whether any future consolidation earns the cost of migrating existing Dark Factory state. None is resolved by this documentation-only reconnaissance.
+Open questions: which of A/B/C is appropriate after real use, whether a shared Skill directory is supported identically by the installed native host versions, which execution facts can be promoted into durable semantic evidence, and whether any future consolidation earns the cost of migrating existing Dark Factory state. The roadmap records these decisions without selecting an integration.
