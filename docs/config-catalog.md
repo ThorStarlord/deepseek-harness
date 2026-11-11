@@ -4237,6 +4237,25 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-tool-lsp -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-tool-multi-repository -->
+<a id="deepseek-aidsh-tool-multi-repository"></a>
+
+## `@deepseek-ai/dsh-tool-multi-repository`
+
+- `inject`: `tools` · `agents` · `workspaceRegistry` · `subagents` · `sandbox` · `subprocess` · `fs` · `agentPresets`
+- `source`: [`packages/workspace/tool-multi-repository/src/index.ts:25`](../packages/workspace/tool-multi-repository/src/index.ts)
+
+```ts config-catalog
+/** Read-only child composition used by repository analysis. */
+export interface Config {
+  /** Persona-only preset mounted for read-only repository analysis. */
+  readonly readOnlyAgentPreset: string
+  /** In-process DSH provider that supports a pinned read-only child policy. */
+  readonly providerName: string
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-tool-multi-repository -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-tool-present -->
 <a id="deepseek-aidsh-tool-present"></a>
 

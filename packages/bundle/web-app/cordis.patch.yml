@@ -599,3 +599,9 @@
       name: '@deepseek-ai/dsh-agent-preset-registry'
       config:
         default: standard
+
+# Repository tools must be global so independently composed read-only children
+# can inherit the three reader definitions through the trusted tool restriction.
+- insert:
+    - id: tool-multi-repository
+      name: '@deepseek-ai/dsh-tool-multi-repository'

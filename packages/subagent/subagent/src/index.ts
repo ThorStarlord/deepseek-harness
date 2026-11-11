@@ -584,6 +584,19 @@ export class SubagentRuntime extends TypertRemoteService {
         'UNSUPPORTED_CAPABILITY',
       )
     }
+    if (request.readOnly === true && (!provider.capabilities.readOnly || provider.inheritsParentContext
+      || request.toolFilter === undefined)) {
+      throw new SubagentError(
+        `subagent provider "${provider.name}" cannot pin a read-only child without an independent tool restriction`,
+        'UNSUPPORTED_CAPABILITY',
+      )
+    }
+    if (request.toolFilter !== undefined && !provider.capabilities.toolFilter) {
+      throw new SubagentError(
+        `subagent provider "${provider.name}" does not support a trusted child tool restriction`,
+        'UNSUPPORTED_CAPABILITY',
+      )
+    }
     const needs: { when: boolean; cap: keyof SubagentCapabilities }[] = [
       { when: request.agentOptions !== undefined, cap: 'agentOptions' },
       { when: request.outputSchema !== undefined, cap: 'outputSchema' },

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Multi-repository coordination",
+    "description": "Read-only analysis across two selected Git repositories."
+  }
+}

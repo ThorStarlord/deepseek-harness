@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Koordination mehrerer Repositories",
+    "description": "Schreibgeschützte Analyse von zwei ausgewählten Git-Repositories."
+  }
+}

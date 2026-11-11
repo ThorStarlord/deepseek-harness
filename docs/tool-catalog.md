@@ -49,6 +49,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-experimental-tool-worktree` | `create_worktree` | `ctx.tools`, `ctx.worktrees`, `a calling Agent` | `tool/call`, `Git branch and checkout`, `working-directory/change`, `tool/result` | - | Enabled through the Change requests & worktrees bundle on Web and Desktop; other profiles can select the standalone bundle. Creates a new branch and checkout from a pinned local commit under existing write permissions, then changes the Session directory. Leaving retains the branch and checkout. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
+| `@deepseek-ai/dsh-tool-multi-repository` | `coordinate_repositories`, `read_staged_file`, `repository_list_files`, `repository_read_file` | `ctx.tools`, `ctx.agents`, `ctx.workspaceRegistry`, `ctx.subagents`, `ctx.sandbox`, `ctx.subprocess`, `ctx.fs`, `ctx.agentPresets` | `tool/call`, `tool/result`, `one read-only child Session per selected repository` | - | The tool requires an in-process DSH provider that supports a read-only policy pin and trusted tool restriction. It provides no write workflow; on Windows, fixed Git reads use the host process because ACL enforcement is partial, while the child has no subprocess tool. |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
 
 <a id="deepseek-aidsh-plugin-manager"></a>
@@ -2646,6 +2647,89 @@ Get absolute paths to bundled Python and library directories, plus bundled Pytho
 ```
 
 Source: [`packages/skill/tool-workspace-dependencies/src/index.ts`](../packages/skill/tool-workspace-dependencies/src/index.ts)
+
+<a id="deepseek-aidsh-tool-multi-repository"></a>
+
+## `@deepseek-ai/dsh-tool-multi-repository`
+
+### `coordinate_repositories`
+
+Coordinate one read-only analysis across exactly two explicitly selected registered local Git Workspaces. DSH starts one fresh read-only child Session per repository and returns separate findings with repository identity, branch, committed revision, staged, unstaged, untracked and ignored state, child Session and run attribution. Workers inspect the live working trees; the result reports if source state changed during analysis. A user must approve the exact repository selection and task before repository contents are inspected.
+
+```json
+{
+  "repositories": {
+    "type": "array",
+    "required": true,
+    "minItems": 2,
+    "maxItems": 2,
+    "items": {
+      "type": "string",
+      "description": "Absolute root path of one registered Workspace."
+    },
+    "description": "Exactly two absolute registered Workspace roots, in result order."
+  },
+  "task": {
+    "type": "string",
+    "required": true,
+    "description": "One analysis task to perform independently in each repository."
+  }
+}
+```
+
+Source: [`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
+
+### `read_staged_file`
+
+Read the staged Git index version of one file without changing the index or working tree.
+
+```json
+{
+  "path": {
+    "type": "string",
+    "required": true,
+    "description": "One repository-relative file path."
+  }
+}
+```
+
+Source: [`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
+
+### `repository_list_files`
+
+List tracked and unignored untracked paths in this selected repository; ignored files are omitted.
+
+```json
+{}
+```
+
+Source: [`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
+
+### `repository_read_file`
+
+Read one bounded file from this selected repository working tree.
+
+```json
+{
+  "path": {
+    "type": "string",
+    "required": true,
+    "description": "One path relative to the selected repository root."
+  },
+  "offset": {
+    "type": "number",
+    "description": "1-based first line to return; defaults to 1."
+  },
+  "limit": {
+    "type": "number",
+    "description": "Maximum lines to return; defaults to 400."
+  }
+}
+```
+
+Source: [`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
+
+The tool requires an in-process DSH provider that supports a read-only policy pin and trusted tool restriction. It provides no write workflow; on Windows, fixed Git reads use the host process because ACL enforcement is partial, while the child has no subprocess tool.
 
 <a id="deepseek-aidsh-tool-web"></a>
 

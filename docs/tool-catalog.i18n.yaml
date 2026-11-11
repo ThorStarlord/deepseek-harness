@@ -9,8 +9,8 @@
   en: 6cc2cd9ced70bb09
   zh: 1c0e6cb4ba2ed637
 /tool-schema-catalog/tool-package-map:
-  en: 7b5b99bcc5cd46f4
-  zh: c1697f88326440ff
+  en: 27edb0cfd9f86479
+  zh: 6b78dfb99dd7371d
 /tool-schema-catalog/deepseek-ai-dsh-plugin-manager:
   en: e0143916bb634762
   zh: e0143916bb634762
@@ -321,8 +321,23 @@
   en: 96bffc40b80df4b8
   zh: 96bffc40b80df4b8
 /tool-schema-catalog/deepseek-ai-dsh-tool-workspace-dependencies/load-workspace-dependencies:
-  en: 77b88764ff3464e9
-  zh: a9ca7eeb15ada747
+  en: 6c3638d2e7610ce9
+  zh: 235ce3f5901a1ed3
+/tool-schema-catalog/deepseek-ai-dsh-tool-multi-repository:
+  en: 3c67df1c5ee70b5d
+  zh: 3c67df1c5ee70b5d
+/tool-schema-catalog/deepseek-ai-dsh-tool-multi-repository/coordinate-repositories:
+  en: f93a02971b226897
+  zh: d60605ab0a6f9dd3
+/tool-schema-catalog/deepseek-ai-dsh-tool-multi-repository/read-staged-file:
+  en: f80965b1624577ee
+  zh: ea05677728cea2b8
+/tool-schema-catalog/deepseek-ai-dsh-tool-multi-repository/repository-list-files:
+  en: dbb19421eef22eeb
+  zh: 8a84f1556e9f7dce
+/tool-schema-catalog/deepseek-ai-dsh-tool-multi-repository/repository-read-file:
+  en: acca81e8345ced07
+  zh: c2ce76fe5ab8324f
 /tool-schema-catalog/deepseek-ai-dsh-tool-web:
   en: 4b9918342d3aa931
   zh: 4b9918342d3aa931

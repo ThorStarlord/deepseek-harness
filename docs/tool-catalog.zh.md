@@ -53,6 +53,7 @@
 | `@deepseek-ai/dsh-experimental-tool-worktree` | `create_worktree` | `ctx.tools`, `ctx.worktrees`, `a calling Agent` | `tool/call`, `Git branch and checkout`, `working-directory/change`, `tool/result` | - | 在 Web 和 Desktop 上通过变更请求与工作树组合包启用；其他 profile 可以选择独立组合包。在现有写权限下从固定的本地提交创建新分支与检出目录，再改变 Session 工作目录。离开时保留分支与检出目录。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
+| `@deepseek-ai/dsh-tool-multi-repository` | `coordinate_repositories`、`read_staged_file`、`repository_list_files`、`repository_read_file` | `ctx.tools`、`ctx.agents`、`ctx.workspaceRegistry`、`ctx.subagents`、`ctx.sandbox`、`ctx.subprocess`、`ctx.fs`、`ctx.agentPresets` | `tool/call`、`tool/result`、每个所选仓库一个只读子 Session | - | 此工具要求进程内 DSH 提供方支持只读策略固定和可信工具限制。它不提供写入流程；在 Windows 上，固定 Git 读取会在主机进程中运行，因为 ACL 强制执行不完整，但子级没有 subprocess 工具。 |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
 
 <a id="deepseek-aidsh-plugin-manager"></a>
@@ -2653,6 +2654,89 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 ```
 
 来源：[`packages/skill/tool-workspace-dependencies/src/index.ts`](../packages/skill/tool-workspace-dependencies/src/index.ts)
+
+<a id="deepseek-aidsh-tool-multi-repository"></a>
+
+## `@deepseek-ai/dsh-tool-multi-repository`
+
+### `coordinate_repositories`
+
+跨恰好两个显式选择且已注册的本地 Git Workspace 执行一项只读分析。DSH 为每个仓库启动一个全新的只读子 Session，并分别返回发现结果、仓库身份、分支、已提交修订、暂存区、工作树、未跟踪和忽略状态、子 Session 与运行归属。工作者读取实时工作树；结果会报告分析期间源状态是否发生变化。读取仓库内容前，用户必须批准准确的仓库选择和任务。
+
+```json
+{
+  "repositories": {
+    "type": "array",
+    "required": true,
+    "minItems": 2,
+    "maxItems": 2,
+    "items": {
+      "type": "string",
+      "description": "Absolute root path of one registered Workspace."
+    },
+    "description": "Exactly two absolute registered Workspace roots, in result order."
+  },
+  "task": {
+    "type": "string",
+    "required": true,
+    "description": "One analysis task to perform independently in each repository."
+  }
+}
+```
+
+来源：[`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
+
+### `read_staged_file`
+
+读取一个文件在 Git 暂存索引中的版本，不更改索引或工作树。
+
+```json
+{
+  "path": {
+    "type": "string",
+    "required": true,
+    "description": "One repository-relative file path."
+  }
+}
+```
+
+来源：[`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
+
+### `repository_list_files`
+
+列出此所选仓库中已跟踪且未被忽略的未跟踪路径；忽略文件会被排除。
+
+```json
+{}
+```
+
+来源：[`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
+
+### `repository_read_file`
+
+读取此所选仓库工作树中的一个有大小限制的文件。
+
+```json
+{
+  "path": {
+    "type": "string",
+    "required": true,
+    "description": "One path relative to the selected repository root."
+  },
+  "offset": {
+    "type": "number",
+    "description": "1-based first line to return; defaults to 1."
+  },
+  "limit": {
+    "type": "number",
+    "description": "Maximum lines to return; defaults to 400."
+  }
+}
+```
+
+来源：[`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
+
+此工具要求进程内 DSH 提供方支持只读策略固定和可信工具限制。它不提供写入流程；在 Windows 上，固定 Git 读取会在主机进程中运行，因为 ACL 强制执行不完整，但子级没有 subprocess 工具。
 
 <a id="deepseek-aidsh-tool-web"></a>
 
