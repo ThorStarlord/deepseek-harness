@@ -102,6 +102,60 @@ describe('in-process policy inheritance', () => {
     },
   )
 
+  it('pins a read-only child without inheriting a full-access permission preset', async () => {
+    const { ctx, parent } = await setupWalled([textResponse('read-only child done')])
+    parent.session.append('permission/preset', { preset: 'danger-full-access' })
+    setSandboxMode(parent.session, 'danger-full-access')
+    ctx.provide('permissionPresets', {
+      current: (session: Session) => session === parent.session ? 'danger-full-access' : 'custom',
+    } as never)
+
+    const run = await startPreparedActivation({
+      ...spawnRequest(parent),
+      readOnly: true,
+      toolFilter: { allow: ['read'] },
+    })
+    try {
+      await run.result
+      const child = run.localAgent
+      expect(child.session.snapshotEvents()).toContainEqual(expect.objectContaining({
+        type: 'sandbox/mode', data: { mode: 'read-only', source: 'delegation' },
+      }))
+      expect(child.session.snapshotEvents().some(event => event.type === 'permission/preset')).toBe(false)
+      const descriptor = child.session.snapshotEvents().find(
+        (event): event is SessionEvent<'subagent/descriptor'> => event.type === 'subagent/descriptor',
+      )
+      expect(descriptor?.data.mode).toBe('continuable')
+      if (descriptor?.data.mode === 'continuable') {
+        expect(descriptor.data.toolFilter).toEqual({ allow: ['read'] })
+      }
+      expect(ctx.sandboxPolicy.overrideOf(child.session)).toBe('read-only')
+    } finally {
+      await run.dispose()
+    }
+  })
+
+  it('rejects read-only delegation when the provider cannot enforce the child tool filter', async () => {
+    const { ctx, parent } = await setupWalled([textResponse('must not start')])
+    const unregister = ctx.subagents.registerProvider({
+      name: 'readonly-without-filter',
+      inheritsParentContext: false,
+      capabilities: { agentOptions: false, agentPreset: false, outputSchema: false, depthLimit: false, readOnly: true, toolFilter: false },
+      prepareContinuable: async () => ({}),
+    })
+    ctx.effect(() => unregister)
+
+    await expect(ctx.subagents.startActivation({
+      ...spawnRequest(parent),
+      provider: 'readonly-without-filter',
+      label: 'read-only child without tool restriction',
+      delivery: 'caller',
+      readOnly: true,
+      toolFilter: { allow: ['read'] },
+    })).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' })
+    expect(ctx.agents.list().map(agent => agent.id)).toEqual([parent.id])
+  })
+
   it.each([
     { seedPreset: 'auto', preset: 'danger-full-access' },
     { seedPreset: 'danger-full-access', preset: 'auto' },

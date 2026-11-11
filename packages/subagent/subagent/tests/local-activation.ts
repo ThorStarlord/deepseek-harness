@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { type ContinuableCreateSpec, type SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { onTestFinished } from 'vitest'
@@ -37,7 +38,8 @@ export async function startTestActivation(
 ) {
   const { signal = new AbortController().signal, label = provider, ...task } = request
   const activation = await ctx.get('subagents')!.startActivation({ provider, label, ...task, signal, delivery: 'caller' })
-  return { ...activation, id: activation.childId, localAgent: ctx.get('agents')!.get(activation.childId)! }
+  const localAgent: Agent = ctx.agents.get(activation.childId)!
+  return { ...activation, id: activation.childId, localAgent }
 }
 
 /**
@@ -53,6 +55,8 @@ export function startPreparedActivation(request: SubagentStartRequest, prepared:
     name: provider,
     capabilities: {
       agentOptions: true, agentPreset: prepared.seed === undefined, outputSchema: true, depthLimit: true,
+      readOnly: request.readOnly === true,
+      toolFilter: request.toolFilter !== undefined,
     },
     inheritsParentContext: prepared.seed !== undefined,
     prepareContinuable: () => Promise.resolve(prepared),

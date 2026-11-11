@@ -60,6 +60,8 @@ kind: "package-reference"
 
 `startActivation({ provider, label, name?, prompt, parent, signal, delivery })` 返回 `{ childId, name, messageId?, result, dispose }`。提供 `childId` 会选择本地后端，并保证返回 `messageId`。本地子级接受后续消息并支持冷恢复；外部子级只暴露一次执行，拒绝继续输入。`agentOptions` 覆盖后端支持的子级模型设置。`delivery: 'parent'` 提供面向模型的完成通知；`delivery: 'caller'` 让工作流等待结果，不发送父级通知，也不附加初始返回指导。本地父级投递需要持久化，调用方投递可以使用临时本地会话；冷恢复需要持久化与 Session 查询服务。
 
+进程内提供方只有在声明同时支持 `readOnly` 和 `toolFilter`，并且不继承父级上下文时，才能接受同时带有 `readOnly: true` 和 `toolFilter` 的请求。管理器会固定子 Session 的 DSH `read-only` 沙箱策略，不继承自动或完全访问权限预设，并在新建和冷恢复时应用可信工具限制。这不代表操作系统级的文件系统或进程隔离；提供方仍需负责自己的执行保证。
+
 `rootOf(agent)` 通过托管本地 Agent 已有的 Activation 解析树根，并校验子级和树根的确切存活实例。中间创建者退出不改变该树根；同 id 替代实例不能继承成员身份。普通存活 Agent 返回自身，非托管的委派 Agent 会被拒绝。查询不会激活 Session。
 
 <a id="agent-names"></a>

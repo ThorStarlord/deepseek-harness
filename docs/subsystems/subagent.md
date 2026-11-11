@@ -6,7 +6,7 @@ The unified activation API manages local conversations and external executions. 
 
 ## Capabilities and activation requests
 
-Every backend uses startActivation. Capability flags validate request options; prepareContinuable selects local Agent creation, while start selects one external execution. The model-facing tool uses parent delivery. Workflow and code mode consumers can await caller results without injecting another parent message. Historical children with unavailable descriptors remain discoverable as `mode: 'unknown'` without granting continuation capabilities; the [package README](../../packages/subagent/subagent/README.md) defines catalog persistence.
+Every backend uses startActivation. Capability flags validate request options; prepareContinuable selects local Agent creation, while start selects one external execution. A local provider may advertise read-only policy pinning and trusted tool restrictions; a read-only request requires both and a provider that does not inherit parent context. The model-facing tool uses parent delivery. Workflow and code mode consumers can await caller results without injecting another parent message. Historical children with unavailable descriptors remain discoverable as `mode: 'unknown'` without granting continuation capabilities; the [package README](../../packages/subagent/subagent/README.md) defines catalog persistence.
 
 Optional `cwd` selects the child's initial directory; relative paths resolve against the parent's current effective directory. Omitting it captures that directory at admission. Local child Sessions retain the parent's original project, and cold resume retains their logged directory state.
 
@@ -23,6 +23,10 @@ interface SubagentCapabilities {
   readonly agentPreset: boolean
   readonly outputSchema: boolean
   readonly depthLimit: boolean
+  /** Supports a caller-pinned DSH read-only sandbox policy. */
+  readonly readOnly?: boolean
+  /** Supports a trusted per-child restriction over inherited global tools. */
+  readonly toolFilter?: boolean
 }
 ```
 
@@ -78,6 +82,10 @@ interface SubagentActivation {
 interface SubagentStartRequest {
   /** Initial child directory; relative paths resolve against the parent's current directory. Omitted inherits that directory at start. */
   readonly cwd?: string
+  /** Pin an in-process DSH child to `read-only`; requires `toolFilter` and provider support. */
+  readonly readOnly?: boolean
+  /** Restrict inherited global tools for this child and its cold resumes. */
+  readonly toolFilter?: ToolRestriction
   /**
    * Independent preset id; omission joins the parent's current generation.
    * Requires a provider with `capabilities.agentPreset` that does not inherit
@@ -135,7 +143,7 @@ interface ResolvedSubagentStartRequest extends SubagentStartRequest {
 
 ## Local children and activations
 
-Spawn alone supports an independent `agentPreset`; omission and fork inherit the parent's active composition. The [child preset rules](../../packages/subagent/subagent/README.md#restoring-child-composition) define explicit selection, event ordering, and historical restoration.
+Spawn alone supports an independent `agentPreset`; omission and fork inherit the parent's active composition. A spawn read-only request pins `sandbox/mode` to `read-only`, drops inherited automatic or full-access permission presets, and applies its `toolFilter` during creation and cold resume. Other providers must advertise both capabilities and cannot inherit parent context; otherwise creation rejects with `UNSUPPORTED_CAPABILITY`. The [child preset rules](../../packages/subagent/subagent/README.md#restoring-child-composition) define explicit selection, event ordering, and historical restoration.
 
 A local child has a durable Session and at most one live activation. The manager reserves identity and capacity, prepares the child through its backend, and owns input admission, cold resume, and child-first disposal. The activation result settles after resource release and completion notification. Disposal reports cleanup failure separately without replacing a captured result. Structured capture closes input for that activation; a later cold resume does not inherit the output schema.
 

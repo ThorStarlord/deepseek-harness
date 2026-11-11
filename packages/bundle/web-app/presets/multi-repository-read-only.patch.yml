@@ -1,0 +1,13 @@
+# Minimal child composition for read-only repository analysis.
+- insert:
+    - id: preset-multi-repository-read-only
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: multi-repository-read-only
+        order: 10
+        description: Read-only file inspection for explicitly selected repositories.
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a read-only repository analysis agent.

@@ -11,7 +11,7 @@ import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
-import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
+import type { ObjectJsonSchema, ToolRestriction } from '@deepseek-ai/dsh-tools'
 
 /** Identifies one subagent residency epoch across its lifecycle event pair. */
 export type SubagentRunId = Branded<'SubagentRunId'>
@@ -135,6 +135,10 @@ export interface SubagentCapabilities {
   readonly agentPreset: boolean
   readonly outputSchema: boolean
   readonly depthLimit: boolean
+  /** Supports a caller-pinned DSH read-only sandbox policy. */
+  readonly readOnly?: boolean
+  /** Supports a trusted per-child restriction over inherited global tools. */
+  readonly toolFilter?: boolean
 }
 
 /**
@@ -144,6 +148,10 @@ export interface SubagentCapabilities {
 export interface SubagentStartRequest {
   /** Initial child directory; relative paths resolve against the parent's current directory. Omitted inherits that directory at start. */
   readonly cwd?: string
+  /** Pin an in-process DSH child to `read-only`; requires `toolFilter` and provider support. */
+  readonly readOnly?: boolean
+  /** Restrict inherited global tools for this child and its cold resumes. */
+  readonly toolFilter?: ToolRestriction
   /**
    * Independent preset id; omission joins the parent's current generation.
    * Requires a provider with `capabilities.agentPreset` that does not inherit

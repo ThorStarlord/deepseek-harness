@@ -9,10 +9,13 @@
 import { globSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
+import Group from '@deepseek-ai/cordis-plugin-group'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionPersistence from '@deepseek-ai/dsh-session-persistence'
@@ -88,6 +91,7 @@ import type { WorkflowRun, WorkflowStartRequest } from '@deepseek-ai/dsh-workflo
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
 import * as ToolWorkflow from '@deepseek-ai/dsh-tool-workflow'
 import * as ToolWorkspaceDependencies from '@deepseek-ai/dsh-tool-workspace-dependencies'
+import * as ToolMultiRepository from '@deepseek-ai/dsh-tool-multi-repository'
 import { githubSlug } from './verify-md-links.ts'
 
 /** Attachment seam marker that makes the attachments-conditional `read_image` schema harvestable. */
@@ -144,10 +148,13 @@ function unavailableCatalogPersistence(): never {
  * mount under their shipped defaults (tool-subagent's default numeric maxDepth
  * requires `depthLimit`).
  */
-function registerCatalogSubagentProvider(ctx: Context, name: string): void {
+function registerCatalogSubagentProvider(ctx: Context, name: string, readOnly = false): void {
   const provider: SubagentProvider = {
     name,
-    capabilities: { agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true },
+    capabilities: {
+      agentOptions: true, agentPreset: true, outputSchema: true, depthLimit: true,
+      readOnly, toolFilter: readOnly,
+    },
     inheritsParentContext: false,
     start: () => Promise.reject(new Error('tool-catalog provider cannot start a child')),
     // Declared so consumers configured for continuable background mode mount.
@@ -711,6 +718,33 @@ const TOOL_PACKAGES: ToolPackage[] = [
       // Schema harvest never prepares a payload; the directory need not exist.
       await ctx.plugin(ToolWorkspaceDependencies, { source: resolve(root, '.tmp/tool-catalog/primary-runtime') })
     },
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-multi-repository',
+    dir: 'tool-multi-repository',
+    source: 'packages/workspace/tool-multi-repository/src/index.ts',
+    requires: ['ctx.tools', 'ctx.agents', 'ctx.workspaceRegistry', 'ctx.subagents', 'ctx.sandbox', 'ctx.subprocess', 'ctx.fs', 'ctx.agentPresets'],
+    writes: ['tool/call', 'tool/result', 'one read-only child Session per selected repository'],
+    async mount(ctx) {
+      await ctx.plugin(Loader)
+      ctx.loader.builtins.group = Group
+      await ctx.plugin(AgentRegistry)
+      await ctx.plugin(SubagentRuntime)
+      registerCatalogSubagentProvider(ctx, 'spawn', true)
+      await ctx.plugin(AgentPresets, { default: 'multi-repository-read-only' })
+      await ctx.inject(['agentPresets'], async (presetContext) => {
+        const unregisterPreset = await presetContext.agentPresets.register({
+          id: 'multi-repository-read-only',
+          plugins: [{ name: '@deepseek-ai/dsh-persona' }],
+        })
+        presetContext.effect(() => unregisterPreset)
+      })
+      ctx.provide('workspaceRegistry', { list: () => [] })
+      await ctx.plugin(LocalSandboxProvider)
+      await ctx.plugin(LocalSubprocessRuntime)
+      await ctx.plugin(ToolMultiRepository)
+    },
+    note: 'The tool requires an in-process DSH provider that supports a read-only policy pin and trusted tool restriction. It provides no write workflow; on Windows, fixed Git reads use the host process because ACL enforcement is partial, while the child has no subprocess tool.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-web',

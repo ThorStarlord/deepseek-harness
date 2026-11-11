@@ -242,15 +242,17 @@ export interface DelegatedPolicyOverrides {
  * inherited only through the in-process DSH path so either can replace a stale
  * same-bundle fork value. Only the parent session's explicit sandbox override
  * is captured — never deployment defaults or one-shot grants — and the approval
- * policy is pinned to `'never'` regardless of the parent's own policy.
+ * policy is pinned to `'never'` regardless of the parent's own policy. A read-only
+ * request instead pins `'read-only'` and inherits no permission preset.
  * @param parent - the delegating parent agent.
+ * @param readOnly - whether to pin the child to read-only DSH policy.
  * @returns the sandbox override (or `undefined` without one) and the approval pin.
  */
-export function captureDelegatedPolicyOverrides(parent: Agent): DelegatedPolicyOverrides {
+export function captureDelegatedPolicyOverrides(parent: Agent, readOnly = false): DelegatedPolicyOverrides {
   const preset = parent.ctx.get('permissionPresets')?.current(parent.session)
   return {
-    permissionPreset: preset === 'auto' || preset === 'danger-full-access' ? preset : undefined,
-    sandboxMode: parent.ctx.get('sandboxPolicy')?.overrideOf(parent.session),
+    permissionPreset: !readOnly && (preset === 'auto' || preset === 'danger-full-access') ? preset : undefined,
+    sandboxMode: readOnly ? 'read-only' : parent.ctx.get('sandboxPolicy')?.overrideOf(parent.session),
     approvalPolicy: parent.ctx.get('approval') === undefined ? undefined : 'never',
   }
 }

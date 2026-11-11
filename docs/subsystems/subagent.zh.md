@@ -6,7 +6,7 @@
 
 ## 能力与 activation 请求
 
-所有后端都使用 startActivation。能力标记校验请求选项；prepareContinuable 选择本地 Agent 创建，start 选择一次外部执行。面向模型的工具采用 parent 回传。Workflow 与 code mode 消费者可以等待 caller 结果，不额外向父代理注入消息。历史子会话的 descriptor 不可用时，以 `mode: 'unknown'` 保持可发现性，但不授予继续执行能力；[包 README](../../packages/subagent/subagent/README.zh.md) 定义目录持久化语义。
+每个后端都使用 startActivation。能力标记会校验请求选项；prepareContinuable 选择本地 Agent 创建，start 选择一次外部执行。本地提供方可以声明固定只读策略和可信工具限制；只读请求必须同时满足这两项能力，且提供方不能继承父级上下文。面向模型的工具采用 parent 回传。Workflow 与 code mode 消费者可以等待 caller 结果，不额外向父代理注入消息。历史子会话的 descriptor 不可用时，以 `mode: 'unknown'` 保持可发现性，但不授予继续执行能力；[包 README](../../packages/subagent/subagent/README.zh.md) 定义目录持久化语义。
 
 可选的 `cwd` 指定子级的初始目录；相对路径以父级当前有效目录为基准解析。省略时，在准入阶段捕获该目录。本地子 Session 保留父级的原始项目，冷恢复保留其日志中的目录状态。
 
@@ -23,6 +23,10 @@ interface SubagentCapabilities {
   readonly agentPreset: boolean
   readonly outputSchema: boolean
   readonly depthLimit: boolean
+  /** Supports a caller-pinned DSH read-only sandbox policy. */
+  readonly readOnly?: boolean
+  /** Supports a trusted per-child restriction over inherited global tools. */
+  readonly toolFilter?: boolean
 }
 ```
 
@@ -78,6 +82,10 @@ interface SubagentActivation {
 interface SubagentStartRequest {
   /** Initial child directory; relative paths resolve against the parent's current directory. Omitted inherits that directory at start. */
   readonly cwd?: string
+  /** Pin an in-process DSH child to `read-only`; requires `toolFilter` and provider support. */
+  readonly readOnly?: boolean
+  /** Restrict inherited global tools for this child and its cold resumes. */
+  readonly toolFilter?: ToolRestriction
   /**
    * Independent preset id; omission joins the parent's current generation.
    * Requires a provider with `capabilities.agentPreset` that does not inherit
@@ -134,6 +142,8 @@ interface ResolvedSubagentStartRequest extends SubagentStartRequest {
 ```
 
 ## 本地子代理与 activation
+
+Spawn 的只读请求会固定 `sandbox/mode` 为 `read-only`，不继承自动或完全访问权限预设，并在新建和冷恢复时应用 `toolFilter`。其他提供方必须声明这两项能力且不能继承父级上下文，否则会以 `UNSUPPORTED_CAPABILITY` 拒绝创建。
 
 只有 spawn 支持独立的 `agentPreset`；省略选择与 fork 都继承父方的活跃组装。[子级 preset 规则](../../packages/subagent/subagent/README.zh.md#restoring-child-composition)定义显式选择、事件顺序和历史恢复行为。
 

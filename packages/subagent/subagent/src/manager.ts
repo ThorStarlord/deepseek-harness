@@ -342,10 +342,11 @@ export class SubagentManager {
         ...agentProvider !== undefined ? { agentProvider } : {},
         ...agentModel !== undefined ? { agentModel } : {},
         ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
+        ...spec.toolFilter !== undefined ? { toolFilter: spec.toolFilter } : {},
       })
       // Capture before the first await: a later parent switch belongs to the
       // parent's future, not to this child.
-      const delegatedPolicies = captureDelegatedPolicyOverrides(parent)
+      const delegatedPolicies = captureDelegatedPolicyOverrides(parent, spec.readOnly)
 
       const cwd = await this.resolveDirectory(spec, signal)
       const prepared = await prepare({
@@ -389,7 +390,10 @@ export class SubagentManager {
             descriptor,
           },
           agentOptions,
-          composition: { agentPreset: spec.agentPreset },
+          composition: {
+            agentPreset: spec.agentPreset,
+            toolFilter: spec.toolFilter,
+          },
           signal,
           delivery: spec.delivery,
           outputSchema: spec.outputSchema,

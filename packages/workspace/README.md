@@ -25,6 +25,7 @@ The workspace family lets a host product keep an ordered list of named projects 
 | Package | Role | ctx key |
 |---|---|---|
 | [`workspace`](workspace/README.md) | Provides named, ordered projects with the sessions that ran in each directory | `ctx.workspaceRegistry` |
+| [`tool-multi-repository`](tool-multi-repository/README.md) | Coordinates read-only analysis across two explicitly selected Workspace Git repositories | `coordinate_repositories` |
 
 -----
 

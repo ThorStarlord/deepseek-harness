@@ -60,6 +60,8 @@ At capacity, creation or cold resume rejects with `ACTIVATION_LIMIT_REACHED` (br
 
 `startActivation({ provider, label, name?, prompt, parent, signal, delivery })` returns `{ childId, name, messageId?, result, dispose }`. Supplying `childId` selects a local backend and guarantees `messageId`. Local children accept later messages and can cold-resume; external children expose one execution and reject continuation. `agentOptions` overrides supported child model settings. `delivery: 'parent'` supplies the model-facing completion notice; `delivery: 'caller'` lets workflows await the result without a parent notice or initial return guidance. Local parent delivery requires persistence; caller delivery can use an ephemeral local session. Cold resume requires persistence and Session query.
 
+An in-process provider can accept `readOnly: true` together with `toolFilter` only when it advertises both capabilities and does not inherit parent context. The manager pins the child to the DSH `read-only` sandbox policy, omits inherited automatic or full-access permission presets, and applies the trusted tool restriction to fresh creation and cold resume. This does not claim OS-level filesystem or process confinement; the provider remains responsible for its own execution guarantees.
+
 `rootOf(agent)` resolves a managed local Agent through its existing Activation and checks the exact live child and root instances. Intermediate creators can leave without changing that root; same-id replacements cannot inherit membership. Ordinary live Agents resolve to themselves, while unmanaged delegated Agents are rejected. The query does not activate Sessions.
 
 <a id="agent-names"></a>
