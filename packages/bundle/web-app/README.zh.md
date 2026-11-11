@@ -65,6 +65,10 @@ dsh --profile web --no-open --port 8080
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-web-app)列出了本运行时插件接受的字段及其 JSDoc。随发行版交付的组合插入 `schedule` 服务行与 `ui-schedule` 任务页面行，时钟读数与四个提醒工具则属于 `standard`、`cordis` 与 `ptc` 三个 preset。这三个 preset 的 `tool-subagent` 与 `tool-subagent-fork` 两行都 deny 这四个工具，因此被委派子 agent 的作用域不会列出它们。
 
+### 基于证据的完成报告
+
+在标准 Web 会话中，Agent 可在报告已完成的编码或仓库工作前加载此 Skill。它会区分观察到的更改与工具结果、跳过或受阻的检查、当前 Session 中未看到的验证以及已知限制。DSH 现有 Skill 目录会公开其简短描述；只有 Agent 为匹配的任务选择它时，才会加载完整指导。它不会自动检查或认证 Session 证据、证明语义正确性或启动更多验证。
+
 <a id="public-deployments"></a>
 ### 监听、信任与公开部署
 
