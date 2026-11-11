@@ -4,14 +4,15 @@
 // prompt, injects the rendered body as instructions context named after the
 // skill, and starts a turn answered by the replay adapter. Chat shows the
 // gesture bubble and reply; the Session retains the injected instructions.
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import type { ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { ReplayEntry, ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
 import {
   assertFixtureInventory,
   captureExpandedTurnProcessAria,
@@ -30,9 +31,12 @@ const UI_EXPANDED_EXPECTED = join(SNAPSHOT_DIR, 'ui-expanded.expected.md')
 const MODE = webSnapshotMode()
 
 const SKILL_NAME = 'user-invoke-demo'
+const COMPLETION_SKILL_NAME = 'evidence-aware-completion'
 const FILE_NAME = 'meeting notes-this-is-a-very-long-filename-for-testing-user-message-file-references-and-preview-layout.md'
 const ARGS_TEXT = `@"${FILE_NAME}" and confirm the fixture wiring`
 const REPLY = 'USER_INVOKE_REPLY acknowledged; following the injected skill.'
+const CASUAL_REPLY = 'CASUAL_REPLY; no completion report was requested.'
+const COMPLETION_REPLY = 'No test execution is visible in this Session; I cannot confirm whether tests ran elsewhere.'
 
 async function seedUserOnlySkill(workspaceCwd: string): Promise<void> {
   const directory = join(workspaceCwd, 'workspace', '.agents', 'skills', SKILL_NAME)
@@ -49,16 +53,43 @@ async function seedUserOnlySkill(workspaceCwd: string): Promise<void> {
   ].join('\n'))
 }
 
-const REPLAY: ReplayOverrideDoc = [{
-  kind: 'chunks',
-  chunks: [
-    { type: 'block-start', index: 0, blockType: 'text' },
-    { type: 'text-delta', index: 0, text: REPLY },
-    { type: 'block-end', index: 0, block: { type: 'text', text: REPLY } },
-    { type: 'usage', usage: { inputTokens: 256, outputTokens: 16 } },
-    { type: 'finish', reason: { kind: 'stop' } },
-  ],
-}]
+function replayText(text: string): ReplayEntry {
+  return {
+    kind: 'chunks' as const,
+    chunks: [
+      { type: 'block-start', index: 0, blockType: 'text' },
+      { type: 'text-delta', index: 0, text },
+      { type: 'block-end', index: 0, block: { type: 'text' as const, text } },
+      { type: 'usage', usage: { inputTokens: 256, outputTokens: 16 } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ],
+  }
+}
+
+function skillToolCall(): ReplayEntry {
+  const id = ToolCallId('evidence-completion-skill')
+  const argumentsJson = JSON.stringify({ name: COMPLETION_SKILL_NAME })
+  return {
+    kind: 'chunks',
+    chunks: [
+      { type: 'block-start', index: 0, blockType: 'tool-call' },
+      { type: 'tool-call-delta', index: 0, id, name: 'skill', argumentsDelta: argumentsJson },
+      {
+        type: 'block-end', index: 0,
+        block: { type: 'tool-call', id, name: 'skill', arguments: argumentsJson },
+      },
+      { type: 'usage', usage: { inputTokens: 256, outputTokens: 16 } },
+      { type: 'finish', reason: { kind: 'tool-calls' } },
+    ],
+  }
+}
+
+const REPLAY: ReplayOverrideDoc = [
+  replayText(REPLY),
+  replayText(CASUAL_REPLY),
+  skillToolCall(),
+  replayText(COMPLETION_REPLY),
+]
 
 describe.skipIf(MODE === 'record')('web e2e: user-explicit skill invocation through the composer', () => {
   let scaffold: WebScaffold
@@ -66,6 +97,7 @@ describe.skipIf(MODE === 'record')('web e2e: user-explicit skill invocation thro
   let page: Page
   let replayDir: string
   let tripwire: ReturnType<typeof watchConsole>
+  let conversationSessionId: Awaited<ReturnType<WebScaffold['whenTurnSettled']>> | undefined
 
   beforeAll(async () => {
     replayDir = await mkdtemp(join(tmpdir(), 'dsh-skill-user-invoke-replay-'))
@@ -123,7 +155,7 @@ describe.skipIf(MODE === 'record')('web e2e: user-explicit skill invocation thro
     expect(await bubble.textContent()).toBe(`/${SKILL_NAME}`)
 
     await page.getByText('USER_INVOKE_REPLY', { exact: false }).first().waitFor({ timeout: 20_000 })
-    const sessionId = await settled
+    const sessionId = conversationSessionId = await settled
     const process = page.locator('[data-turn-process]')
     await process.waitFor({ state: 'visible', timeout: 10_000 })
     // The chip derives from the step's logged injection, so it must survive
@@ -191,6 +223,59 @@ describe.skipIf(MODE === 'record')('web e2e: user-explicit skill invocation thro
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   })
+
+  it('loads completion guidance only for a matching engineering report', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-evidence-aware-completion'))
+    const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
+    const session = conversationSessionId === undefined
+      ? undefined
+      : scaffold.ctx.sessions.get(conversationSessionId)
+    if (session === undefined) throw new Error('completion guidance Session is unavailable')
+    const casualSettled = scaffold.whenTurnSettled()
+    await composer.fill('What are three kinds of tea?')
+    await composer.press('Enter')
+    await page.getByText(CASUAL_REPLY, { exact: true }).waitFor({ timeout: 20_000 })
+    await casualSettled
+    const catalogEvents = session.snapshotEvents().filter(event => (
+      event.type === 'user/message' && event.data.source.kind === 'skill-catalog'
+    ))
+    expect(catalogEvents.flatMap(event => event.type === 'user/message'
+      && event.data.source.kind === 'skill-catalog' ? event.data.source.entries : []))
+      .toContainEqual(expect.objectContaining({ name: COMPLETION_SKILL_NAME }))
+    const catalogText = catalogEvents.flatMap(event => event.type === 'user/message'
+      && event.data.source.kind === 'skill-catalog'
+      ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
+      : []).join('\n')
+    expect(catalogText).not.toContain('**Not observed:**')
+    const callsBeforeCompletion = session.snapshotEvents().filter(event => event.type === 'tool/call').length
+    expect(callsBeforeCompletion).toBe(0)
+
+    await composer.fill('Summarize this completed engineering work and report only verification supported by this Session.')
+    const completionSettled = scaffold.whenTurnSettled()
+    await composer.press('Enter')
+    await page.getByText(COMPLETION_REPLY, { exact: true }).waitFor({ timeout: 20_000 })
+    await completionSettled
+
+    const events = session.snapshotEvents()
+    const skillCall = events.find(event => event.type === 'tool/call' && event.data.name === 'skill')
+    expect(skillCall?.type === 'tool/call' ? JSON.parse(skillCall.data.arguments) : undefined)
+      .toEqual({ name: COMPLETION_SKILL_NAME })
+    const skillResult = skillCall?.type === 'tool/call'
+      ? events.find(event => event.type === 'tool/result'
+        && event.data.message.toolCallId === skillCall.data.callId)
+      : undefined
+    const skillResultText = skillResult?.type === 'tool/result'
+      ? skillResult.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+      : ''
+    expect(skillResultText).toContain(`<skill_content name="${COMPLETION_SKILL_NAME}">`)
+    expect(skillResultText).toContain('**Not observed:**')
+    expect(skillResult?.type === 'tool/result' ? skillResult.data.message.isError : true).toBeFalsy()
+    expect(events.filter(event => event.type === 'tool/call')).toHaveLength(callsBeforeCompletion + 1)
+    expect(await readFile(join(scaffold.workspaceCwd, 'workspace', FILE_NAME), 'utf8'))
+      .toBe('# Meeting notes\n\nSent reference preview.\n')
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
+  }, 60_000)
 
   it('keeps its snapshot inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, ['ui.expected.md', 'ui-expanded.expected.md'])

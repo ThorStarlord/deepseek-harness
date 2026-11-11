@@ -54,6 +54,10 @@ The `minimal` agent preset uses a persistent shell, the `read_image` tool, and a
 
 Open a Web conversation at the repository to review and run `/review [focus]`. The bundle mounts the command and its read-only reviewer preset; see [`dsh-command-code-review`](../../interaction/command-code-review/README.md) for the included evidence, project and user Skill lookup, configuration, and host limits.
 
+### Evidence-aware completion
+
+In a standard Web conversation, the agent can load this Skill before reporting completed coding or repository work. The Skill distinguishes observed changes from tool results, skipped or blocked checks, verification not visible in the current Session, and known limits. DSH's existing Skill catalog exposes its short description; the full guidance loads only when the agent selects it for a matching task. It does not automatically inspect or certify Session evidence, prove semantic correctness, or start more verification.
+
 `--host` and `--port` configure the listener; `--tls-cert` and `--tls-key` make it serve HTTPS; `--public-url` names the advertised public HTTP(S) root the GUI is reached at behind a prefix-stripping proxy, and `--trusted-host` adds further accepted authorities. All are described under [Listening, trust, and public deployments](#public-deployments), and the `tls` field those flags set is documented with the [carrier's config](../../../docs/subsystems/web-server.md#config):
 
 | Field | Default | Meaning |
