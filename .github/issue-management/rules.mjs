@@ -203,6 +203,19 @@ export function retainIssueReferences(references, issues) {
 }
 
 /**
+ * Detect the factual disclosure required when repository Issues are disabled.
+ * @param {string} body Pull-request body.
+ * @returns {boolean} Whether ordinary prose contains an accepted disclosure.
+ */
+export function hasIssueDisabledDisclosure(body) {
+  const prose = stripIgnoredMarkdown(body).toLowerCase()
+  return (
+    prose.includes('issues are disabled for this repository, so no same-repository issue reference is available.') ||
+    prose.includes('此仓库已禁用 issues，因此无法提供同仓库 issue 引用。')
+  )
+}
+
+/**
  * Validate one Issue with its Project status.
  * @param {{labels: string[], type: string|null, priority: string|null, status: string|null, state: string, stateReason: string|null}} issue Issue snapshot.
  * @returns {string[]} Validation errors.
@@ -246,7 +259,7 @@ export function isInvalidIssueLabel(label) {
 
 /**
  * Validate PR metadata and its referenced Issues.
- * @param {{authorType: string, labels: string[], references: ReturnType<typeof parseReferences>, issues: Map<number, {priority: string|null}>}} input PR snapshot.
+ * @param {{authorType: string, labels: string[], references: ReturnType<typeof parseReferences>, issues: Map<number, {priority: string|null}>, issuesEnabled?: boolean, issueDisabledDisclosure?: boolean}} input PR snapshot.
  * @returns {string[]} Validation errors.
  */
 export function validatePullRequest(input) {
@@ -261,7 +274,11 @@ export function validatePullRequest(input) {
   const priorities = input.labels.filter((label) => PRIORITIES.includes(label))
   const areas = input.labels.filter((label) => label.startsWith('area/'))
 
-  if (input.references.all.length === 0) {
+  if (input.issuesEnabled === false) {
+    if (!input.issueDisabledDisclosure) {
+      errors.push('仓库禁用 Issues 时，PR 正文必须说明无法提供同仓库 Issue 引用')
+    }
+  } else if (input.references.all.length === 0) {
     errors.push('PR 正文必须引用至少一个同仓库 Issue；PR 编号（包括堆叠依赖 PR）不算 Issue 引用')
   }
   if (kinds.length !== 1) {
@@ -274,9 +291,13 @@ export function validatePullRequest(input) {
   if (sourceLabels.length > 0) errors.push(`source/* 仅用于 Issue：${sourceLabels.join(', ')}`)
   if (priorities.length > 1) errors.push(`PR 最多有一个 p0–p3，当前为 ${priorities.length}`)
   if (areas.length === 0) errors.push('PR 必须至少有一个 area/*')
-  for (const number of input.references.all) {
-    if (!input.issues.has(number)) errors.push(`#${number} 不是同仓库 Issue`)
+  if (input.issuesEnabled !== false) {
+    for (const number of input.references.all) {
+      if (!input.issues.has(number)) errors.push(`#${number} 不是同仓库 Issue`)
+    }
   }
+
+  if (input.issuesEnabled === false) return errors
 
   const resolving = input.references.resolving
     .map((number) => [number, input.issues.get(number)])

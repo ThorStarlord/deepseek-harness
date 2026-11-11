@@ -2,7 +2,7 @@
 
 ## Motivation
 
-<!-- 引用同仓库 Issue：Fixes #N 或 Refs #N。 -->
+<!-- 启用 Issues 时按 Issue policy 引用同仓库 Issue；禁用时写明“此仓库已禁用 Issues，因此无法提供同仓库 Issue 引用。” -->
 
 ## Changes
 

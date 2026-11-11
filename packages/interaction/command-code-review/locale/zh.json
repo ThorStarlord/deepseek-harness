@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "代码审查",
+    "description": "使用只读 agent 检查当前已暂存、未暂存和未跟踪的 Git 更改。"
+  }
+}

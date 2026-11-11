@@ -6,6 +6,7 @@ import process from 'node:process'
 import config from './config.json' with { type: 'json' }
 import { api, projectContext } from './github.mjs'
 import {
+  hasIssueDisabledDisclosure,
   parseReferences,
   retainIssueReferences,
   requiresPullRequestPolicy,
@@ -63,7 +64,13 @@ export async function pullRequestSnapshot(number, includeProject = true) {
   snapshot.reviewRequestCount = reviewRequests.users.length + reviewRequests.teams.length
   snapshot.reviewCount = reviews.length
   if (!requiresPullRequestPolicy(snapshot)) return snapshot
-  Object.assign(snapshot, await resolvingReferencesSnapshot(number, pull))
+  const repository = await api(`/repos/${config.organization}/${config.repository}`)
+  if (typeof repository.has_issues !== 'boolean') {
+    throw new Error('仓库响应缺少 has_issues 布尔值')
+  }
+  snapshot.issuesEnabled = repository.has_issues
+  snapshot.issueDisabledDisclosure = hasIssueDisabledDisclosure(pull.body ?? '')
+  if (snapshot.issuesEnabled) Object.assign(snapshot, await resolvingReferencesSnapshot(number, pull))
   if (includeProject) {
     for (const issueNumber of snapshot.references.resolving) {
       const context = await projectContext(issueNumber)
@@ -97,7 +104,7 @@ const EXEMPT_MESSAGE =
 export async function runPullRequestPreflight(event) {
   const pull = await pullRequestSnapshot(event.pull_request.number, false)
   const eligible = requiresPullRequestPolicy(pull)
-  const needsProject = eligible && pull.references.resolving.length > 0
+  const needsProject = eligible && pull.issuesEnabled !== false && pull.references.resolving.length > 0
   if (process.env.GITHUB_OUTPUT) {
     fs.appendFileSync(
       process.env.GITHUB_OUTPUT,

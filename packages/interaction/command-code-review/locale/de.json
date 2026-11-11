@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Code-Review",
+    "description": "Prüft aktuelle gestagte, nicht gestagte und nicht verfolgte Git-Änderungen mit einem schreibgeschützten Agenten."
+  }
+}

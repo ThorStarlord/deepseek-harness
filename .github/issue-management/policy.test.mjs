@@ -15,6 +15,7 @@ import {
 } from './pull-request.mjs'
 import {
   nextResolvingIssueStatus,
+  hasIssueDisabledDisclosure,
   parseReferences,
   projectDate,
   retainIssueReferences,
@@ -152,6 +153,8 @@ const reviewedPull = (labels) => ({
   reviewRequestCount: 1,
   reviewCount: 0,
   labels,
+  issuesEnabled: true,
+  issueDisabledDisclosure: false,
   references: { all: [2], resolving: [], related: [2] },
   issues: new Map([[2, { priority: null }]]),
 })
@@ -218,7 +221,7 @@ test('keeps the pull request template aligned with the dsh-pr-description skill'
     '## AI Usage',
   ])
   assert.doesNotMatch(source, /^### /m)
-  assert.match(source, /^## Motivation\n\n<!-- [^\n]*Fixes #N[^\n]* -->$/m, 'the template prompts for an Issue reference')
+  assert.match(source, /^## Motivation\n\n<!-- [^\n]*启用 Issues 时[^\n]*禁用时[^\n]* -->$/m, 'the template distinguishes enabled and disabled Issues')
   assert.match(source, /- <!-- [^\n]+ -->\n\n  <details>\n  <summary>Proof<\/summary>/)
   assert.equal(source.match(/<details>/g)?.length, 1)
   assert.equal(source.match(/<\/details>/g)?.length, 1)
@@ -667,6 +670,46 @@ test('allows informational references without cross-object constraints', () => {
   assert.deepEqual(errors, [])
 })
 
+test('recognizes the disabled-Issues disclosure only in ordinary prose', () => {
+  assert.equal(
+    hasIssueDisabledDisclosure('Issues are disabled for this repository, so no same-repository Issue reference is available.'),
+    true,
+  )
+  assert.equal(
+    hasIssueDisabledDisclosure('此仓库已禁用 Issues，因此无法提供同仓库 Issue 引用。'),
+    true,
+  )
+  for (const body of [
+    '<!-- Issues are disabled for this repository, so no same-repository Issue reference is available. -->',
+    '```text\nIssues are disabled for this repository, so no same-repository Issue reference is available.\n```',
+    '`Issues are disabled for this repository, so no same-repository Issue reference is available.`',
+  ]) {
+    assert.equal(hasIssueDisabledDisclosure(body), false)
+  }
+})
+
+test('requires a factual disclosure when Issues are disabled and preserves label policy', () => {
+  const pull = {
+    ...reviewedPull(['kind/cleanup', 'area/infra']),
+    issuesEnabled: false,
+    references: { all: [], resolving: [], related: [] },
+    issues: new Map(),
+  }
+  assert.ok(
+    validatePullRequest(pull).includes(
+      '仓库禁用 Issues 时，PR 正文必须说明无法提供同仓库 Issue 引用',
+    ),
+  )
+  assert.deepEqual(validatePullRequest({ ...pull, issueDisabledDisclosure: true }), [])
+  assert.ok(
+    validatePullRequest({
+      ...pull,
+      labels: [],
+      issueDisabledDisclosure: true,
+    }).some((error) => error.startsWith('PR 必须恰好有一个允许的 kind/*')),
+  )
+})
+
 test('enforces highest resolving Priority without Type or area synchronization', () => {
   const pull = {
     isDraft: false,
@@ -865,7 +908,7 @@ test('rejects multiple, unknown, legacy, and Issue-source PR labels', () => {
   )
 })
 
-const mockPolicyApi = (t, { pull = {}, requested = true, reviews = [], issues = {}, priority = 'P1', projectError = false } = {}) => {
+const mockPolicyApi = (t, { pull = {}, requested = true, reviews = [], issues = {}, priority = 'P1', projectError = false, issuesEnabled = true } = {}) => {
   const environment = ['GH_TOKEN', 'GITHUB_TOKEN', 'PROJECT_TOKEN', 'GITHUB_API_URL', 'GITHUB_OUTPUT']
   const previous = new Map(environment.map((key) => [key, process.env[key]]))
   const directory = mkdtempSync(join(tmpdir(), 'dsh-policy-'))
@@ -893,6 +936,7 @@ const mockPolicyApi = (t, { pull = {}, requested = true, reviews = [], issues = 
       return Response.json({ users: requested ? [{}] : [], teams: [] })
     }
     if (path.endsWith('/reviews?per_page=100')) return Response.json(reviews)
+    if (path === '/repos/deepseek-harness/deepseek-harness') return Response.json({ has_issues: issuesEnabled })
     if (path === '/graphql') {
       assert.equal(options.headers.Authorization, 'Bearer repository-token')
       if (projectError) return Response.json({ errors: [{ message: 'Project access denied' }] })
@@ -928,17 +972,61 @@ test('validates informational Issues and ignores PR numbers without Project read
   const fixture = mockPolicyApi(t, { pull: { body: 'Refs #2; Fixes #3' }, issues: { 2: {}, 3: { pull_request: {} } } })
   const event = { pull_request: { number: 10, draft: true, body: 'Fixes #999' } }
   assert.deepEqual(await runPullRequestPreflight(event), { eligible: true, needsProject: false })
-  assert.equal(fixture.requests.length, 5)
+  assert.equal(fixture.requests.length, 6)
   assert.equal(fixture.workflowOutput(), 'eligible=true\nexempt=false\nneeds-project=false\n')
   await runPullRequestCheck(event)
-  assert.equal(fixture.requests.length, 10)
+  assert.equal(fixture.requests.length, 12)
   assert.ok(!fixture.requests.includes('/graphql'))
+})
+
+test('accepts an eligible PR without Issue references when repository Issues are disabled', async (t) => {
+  const body = 'Issues are disabled for this repository, so no same-repository Issue reference is available.'
+  const fixture = mockPolicyApi(t, {
+    pull: { body },
+    issuesEnabled: false,
+  })
+  const event = { pull_request: { number: 10 } }
+  assert.deepEqual(await runPullRequestPreflight(event), { eligible: true, needsProject: false })
+  assert.equal(fixture.workflowOutput(), 'eligible=true\nexempt=false\nneeds-project=false\n')
+  assert.equal(fixture.requests.length, 4)
+  assert.ok(!fixture.requests.some((path) => path.includes('/issues/')))
+  assert.ok(!fixture.requests.includes('/graphql'))
+  await runPullRequestCheck(event)
+  assert.equal(fixture.requests.length, 8)
+  assert.ok(fixture.output.includes('Issue policy 通过。\n'))
+})
+
+test('rejects an eligible PR without the disabled-Issues disclosure', async (t) => {
+  const fixture = mockPolicyApi(t, {
+    pull: { body: 'This PR has no Issue reference.' },
+    issuesEnabled: false,
+  })
+  await assert.rejects(
+    runPullRequestCheck({ pull_request: { number: 10 } }),
+    /Issue policy 未通过/,
+  )
+  assert.match(
+    fixture.output.join(''),
+    /仓库禁用 Issues 时，PR 正文必须说明无法提供同仓库 Issue 引用/,
+  )
+  assert.equal(fixture.requests.length, 4)
+  assert.ok(!fixture.requests.some((path) => path.includes('/issues/')))
+  assert.ok(!fixture.requests.includes('/graphql'))
+})
+
+test('fails closed when repository Issue availability is missing', async (t) => {
+  const fixture = mockPolicyApi(t, { issuesEnabled: null })
+  await assert.rejects(
+    runPullRequestPreflight({ pull_request: { number: 10 } }),
+    /仓库响应缺少 has_issues 布尔值/,
+  )
+  assert.equal(fixture.requests.length, 4)
 })
 
 test('requires a real Issue and explains why stacked PR references do not qualify', async (t) => {
   const fixture = mockPolicyApi(t, { pull: { body: 'Fixes #3' }, issues: { 3: { pull_request: {} } } })
   await assert.rejects(runPullRequestCheck({ pull_request: { number: 10 } }), /Issue policy 未通过/)
-  assert.equal(fixture.requests.length, 4)
+  assert.equal(fixture.requests.length, 5)
   assert.match(fixture.output.join(''), /PR 编号（包括堆叠依赖 PR）不算 Issue 引用/)
 })
 
@@ -946,11 +1034,11 @@ test('fetches Project Priority only for resolving Issues and enforces mismatch',
   const fixture = mockPolicyApi(t, { pull: { body: 'Fixes #2; Refs #4; Fixes #3' }, issues: { 2: {}, 4: {}, 3: { pull_request: {} } } })
   const event = { pull_request: { number: 10 } }
   assert.deepEqual(await runPullRequestPreflight(event), { eligible: true, needsProject: true })
-  assert.equal(fixture.requests.length, 6)
+  assert.equal(fixture.requests.length, 7)
   assert.equal(fixture.workflowOutput(), 'eligible=true\nexempt=false\nneeds-project=true\n')
   assert.ok(!fixture.requests.includes('/graphql'))
   await assert.rejects(runPullRequestCheck(event), /Issue policy 未通过/)
-  assert.equal(fixture.requests.length, 13)
+  assert.equal(fixture.requests.length, 15)
   assert.equal(fixture.requests.filter((path) => path === '/graphql').length, 1)
   assert.match(fixture.output.join(''), /PR Priority 应为 p1/)
 })
@@ -958,14 +1046,14 @@ test('fetches Project Priority only for resolving Issues and enforces mismatch',
 test('enforces current metadata on title edits and prior reviews without requested reviewers', async (t) => {
   const fixture = mockPolicyApi(t, { requested: false, reviews: [{}], pull: { labels: [] }, issues: { 2: {} } })
   await assert.rejects(runPullRequestCheck({ action: 'edited', changes: { title: { from: 'old' } }, pull_request: { number: 10 } }), /Issue policy 未通过/)
-  assert.equal(fixture.requests.length, 4)
+  assert.equal(fixture.requests.length, 5)
   assert.match(fixture.output.join(''), /PR 必须至少有一个 area/)
 })
 
 test('fails closed on missing referenced numbers and unavailable Project access', async (t) => {
   const fixture = mockPolicyApi(t, { pull: { body: 'Fixes #2' }, issues: { 2: null } })
   await assert.rejects(runPullRequestPreflight({ pull_request: { number: 10 } }), /404/)
-  assert.equal(fixture.requests.length, 4)
+  assert.equal(fixture.requests.length, 5)
 })
 
 test('fails closed when current resolving Issues need a Project token preflight did not mint', async (t) => {
@@ -975,7 +1063,7 @@ test('fails closed when current resolving Issues need a Project token preflight 
   assert.deepEqual(await runPullRequestPreflight(event), { eligible: false, needsProject: false })
   pull.draft = false
   await assert.rejects(runPullRequestCheck(event), /Project access denied/)
-  assert.equal(fixture.requests.length, 6)
+  assert.equal(fixture.requests.length, 7)
 })
 
 test('performs no lifecycle requests for removed signals or title-only edits', async (t) => {
@@ -1120,6 +1208,8 @@ test('reads policy snapshots in reference order and only resolving Project prior
     reviewRequestCount: 1,
     reviewCount: 0,
     labels: ['kind/cleanup', 'area/infra'],
+    issuesEnabled: true,
+    issueDisabledDisclosure: false,
     references: { all: [2, 4], resolving: [2], related: [4] },
     issues: new Map([[2, { priority: 'P1' }], [4, { priority: null }]]),
   })
@@ -1128,6 +1218,7 @@ test('reads policy snapshots in reference order and only resolving Project prior
     repo + '/pulls/10',
     repo + '/pulls/10/requested_reviewers',
     repo + '/pulls/10/reviews?per_page=100',
+    repo,
     repo + '/issues/2',
     repo + '/issues/3',
     repo + '/issues/4',

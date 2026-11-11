@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Code review",
+    "description": "Review current staged, unstaged, and untracked Git changes with a read-only agent."
+  }
+}

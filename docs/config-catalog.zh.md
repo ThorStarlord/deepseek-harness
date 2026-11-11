@@ -744,6 +744,31 @@ export interface Config {
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-ui-trajectory -->
 
+<!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-command-code-review -->
+<a id="deepseek-aidsh-command-code-review"></a>
+
+## `@deepseek-ai/dsh-command-code-review`
+
+- `inject`: `commands` · `agents` · `workingDirectory` · `sandboxPolicy` · `sandbox` · `subprocess` · `fs` · `subagents`
+- `source`: [`packages/interaction/command-code-review/src/index.ts:42`](../packages/interaction/command-code-review/src/index.ts)
+
+```ts config-catalog
+/** Review limits and the optional advisory handoff hook. */
+export interface Config {
+  /** Maximum bytes retained in one review packet. */
+  readonly maxPacketBytes: number
+  /** Maximum changed files captured, including ordinary untracked files. */
+  readonly maxChangedFiles: number
+  /** Maximum bytes read from each repository instruction file. */
+  readonly maxInstructionBytes: number
+  /** Maximum bytes returned by the reviewer before the command reports an error. */
+  readonly maxResultBytes: number
+  /** Add an advisory evidence reminder when review results return to the parent. */
+  readonly evidenceReminder: boolean
+}
+```
+<!-- END GENERATED config-catalog:@deepseek-ai/dsh-command-code-review -->
+
 <!-- BEGIN GENERATED config-catalog:@deepseek-ai/dsh-compaction-basic -->
 <a id="deepseek-aidsh-compaction-basic"></a>
 

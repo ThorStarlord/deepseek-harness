@@ -1,0 +1,73 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/interaction/command-code-review/README.md
+/:
+  en: f3df63edad80d85b
+  zh: ca6c4104a5491372
+/deepseek-ai-dsh-command-code-review:
+  en: 674156594c6c2d4d
+  zh: 9c4776d30ccedd4c
+/deepseek-ai-dsh-command-code-review/summary:
+  en: 4b8f6d593c4c87e3
+  zh: 2c7b1c696499afd4
+/deepseek-ai-dsh-command-code-review/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 725b47765ee8f30b
+/deepseek-ai-dsh-command-code-review/use-this-package:
+  en: b713a40d6a7e854e
+  zh: 67e6bd060b7fd869
+/deepseek-ai-dsh-command-code-review/use-this-package/when-to-choose-it:
+  en: a0a4dbe87ba7ca6e
+  zh: 1d871c60c43975d8
+/deepseek-ai-dsh-command-code-review/use-this-package/minimal-configuration:
+  en: 8a1d10ea478b1a4c
+  zh: e4cecfe0d8cfb868
+/deepseek-ai-dsh-command-code-review/use-this-package/review-behavior:
+  en: 5899c3b01aeff975
+  zh: 016416fc26f7c4a9
+/deepseek-ai-dsh-command-code-review/use-this-package/upstream-attribution:
+  en: cabf0074729c0a65
+  zh: 2d9fed738cd6a2b6
+/deepseek-ai-dsh-command-code-review/understand-the-implementation:
+  en: 4b702bfbd20c5fee
+  zh: 5389cde1d20cf1cf
+/deepseek-ai-dsh-command-code-review/further-exploration:
+  en: bd82288c8f31edd2
+  zh: 9f5be22df7233595
+/deepseek-ai-dsh-command-code-review/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-command-code-review/model-experience/reviewer-request:
+  en: 029e3b86ecd02de9
+  zh: 7d3705c2e20ad7ed
+/deepseek-ai-dsh-command-code-review/model-experience/reviewer-request/what-the-model-sees:
+  en: 2914603f53182dee
+  zh: dff77558c9369dbe
+/deepseek-ai-dsh-command-code-review/model-experience/reviewer-request/what-the-model-sees/reviewer-instructions:
+  en: 78d005e99cf9f803
+  zh: c84c2758c1fa7751
+/deepseek-ai-dsh-command-code-review/model-experience/reviewer-request/token-effect:
+  en: b9efe44894b17968
+  zh: e2597ccfcd09ae77
+/deepseek-ai-dsh-command-code-review/model-experience/reviewer-request/kv-cache-effect:
+  en: 31c497567ac684f6
+  zh: eb1991f59af50828
+/deepseek-ai-dsh-command-code-review/model-experience/parent-handoff:
+  en: 9239a5520609d6c5
+  zh: e68cf3d850cfcb6b
+/deepseek-ai-dsh-command-code-review/model-experience/parent-handoff/what-the-model-sees:
+  en: 5cbb1d71a481d225
+  zh: 118a040d0cb9c64d
+/deepseek-ai-dsh-command-code-review/model-experience/parent-handoff/token-effect:
+  en: b80bf8c14284c150
+  zh: 3299810b41962fbe
+/deepseek-ai-dsh-command-code-review/model-experience/parent-handoff/kv-cache-effect:
+  en: a22ab11ed07ad651
+  zh: e08a8bd300b7c0f7
+/deepseek-ai-dsh-command-code-review/known-limitations-and-deferred-work:
+  en: 3a1a7cd6b980d7de
+  zh: b2c5bf52c8229125
+/deepseek-ai-dsh-command-code-review/known-limitations-and-deferred-work/dev-note:
+  en: c4ad4876ba5df244
+  zh: 6f1971ffa1d73916
