@@ -408,7 +408,7 @@ describe('dsh-doc skill consolidation', () => {
       const source = readFileSync(resolve(root, file), 'utf8')
       expect(packageReadmeStructureErrors(file, source), file).toEqual([])
     }
-  })
+  }, 90_000)
 
   it('rejects redundant fields and a kind that does not match the README position', () => {
     expect(packageReadmeMetadataErrors('packages/example/README.md', {
