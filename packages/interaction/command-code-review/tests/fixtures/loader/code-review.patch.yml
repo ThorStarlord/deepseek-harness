@@ -1,0 +1,60 @@
+# Production headless profile with the shipped code-review command and preset.
+- id: headless-startup
+  disabled: true
+
+- id: headless-runner
+  disabled: true
+
+- id: agent-loop
+  config:
+    agents: []
+
+# Match the shipped Web profile: workspace instructions are loaded by the parent preset,
+# while `/review` sends its separately captured, Git-filtered instruction packet to the child.
+- id: agent-instructions
+  disabled: true
+
+- id: sandbox-policy
+  inject: []
+  config:
+    mode: read-only
+    workspaceRoot: !!js process.cwd()
+
+- insert:
+    - id: agent-preset-registry
+      name: '@deepseek-ai/dsh-agent-preset-registry'
+      config:
+        default: standard
+
+    - id: command-code-review
+      name: '@deepseek-ai/dsh-command-code-review'
+      config:
+        evidenceReminder: true
+
+    - id: preset-standard
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: standard
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a coding agent powered by the {{model}} model.
+    - id: preset-code-reviewer
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: code-reviewer
+        order: 20
+        description: Read-only review of a captured Git change packet.
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a read-only code reviewer. Report actionable defects supported by the supplied source evidence.
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              watch: false
+              bundledSkillDir: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@deepseek-ai/dsh-agent-preset/package.json')), 'skills')
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'

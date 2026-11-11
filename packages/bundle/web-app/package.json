@@ -37,6 +37,7 @@
     "cordis.patch.yml",
     "presets/standard.patch.yml",
     "presets/multi-repository-read-only.patch.yml",
+    "presets/code-reviewer.patch.yml",
     "presets/ptc.patch.yml",
     "presets/minimal.patch.yml",
     "presets/cordis.patch.yml",
@@ -50,6 +51,7 @@
         "./cordis.patch.yml",
         "./presets/standard.patch.yml",
         "./presets/multi-repository-read-only.patch.yml",
+        "./presets/code-reviewer.patch.yml",
         "./presets/ptc.patch.yml",
         "./presets/minimal.patch.yml",
         "./presets/cordis.patch.yml"
@@ -86,6 +88,7 @@
     "@deepseek-ai/dsh-client-ui-chat": "workspace:*",
     "@deepseek-ai/dsh-client-ui-commands": "workspace:*",
     "@deepseek-ai/dsh-client-ui-conversation": "workspace:*",
+    "@deepseek-ai/dsh-command-code-review": "workspace:*",
     "@deepseek-ai/dsh-client-ui-cordis": "workspace:*",
     "@deepseek-ai/dsh-client-ui-deliverables": "workspace:*",
     "@deepseek-ai/dsh-client-ui-directory-picker-browse": "workspace:*",

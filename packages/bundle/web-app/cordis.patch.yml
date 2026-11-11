@@ -87,6 +87,12 @@
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 
+    # `/review` is a human command available to each Agent, independent of its preset.
+    - id: command-code-review
+      name: '@deepseek-ai/dsh-command-code-review'
+      config:
+        evidenceReminder: true
+
     - id: session-reference
       name: '@deepseek-ai/dsh-session-reference'
 

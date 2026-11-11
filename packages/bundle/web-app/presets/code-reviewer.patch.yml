@@ -1,0 +1,19 @@
+# Isolated, read-only child composition used by the standard preset's /review command.
+- insert:
+    - id: preset-code-reviewer
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: code-reviewer
+        order: 20
+        description: Read-only review of a captured Git change packet.
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a read-only code reviewer. Report only actionable defects supported by the supplied source evidence, and never modify code.
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              bundledSkillDir: !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@deepseek-ai/dsh-agent-preset/package.json')), 'skills')
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'

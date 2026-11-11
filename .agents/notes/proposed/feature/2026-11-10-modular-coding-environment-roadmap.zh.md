@@ -25,6 +25,7 @@ Status: proposed
 | 状态 | 现有能力 | 证据的限制 |
 | --- | --- | --- |
 | 已由完成的试点验证 | DSH 可通过多个模型/运行时集成委派工作；参见[原生 Codex](../../../../packages/subagent/subagent-codex/README.zh.md)和[Claude Code](../../../../packages/subagent/subagent-claude-code/README.zh.md) provider。 | 各 provider 保留自己的 host Session、认证、设置和执行控制。试点完成不等于实现了跨仓库编排或共享权限。 |
+| 已演示的 Priority 2 切片 | Web profile 提供 `/review`，组合了可复用 reviewer Skill、受限子 preset 和建议性质的证据 hook；参见 [`dsh-command-code-review`](../../../../packages/interaction/command-code-review/README.zh.md)。 | 这是一个只读工作流，通过生产 Loader 和 AgentLoop 配合确定性模型 adapter 验证；它并未完成整组可复用能力，也未验证实时模型或原生 provider 行为。 |
 | 可复用指令与 agent | [文件系统 Skill provider](../../../../packages/skill/skill-filesystem/README.zh.md)、[subagent providers](../../../../packages/subagent/README.zh.md)和[agent preset](../../../../packages/preset/README.zh.md)可加载可复用指令并组合子 agent。 | 不能假定不同 host 的发现方式和 Skill 行为相同；应逐一验证目标 host。 |
 | 用户命令与扩展点 | DSH 提供[交互命令](../../../../packages/interaction/README.zh.md)、Cordis 插件组合与事件，以及若干实验性兼容集成。 | 这些机制尚未组成统一的 hook API；hook 仅因被执行并不会自动获得安全策略权限。 |
 | 项目与任务协调 | [工作区](../../../../packages/workspace/workspace/README.zh.md)按名称归组项目和 Session；[Team](../../../../packages/team/agent-team/README.zh.md)、[Workflow](../../../../packages/workflow/workflow/README.zh.md)、[Goal](../../../../packages/goal/goal/README.zh.md)、[Job](../../../../packages/jobs/README.zh.md)和[Schedule](../../../../packages/schedule/README.zh.md)提供不同的协调机制。 | 项目归组不等于一个多仓库对话。这些机制也不会自动形成统一的持久委派产品或 Dark Factory Campaign。 |

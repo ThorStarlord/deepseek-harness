@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Revue de code",
+    "description": "Examine les modifications Git indexées, non indexées et non suivies avec un agent en lecture seule."
+  }
+}

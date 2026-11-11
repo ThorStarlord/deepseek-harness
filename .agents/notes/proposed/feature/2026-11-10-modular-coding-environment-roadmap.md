@@ -18,13 +18,14 @@ For each next responsibility, identify one bounded outcome, confirm the relevant
 
 ### Product direction and capability status
 
-The owner-selected direction is a modular coding environment that can combine multiple model and agent runtimes with work across repositories in a coherent development workflow. Users should be able to compose reusable Skills, specialized agents, commands, and configurable hooks; resume bounded work across sessions; and use adaptive delegation, context management, memory, learning, observability, verification, permissions, and evidence provenance. Advanced Sensemaking and durable mission coordination remain optional capabilities.
+The owner-selected direction is a modular coding environment that can combine multiple model and agent runtimes with work across repositories in a coherent development workflow. Users should be able to compose reusable Skills, specialized agents, commands, and configurable hooks; resume bounded work across sessions; and use adaptive delegation, context management, memory, learning, observability, verification, permissions, and evidence attribution. Advanced Sensemaking and durable mission coordination remain optional capabilities.
 
 The owner-confirmed multi-model Windows pilot is complete. It establishes a multi-model delegation foundation; it does not demonstrate one conversation orchestrating several repositories, shared native sessions, common provider authentication or permission policy, or a mission-control relationship.
 
 | Status | Existing capability | Limit of the evidence |
 | --- | --- | --- |
 | Demonstrated by the completed pilot | DSH can delegate work through multiple model/runtime integrations; see the [native Codex](../../../../packages/subagent/subagent-codex/README.md) and [Claude Code](../../../../packages/subagent/subagent-claude-code/README.md) providers. | The providers retain host-specific sessions, authentication, settings, and execution controls. Pilot completion does not establish cross-repository orchestration or shared authority. |
+| Demonstrated Priority 2 slice | The Web profile provides `/review` with a reusable reviewer Skill, a restricted child preset, and an advisory evidence hook; see [`dsh-command-code-review`](../../../../packages/interaction/command-code-review/README.md). | This is one read-only workflow verified through the production Loader and AgentLoop with a deterministic model adapter; it does not complete the reusable-capability family or qualify live-model and native-provider behavior. |
 | Reusable instructions and agents | The [filesystem Skill provider](../../../../packages/skill/skill-filesystem/README.md), [subagent providers](../../../../packages/subagent/README.md), and [agent presets](../../../../packages/preset/README.md) load reusable instructions and compose child agents. | Host discovery and Skill behavior are not identical by assumption; verify each target host. |
 | User commands and extension points | DSH exposes [interaction commands](../../../../packages/interaction/README.md), Cordis plugin composition and events, and selected experimental compatibility integrations. | These do not constitute one universal hook API, and a hook does not gain security authority merely by running. |
 | Project and task coordination | The [workspace](../../../../packages/workspace/workspace/README.md) groups named projects and Sessions; [teams](../../../../packages/team/agent-team/README.md), [workflows](../../../../packages/workflow/workflow/README.md), [goals](../../../../packages/goal/goal/README.md), [jobs](../../../../packages/jobs/README.md), and [schedules](../../../../packages/schedule/README.md) provide distinct coordination primitives. | A project grouping is not one multi-repository conversation. These primitives do not automatically provide one durable delegated-work product or a Dark Factory Campaign. |
@@ -55,7 +56,7 @@ The owner selected this initial order. Each group names a user outcome and compl
 
 **Existing substrate:** DSH has persistent workspace projects, filesystem and process providers, durable Sessions, and subagents. Workspace grouping alone does not make several repositories available to one conversation.
 
-**Dependencies and meaningful completion:** Specify repository membership, working directories or worktrees, branch ownership, per-repository permissions, and result attribution. Demonstrate a user task that reads and changes at least two selected repositories, records the provenance of each change, and respects each repository’s independent controls. Do not assume a common native session or credential context.
+**Dependencies and meaningful completion:** Specify repository membership, working directories or worktrees, branch ownership, per-repository permissions, and result attribution. Demonstrate a user task that reads and changes at least two selected repositories, identifies the source revision for each change, and respects each repository’s independent controls. Do not assume a common native session or credential context.
 
 #### 2. Reusable Skills, specialized agents, commands, and configurable hooks
 
@@ -105,7 +106,7 @@ The order of repository selection, worktree ownership, and branch integration fo
 
 ### Selecting the next bounded responsibility
 
-Choose one user or maintainer outcome from this roadmap only when repository evidence supports it. Inspect the current package owner and its documented behavior first. Check the candidate source and license when external material matters. Separate existing mechanisms from the actual gap, and state integrations, permissions, and provenance before choosing a design. Define a small, observable acceptance result and the relevant repository-prescribed verification. If authority, dependency, or user value is unresolved, record that decision boundary instead of implementing an assumption.
+Choose one user or maintainer outcome from this roadmap only when repository evidence supports it. Inspect the current package owner and its documented behavior first. Check the candidate source and license when external material matters. Separate existing mechanisms from the actual gap, and state integrations, permissions, and source attribution before choosing a design. Define a small, observable acceptance result and the relevant repository-prescribed verification. If authority, dependency, or user value is unresolved, record that decision boundary instead of implementing an assumption.
 
 ## Alternatives considered
 
