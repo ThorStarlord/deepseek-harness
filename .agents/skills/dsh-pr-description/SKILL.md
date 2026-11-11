@@ -23,7 +23,7 @@ Write fixed section headings and labels, such as **Interface changes**, **Behavi
 ### Motivation
 
 - State the problem in one sentence.
-- Reference at least one same-repository Issue: use `Fixes #N`, `Closes #N`, or `Resolves #N` when the PR resolves it, and `Refs #N` when it only gives context. PR numbers do not count as Issue references, and neither do references inside HTML comments, code fences, or inline code. [Issue management](../../../.github/issue-management/README.md) owns the exact rules and the Priority matching.
+- When repository Issues are enabled and [Issue policy](../../../.github/issue-management/README.md) applies, reference at least one same-repository Issue: use `Fixes #N`, `Closes #N`, or `Resolves #N` when the PR resolves it, and `Refs #N` when it only gives context. PR numbers do not count as Issue references, and neither do references inside HTML comments, code fences, or inline code. When repository Issues are disabled, state that fact and that a same-repository Issue reference is unavailable; use `Issues are disabled for this repository, so no same-repository Issue reference is available.` PR numbers still do not count as Issue references.
 
 ### Changes
 

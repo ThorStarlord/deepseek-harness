@@ -28,7 +28,7 @@ description: "面向仓库维护者的 Issue 策略强制范围、Project 访问
 
 选择性预检要求受信任的检出中存在 [selective-preflight.json](selective-preflight.json)。缺少该标记时，工作流保留旧版行为：人类 PR 获取 Project token 并执行完整旧版校验；Bot/App PR 跳过两者。受支持的预检执行失败时，job 失败而不回退。
 
-强制范围内的 PR 至少需要一个同仓库 Issue 引用、恰好一个规范的 `kind/*`、至少一个 `area/*`，以及最多一个 `p0`–`p3` 标签。不支持的 kind、退役别名和 `source/*` 标签会使校验失败；[标签分类](../../.agents/notes/implemented/process/2026-08-08-unified-github-label-taxonomy.zh.md)定义其含义。
+仓库启用 Issues 时，强制范围内的 PR 至少需要一个同仓库 Issue 引用；仓库禁用 Issues 时，正文必须如实说明仓库已禁用 Issues 且无法提供同仓库 Issue 引用，例如 `此仓库已禁用 Issues，因此无法提供同仓库 Issue 引用。`，无论哪种情况，PR 都必须恰好有一个规范的 `kind/*`、至少一个 `area/*`，以及最多一个 `p0`–`p3` 标签。不支持的 kind、退役别名和 `source/*` 标签会使校验失败；[标签分类](../../.agents/notes/implemented/process/2026-08-08-unified-github-label-taxonomy.zh.md)定义其含义。
 
 - 信息型引用（如 `Refs #3624`）提供背景。校验通过 REST 区分 Issue 与 PR 编号，不读取这些引用的 Project 字段。仅含信息型引用的 PR 可以使用自己的 Priority，无需匹配所引用的 Issue。
 - 解决型引用使用关闭关键词，如 `Fixes #123`、`Closes #123` 或 `Resolves #123`。校验期间只有解析为实际 Issue 的解决型引用需要读取 Project。PR Priority 必须匹配被解决 Issue 中的最高 Priority；带 Priority 标签的解决型 PR 要求每个被解决 Issue 均有 Priority。若所有被解决 Issue 的 Priority 均为空，PR 可以省略 Priority。
