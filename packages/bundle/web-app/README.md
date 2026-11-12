@@ -58,6 +58,10 @@ Open a Web conversation at the repository to review and run `/review [focus]`. T
 
 In a standard Web conversation, the agent can load this Skill before reporting completed coding or repository work. The Skill distinguishes observed changes from tool results, skipped or blocked checks, verification not visible in the current Session, and known limits. DSH's existing Skill catalog exposes its short description; the full guidance loads only when the agent selects it for a matching task. It does not automatically inspect or certify Session evidence, prove semantic correctness, or start more verification.
 
+### Test-driven development
+
+Invoke `/test-driven-development [task]` in a standard Web conversation to ask for a focused red-green-refactor workflow on an implementation or fix. The Skill is available as an explicit user command and stays out of model routing until invoked, so other requests do not receive its instructions. It follows repository test policy, preserves existing changes, and does not require a full-suite run solely because one exists. Its approach adapts [Superpowers' test-driven-development Skill](https://github.com/obra/superpowers/blob/main/skills/test-driven-development/SKILL.md), licensed under [MIT](https://github.com/obra/superpowers/blob/main/LICENSE); the DSH instructions and scope are original.
+
 `--host` and `--port` configure the listener; `--tls-cert` and `--tls-key` make it serve HTTPS; `--public-url` names the advertised public HTTP(S) root the GUI is reached at behind a prefix-stripping proxy, and `--trusted-host` adds further accepted authorities. All are described under [Listening, trust, and public deployments](#public-deployments), and the `tls` field those flags set is documented with the [carrier's config](../../../docs/subsystems/web-server.md#config):
 
 | Field | Default | Meaning |

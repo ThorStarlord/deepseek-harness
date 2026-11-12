@@ -42,7 +42,7 @@
     "presets/minimal.patch.yml",
     "presets/cordis.patch.yml",
     "lib/public-url-*.js",
-    "skills/evidence-aware-completion/SKILL.md",
+    "skills",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
