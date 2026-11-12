@@ -215,8 +215,36 @@ function entryName(entry: SubagentCatalogSnapshot['entries'][number]): string {
 
 /** Only a local child's last closed, normally completed turn receives the completed marker. */
 function completedEntry(entry: SubagentCatalogSnapshot['entries'][number], summary: SessionSummary | undefined): boolean {
+  const timing = summary?.projectionValues?.subagentTiming
   return entry.mode !== 'external' && entry.activity === 'inactive'
-    && summary?.projectionValues?.subagentTiming?.lastTurnCompleted === true
+    && (timing?.lastTurnOutcome === 'completed'
+      || (timing?.lastTurnOutcome === undefined && timing?.lastTurnCompleted === true))
+}
+
+/** Render only the latest outcome recorded by the local child's own Session. */
+function outcomeLabel(
+  entry: SubagentCatalogSnapshot['entries'][number],
+  summary: SessionSummary | undefined,
+  t: TranslateNS<typeof NS>,
+): string | undefined {
+  if (entry.mode === 'external') return undefined
+  if (entry.activity === 'running') return t('activity.running')
+  const timing = summary?.projectionValues?.subagentTiming
+  const outcome = timing?.lastTurnOutcome
+  if (outcome === undefined) {
+    return timing?.lastTurnCompleted === true ? t('activity.completed') : t('activity.unknown')
+  }
+  switch (outcome) {
+    case 'completed': return t('activity.completed')
+    case 'failed': return t('activity.failed')
+    case 'cancelled': return t('activity.cancelled')
+    case 'blocked': return t('activity.blocked')
+    case 'token-limit': return t('activity.tokenLimit')
+    case 'interrupted': return t('activity.interrupted')
+    case 'other': return t('activity.other')
+    /* v8 ignore next -- SubagentTurnOutcome is closed and every category is handled above. */
+    default: return outcome satisfies never
+  }
 }
 
 /** Count direct catalog members without treating external or other inactive entries as completed. */
@@ -293,11 +321,7 @@ function CatalogRows({
         const mode = external ? t('mode.external') : entry.mode === 'unknown' ? t('mode.unknown')
           : entry.mode === 'one-shot' ? t('mode.oneShot') : t('mode.continuable')
         const completed = completedEntry(entry, summary)
-        const activity = external ? undefined : entry.activity === 'running'
-          ? t('activity.running')
-          : completed
-            ? t('activity.completed')
-            : t('activity.inactive')
+        const activity = outcomeLabel(entry, summary, t)
         const secondary = [secondaryLabel, requiresOpening ? t('catalog.migrationRequired') : mode, activity]
           .filter(value => value !== undefined)
           .join(' · ')

@@ -897,6 +897,55 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await page.keyboard.press('Escape')
   })
 
+  it('shows a persisted failed child outcome after returning to its parent', async () => {
+    const parent = scaffold.ctx.agents.get(parentId)
+    if (parent === undefined) throw new Error('outcome fixture requires the parent Agent')
+    const failedId = sessionId('recorded-failed-child')
+    const createdAt = Date.now()
+    const header: SessionHeader = {
+      version: SESSION_FORMAT_VERSION,
+      id: failedId,
+      createdAt,
+      isSeeded: false,
+      cwd: scaffold.workspaceCwd,
+      parentSession: parent.id,
+      origin: 'subagent',
+      delegationDepth: 1,
+    }
+    const events = [
+      { type: 'turn/start', seq: 0, time: createdAt, data: { turn: 1 } },
+      {
+        type: 'subagent/descriptor', seq: 1, time: createdAt + 1,
+        data: { version: SUBAGENT_DESCRIPTOR_VERSION, mode: 'one-shot', provider: 'spawn', label: 'fixture failed child' },
+      },
+      {
+        type: 'turn/end', seq: 2, time: createdAt + 2,
+        data: { turn: 1, reason: { kind: 'error', error: { message: 'fixture failure', code: 'UNKNOWN' } } },
+      },
+    ] as SessionEvent[]
+    const handle = await scaffold.ctx.sessionPersistence.create(header)
+    await handle.append(events)
+    await handle.close()
+    scaffold.ctx.sessionProjectionCache.coldSnapshot(header, SessionLogOffset(0), events)
+    await waitForCacheRow(scaffold, header)
+    parent.session.append('subagent/catalog', {
+      version: 0, childId: failedId, childCreatedAt: createdAt, mode: 'one-shot', label: 'fixture failed child',
+    })
+    await scaffold.ctx.sessions.flush(parent.session)
+    await page.getByRole('tree', { name: 'Sessions' })
+      .getByRole('treeitem', { name: /Ask a research subagent to/ }).click()
+    await page.getByRole('button', { name: '3 subagents', exact: true }).waitFor()
+    await page.getByRole('button', { name: '3 subagents', exact: true }).click()
+    const catalog = page.getByRole('tree', { name: 'Subagent sessions' })
+    const failedRow = catalog.getByRole('treeitem', { name: /fixture failed child/ })
+    await expect.poll(() => failedRow.getAttribute('aria-label')).toContain('failed')
+    expect(await failedRow.locator('[data-state="idle"]').count()).toBe(1)
+    const completedRow = catalog.getByRole('treeitem', { name: new RegExp(ONE_SHOT_LABEL) })
+    expect(await completedRow.getAttribute('aria-label')).toContain('completed')
+    expect(await completedRow.locator('[data-state="done"]').count()).toBe(1)
+    expect(scaffold.ctx.agents.get(failedId)).toBeUndefined()
+    await page.keyboard.press('Escape')
+  })
 
 })
 
