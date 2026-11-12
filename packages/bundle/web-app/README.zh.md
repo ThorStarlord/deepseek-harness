@@ -62,6 +62,10 @@ dsh --profile web --no-open --port 8080
 
 在标准 Web 会话中调用 `/test-driven-development [task]`，即可为实现或修复请求选择聚焦的红绿重构流程。此 Skill 仅通过用户命令显式调用，在调用前不会进入模型路由，因此其他请求不会接收其指导。它遵循仓库测试策略、保留已有更改，也不会仅因存在完整测试套件就要求运行它。其方法改编自 [Superpowers 的测试驱动开发 Skill](https://github.com/obra/superpowers/blob/main/skills/test-driven-development/SKILL.md)，该项目使用 [MIT 许可证](https://github.com/obra/superpowers/blob/main/LICENSE)；DSH 的指导文本和范围为原创。
 
+### 在同一会话中组合这些能力
+
+当测试优先的工作方式适合某项更改时，显式调用 `/test-driven-development [task]` 开始，并让 Agent 使用其通常获准的工具。需要单独审查时，可运行 `/review [重点]`；只读 reviewer 会将仓库、修订版本、Session、运行和源码证据返回给同一父会话。合适时，可让父 Agent 处理某项发现，之后再请求完成报告；Agent 可加载基于证据的指导，以区分观察到的更改和检查结果与限制。每个阶段都是可选的：普通工作可以跳过 TDD 和审查，完成指导也不会启动额外验证。
+
 `--host` 与 `--port` 配置监听器；`--tls-cert` 与 `--tls-key` 让它直接提供 HTTPS；`--public-url` 指定 GUI 在剥离前缀的代理之后对外公告的公开 HTTP(S) 根，`--trusted-host` 则添加更多被接受的 authority。这些都在[监听、信任与公开部署](#public-deployments)中说明，而这些 flag 设置的 `tls` 字段记录在[载体的配置](../../../docs/subsystems/web-server.zh.md#config)中：
 
 | 字段 | 默认值 | 含义 |

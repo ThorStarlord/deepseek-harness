@@ -62,6 +62,10 @@ In a standard Web conversation, the agent can load this Skill before reporting c
 
 Invoke `/test-driven-development [task]` in a standard Web conversation to ask for a focused red-green-refactor workflow on an implementation or fix. The Skill is available as an explicit user command and stays out of model routing until invoked, so other requests do not receive its instructions. It follows repository test policy, preserves existing changes, and does not require a full-suite run solely because one exists. Its approach adapts [Superpowers' test-driven-development Skill](https://github.com/obra/superpowers/blob/main/skills/test-driven-development/SKILL.md), licensed under [MIT](https://github.com/obra/superpowers/blob/main/LICENSE); the DSH instructions and scope are original.
 
+### Use the capabilities in one conversation
+
+For a change where test-first work is useful, explicitly start with `/test-driven-development [task]` and let the agent use its normal authorized tools. When a separate review would help, run `/review [focus]`; the read-only reviewer returns its repository, revision, Session, run, and source evidence to the same parent conversation. Ask the parent to address a finding when appropriate, then request a completion report; the agent can load evidence-aware guidance to distinguish observed changes and checks from limits. Each stage is optional: ordinary work can skip TDD and review, and completion guidance does not start extra verification.
+
 `--host` and `--port` configure the listener; `--tls-cert` and `--tls-key` make it serve HTTPS; `--public-url` names the advertised public HTTP(S) root the GUI is reached at behind a prefix-stripping proxy, and `--trusted-host` adds further accepted authorities. All are described under [Listening, trust, and public deployments](#public-deployments), and the `tls` field those flags set is documented with the [carrier's config](../../../docs/subsystems/web-server.md#config):
 
 | Field | Default | Meaning |
