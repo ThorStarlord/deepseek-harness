@@ -863,7 +863,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     await page.getByRole('button', { name: '2 subagents', exact: true }).click()
     await page.locator('[data-team-panel]').getByText('Root-only shared task', { exact: true }).waitFor()
     const rootHeader = page.locator('[data-subagent-section-header]')
-    expect(await rootHeader.textContent()).toBe('Subagents1 completed\u2002·\u20021 not running')
+    expect(await rootHeader.textContent()).toBe('Subagents1 with a completed latest turn\u2002·\u20021 not running')
     expect(await rootHeader.getByRole('button').count()).toBe(0)
     expect(await rootHeader.locator('[data-icon="dsw-icon-users-outline-regular"]').count()).toBe(1)
     const progress = await rootHeader.textContent()
@@ -926,22 +926,29 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     const handle = await scaffold.ctx.sessionPersistence.create(header)
     await handle.append(events)
     await handle.close()
-    scaffold.ctx.sessionProjectionCache.coldSnapshot(header, SessionLogOffset(0), events)
+    const outcomeSnapshot = scaffold.ctx.sessionProjectionCache.coldSnapshot(header, SessionLogOffset(0), events)
+    expect(outcomeSnapshot.values.subagentTiming).toMatchObject({
+      settledMs: 2, lastTurnOutcome: 'failed', lastTurnCompleted: false,
+    })
     await waitForCacheRow(scaffold, header)
     parent.session.append('subagent/catalog', {
       version: 0, childId: failedId, childCreatedAt: createdAt, mode: 'one-shot', label: 'fixture failed child',
     })
     await scaffold.ctx.sessions.flush(parent.session)
+    // The browser's initial Session list predates this cold child; reload so
+    // its catalog row receives the child's durable projection summary.
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await page.getByRole('tree', { name: 'Sessions' })
       .getByRole('treeitem', { name: /Ask a research subagent to/ }).click()
     await page.getByRole('button', { name: '3 subagents', exact: true }).waitFor()
     await page.getByRole('button', { name: '3 subagents', exact: true }).click()
     const catalog = page.getByRole('tree', { name: 'Subagent sessions' })
     const failedRow = catalog.getByRole('treeitem', { name: /fixture failed child/ })
-    await expect.poll(() => failedRow.getAttribute('aria-label')).toContain('failed')
+    await expect.poll(() => failedRow.getAttribute('aria-label')).toContain('latest turn failed')
     expect(await failedRow.locator('[data-state="idle"]').count()).toBe(1)
     const completedRow = catalog.getByRole('treeitem', { name: new RegExp(ONE_SHOT_LABEL) })
-    expect(await completedRow.getAttribute('aria-label')).toContain('completed')
+    expect(await completedRow.getAttribute('aria-label')).toContain('latest turn completed')
     expect(await completedRow.locator('[data-state="done"]').count()).toBe(1)
     expect(scaffold.ctx.agents.get(failedId)).toBeUndefined()
     await page.keyboard.press('Escape')

@@ -245,13 +245,13 @@ describe('SubagentHeaderLineage', () => {
     const header = view.container.ownerDocument.querySelector<HTMLElement>('[data-subagent-section-header]')!
     expect(within(header).getByRole('heading', { name: '子智能体' })).toBeTruthy()
     expect(within(header).queryByRole('button')).toBeNull()
-    expect(header.textContent).toBe('子智能体1 已完成\u2002·\u20021 进行中\u2002·\u20021 未运行\u2002·\u20021 外部任务')
+    expect(header.textContent).toBe('子智能体1 个最近轮次已完成\u2002·\u20021 进行中\u2002·\u20021 未运行\u2002·\u20021 外部任务')
     fireEvent.click(screen.getByRole('button', { name: '展开 worker 的下级子智能体' }))
     expect(screen.getByRole('treeitem', { name: /paused.*已中断/ })).toBeTruthy()
     expect(header.textContent).toContain('1 进行中')
     expect(header.textContent).not.toContain('2 进行中')
     view.rerender(<HeaderCatalog {...input} t={makeTranslate(en)} />)
-    expect(header.textContent).toBe('Subagents1 completed\u2002·\u20021 in progress\u2002·\u20021 not running\u2002·\u20021 external')
+    expect(header.textContent).toBe('Subagents1 with a completed latest turn\u2002·\u20021 in progress\u2002·\u20021 not running\u2002·\u20021 external')
   })
 
   it('omits zero progress counts from a completed-only catalog header', () => {
@@ -263,11 +263,12 @@ describe('SubagentHeaderLineage', () => {
     render(<HeaderCatalog {...input} />)
     fireEvent.click(screen.getByRole('button', { name: '1 个子智能体' }))
     const header = document.querySelector('[data-subagent-section-header]')!
-    expect(header.textContent).toBe('子智能体1 已完成')
+    expect(header.textContent).toBe('子智能体1 个最近轮次已完成')
   })
 
   it('shows durable local outcomes and leaves missing outcome evidence unknown', () => {
     const outcomes = [
+      ['completed', 'completed'],
       ['failed', 'failed'],
       ['cancelled', 'cancelled'],
       ['blocked', 'blocked'],
@@ -286,13 +287,13 @@ describe('SubagentHeaderLineage', () => {
       ['unknown', summary('unknown' as SessionId, 1)],
     ]) as Record<SessionId, SessionSummary>
     render(<HeaderCatalog {...props(catalog({ entries }), {}, summaries)} t={makeTranslate(en)} />)
-    fireEvent.click(screen.getByRole('button', { name: '6 subagents' }))
+    fireEvent.click(screen.getByRole('button', { name: '7 subagents' }))
     for (const [label, outcome] of outcomes) {
-      const shown = outcome === 'token-limit' ? 'token limit reached'
-        : outcome === 'other' ? 'ended for another reason' : outcome
+      const shown = outcome === 'token-limit' ? 'latest turn reached token limit'
+        : outcome === 'other' ? 'latest turn ended for another reason' : `latest turn ${outcome}`
       expect(screen.getByRole('treeitem', { name: new RegExp(`${label}.*${shown}`) })).toBeTruthy()
     }
-    expect(screen.getByRole('treeitem', { name: /unknown.*outcome unknown/ })).toBeTruthy()
+    expect(screen.getByRole('treeitem', { name: /unknown.*latest turn outcome unknown/ })).toBeTruthy()
   })
 
   it.each([
@@ -557,7 +558,7 @@ describe('SubagentHeaderLineage', () => {
     expect(screen.getAllByRole('treeitem')).toHaveLength(2)
     expect(screen.getByText('worker')).toBeTruthy()
     expect(screen.queryByText('正在扫描项目文件')).toBeNull()
-    expect(screen.getByRole('treeitem', { name: /reviewer child-2 · 一次性 · 结果未知/ })).toBeTruthy()
+    expect(screen.getByRole('treeitem', { name: /reviewer child-2 · 一次性 · 最近轮次结果未知/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: '展开 worker 的下级子智能体' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '展开 reviewer 的下级子智能体' })).toBeTruthy()
 

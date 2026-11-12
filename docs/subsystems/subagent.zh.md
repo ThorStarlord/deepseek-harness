@@ -260,7 +260,7 @@ type SubagentInterruptAuthority =
 
 ## 持久枚举
 
-父级拥有的 `subagentCatalog` 投影列出所有本地 child 和由 parent 投递的外部 child。由 caller 投递的外部执行由调用方负责成员关系和结果收集；本地工作流 child 在完成后仍可发现。外部条目携带 `mode: 'external'`，不能打开 child Session 或接收后续消息。目录条目在创建时记录成员关系，不记录执行状态。浏览器 child 行读取本地 child 的 `subagentTiming` 投影，显示最新持久化的 `turn/end` 分类；缺少结果证据时保持未知。投影保留 `lastTurnCompleted` 作为派生兼容字段。`list_agents` 展示根和可访问的 continuable 后代，其活动状态为 `running` 或 `inactive`；参见[控制工具](../../packages/subagent/tool-subagent-control/README.zh.md#list_agents)。
+父级拥有的 `subagentCatalog` 投影列出所有本地 child 和由 parent 投递的外部 child。由 caller 投递的外部执行由调用方负责成员关系和结果收集；本地工作流 child 在完成后仍可发现。外部条目携带 `mode: 'external'`，不能打开 child Session 或接收后续消息。目录条目在创建时记录成员关系，不记录执行状态。浏览器 child 行读取本地 child 的 `subagentTiming` 投影，显示最新持久化的 `turn/end` 分类；缺少结果证据时保持未知。该分类描述单个 child 轮次，不代表委派责任已经完成。投影保留 `lastTurnCompleted` 作为派生兼容字段。`list_agents` 展示根和可访问的 continuable 后代，其活动状态为 `running` 或 `inactive`；参见[控制工具](../../packages/subagent/tool-subagent-control/README.zh.md#list_agents)。
 
 ## 结果与后端句柄
 
