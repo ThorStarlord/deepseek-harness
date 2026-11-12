@@ -1,9 +1,8 @@
-// Web e2e scenario: a user invokes a disable-model-invocation skill through
-// the composer (issue #1470). The entered `/name args` line claims into
-// skill.invoke: the real host forwards the gesture as an ordinary user
-// prompt, injects the rendered body as instructions context named after the
-// skill, and starts a turn answered by the replay adapter. Chat shows the
-// gesture bubble and reply; the Session retains the injected instructions.
+// Web e2e scenario: a user invokes a user-only skill through the composer.
+// The entered `/name args` line claims into skill.invoke: the real host forwards
+// the gesture as an ordinary user prompt, injects the rendered body as
+// instructions context named after the skill, and starts a replayed turn. Chat
+// shows the gesture bubble and reply; the Session retains the injected text.
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -32,11 +31,13 @@ const MODE = webSnapshotMode()
 
 const SKILL_NAME = 'user-invoke-demo'
 const COMPLETION_SKILL_NAME = 'evidence-aware-completion'
+const TDD_SKILL_NAME = 'test-driven-development'
 const FILE_NAME = 'meeting notes-this-is-a-very-long-filename-for-testing-user-message-file-references-and-preview-layout.md'
 const ARGS_TEXT = `@"${FILE_NAME}" and confirm the fixture wiring`
 const REPLY = 'USER_INVOKE_REPLY acknowledged; following the injected skill.'
 const CASUAL_REPLY = 'CASUAL_REPLY; no completion report was requested.'
 const COMPLETION_REPLY = 'No test execution is visible in this Session; I cannot confirm whether tests ran elsewhere.'
+const TDD_REPLY = 'TDD_SKILL_REPLY; the explicit test-first workflow was loaded.'
 
 async function seedUserOnlySkill(workspaceCwd: string): Promise<void> {
   const directory = join(workspaceCwd, 'workspace', '.agents', 'skills', SKILL_NAME)
@@ -89,6 +90,7 @@ const REPLAY: ReplayOverrideDoc = [
   replayText(CASUAL_REPLY),
   skillToolCall(),
   replayText(COMPLETION_REPLY),
+  replayText(TDD_REPLY),
 ]
 
 describe.skipIf(MODE === 'record')('web e2e: user-explicit skill invocation through the composer', () => {
@@ -271,6 +273,38 @@ describe.skipIf(MODE === 'record')('web e2e: user-explicit skill invocation thro
     expect(skillResultText).toContain('**Not observed:**')
     expect(skillResult?.type === 'tool/result' ? skillResult.data.message.isError : true).toBeFalsy()
     expect(events.filter(event => event.type === 'tool/call')).toHaveLength(callsBeforeCompletion + 1)
+    expect(await readFile(join(scaffold.workspaceCwd, 'workspace', FILE_NAME), 'utf8'))
+      .toBe('# Meeting notes\n\nSent reference preview.\n')
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
+  }, 60_000)
+
+  it('loads the bundled test-driven workflow from its explicit composer command', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-test-driven-development'))
+    const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
+    const session = conversationSessionId === undefined
+      ? undefined
+      : scaffold.ctx.sessions.get(conversationSessionId)
+    if (session === undefined) throw new Error('test-driven development Session is unavailable')
+
+    await composer.fill(`/${TDD_SKILL_NAME}`)
+    const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
+    await expect.poll(
+      () => menu.getByRole('option', { name: new RegExp(TDD_SKILL_NAME) }).count(),
+      { timeout: 10_000 },
+    ).toBe(1)
+    const settled = scaffold.whenTurnSettled()
+    await composer.fill(`/${TDD_SKILL_NAME} Add a behavior test before changing the implementation.`)
+    await composer.press('Enter')
+    await page.getByText(TDD_REPLY, { exact: true }).waitFor({ timeout: 20_000 })
+    await settled
+
+    const injected = session.snapshotEvents().flatMap(event => event.type === 'user/message'
+      && event.data.source.kind === 'skill-invocation'
+      ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
+      : []).find(content => content.includes(`<skill_content name="${TDD_SKILL_NAME}">`))
+    expect(injected).toContain('Confirm that it fails because the behavior is missing.')
+    expect(injected).toContain('Make the smallest implementation that satisfies the test.')
     expect(await readFile(join(scaffold.workspaceCwd, 'workspace', FILE_NAME), 'utf8'))
       .toBe('# Meeting notes\n\nSent reference preview.\n')
     expect(tripwire.pageErrors).toEqual([])

@@ -6,16 +6,16 @@ import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import { expect, it } from 'vitest'
 
 const standardPatch = fileURLToPath(new URL('../presets/standard.patch.yml', import.meta.url))
-const skillRoot = fileURLToPath(new URL('../skills/evidence-aware-completion/', import.meta.url))
+const skillRoot = fileURLToPath(new URL('../skills/', import.meta.url))
 
-it('exposes one model-loadable completion Skill through the standard Web preset', async (test) => {
+it('exposes evidence-aware completion guidance through the standard Web preset', async (test) => {
   const standardEntries = loadOverlayPatches('evidence-aware-completion', standardPatch)
     .flatMap(patch => patch.insert ?? [])
   const standardPreset = standardEntries.find(entry => entry.id === 'preset-standard')
   expect(standardPreset).toBeDefined()
   const presetText = JSON.stringify(standardPreset)
   expect(presetText).toContain("resolve('@deepseek-ai/dsh-web-app/package.json')")
-  expect(presetText).toContain("'skills', 'evidence-aware-completion'")
+  expect(presetText).toContain("'skills')")
 
   const ctx = new Context()
   test.onTestFinished(() => ctx.fiber.dispose())
@@ -46,4 +46,27 @@ it('exposes one model-loadable completion Skill through the standard Web preset'
   expect(skill?.content).toContain('does not prove semantic correctness or independent review')
   expect(skill?.content).toContain('Do not load it for casual conversation or unrelated requests.')
   expect(skill?.content).toContain('Do not rerun tests, start another agent, or continue a loop')
+})
+
+it('offers test-driven development only through explicit Web invocation', async (test) => {
+  const ctx = new Context()
+  test.onTestFinished(() => ctx.fiber.dispose())
+  await ctx.plugin(SkillRegistry)
+  await ctx.plugin(SkillFileSystem, {
+    includeDefaultRoots: false,
+    watch: false,
+    bundledSkillDir: skillRoot,
+  })
+
+  const skill = await ctx.skills.get('test-driven-development')
+  expect(skill).toMatchObject({
+    source: 'bundled',
+    invocation: { modelInvocable: false, userInvocable: true },
+  })
+  expect(skill?.description).toContain('explicitly invokes this Skill')
+  expect(skill?.content).toContain('Confirm that it fails because the behavior is missing.')
+  expect(skill?.content).toContain('Make the smallest implementation that satisfies the test.')
+  expect(skill?.content).toContain('do not run the entire suite solely because more checks exist')
+  expect(skill?.content).toContain('Do not delete existing implementation or user changes')
+  expect(skill?.content).toContain('Follow the selected profile\'s available tools, approval rules, and sandbox.')
 })

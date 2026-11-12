@@ -565,12 +565,12 @@ it('requires Office skill bodies and helpers in the published payload', () => {
   } })).toEqual([expect.stringContaining('package.json files must be')])
 })
 
-it('requires the Web completion Skill in the published payload', () => {
+it('requires bundled Web Skills in the published payload', () => {
   const dir = 'packages/bundle/web-app'
   const manifest = JSON.parse(readFileSync(new URL(`../${dir}/package.json`, import.meta.url), 'utf8')) as WorkspaceManifest['manifest']
   expect(checkWorkspaceManifest({ dir, manifest })).toEqual([])
   expect(checkWorkspaceManifest({ dir, manifest: {
-    ...manifest, files: manifest.files!.filter(file => file !== 'skills/evidence-aware-completion/SKILL.md'),
+    ...manifest, files: manifest.files!.filter(file => file !== 'skills'),
   } })).toEqual([expect.stringContaining('package.json files must be')])
 })
 

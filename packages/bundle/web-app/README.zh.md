@@ -54,6 +54,14 @@ dsh --profile web --no-open --port 8080
 
 在工作目录位于待检查仓库的 Web 会话中运行 `/review [重点]`。Bundle 会挂载该命令和只读 reviewer preset；证据内容、项目和用户 Skill 查找、配置及 Host 限制见 [`dsh-command-code-review`](../../interaction/command-code-review/README.zh.md)。
 
+### 基于证据的完成报告
+
+在标准 Web 会话中，Agent 可在报告已完成的编码或仓库工作前加载此 Skill。它会区分观察到的更改与工具结果、跳过或受阻的检查、当前 Session 中未看到的验证以及已知限制。DSH 现有 Skill 目录会公开其简短描述；只有 Agent 为匹配的任务选择它时，才会加载完整指导。它不会自动检查或认证 Session 证据、证明语义正确性或启动更多验证。
+
+### 测试驱动开发
+
+在标准 Web 会话中调用 `/test-driven-development [task]`，即可为实现或修复请求选择聚焦的红绿重构流程。此 Skill 仅通过用户命令显式调用，在调用前不会进入模型路由，因此其他请求不会接收其指导。它遵循仓库测试策略、保留已有更改，也不会仅因存在完整测试套件就要求运行它。其方法改编自 [Superpowers 的测试驱动开发 Skill](https://github.com/obra/superpowers/blob/main/skills/test-driven-development/SKILL.md)，该项目使用 [MIT 许可证](https://github.com/obra/superpowers/blob/main/LICENSE)；DSH 的指导文本和范围为原创。
+
 `--host` 与 `--port` 配置监听器；`--tls-cert` 与 `--tls-key` 让它直接提供 HTTPS；`--public-url` 指定 GUI 在剥离前缀的代理之后对外公告的公开 HTTP(S) 根，`--trusted-host` 则添加更多被接受的 authority。这些都在[监听、信任与公开部署](#public-deployments)中说明，而这些 flag 设置的 `tls` 字段记录在[载体的配置](../../../docs/subsystems/web-server.zh.md#config)中：
 
 | 字段 | 默认值 | 含义 |
@@ -64,10 +72,6 @@ dsh --profile web --no-open --port 8080
 | `publicUrl` | 未设置 | 对外公告的 HTTP(S) 应用根；否则公告绑定地址 URL |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-web-app)列出了本运行时插件接受的字段及其 JSDoc。随发行版交付的组合插入 `schedule` 服务行与 `ui-schedule` 任务页面行，时钟读数与四个提醒工具则属于 `standard`、`cordis` 与 `ptc` 三个 preset。这三个 preset 的 `tool-subagent` 与 `tool-subagent-fork` 两行都 deny 这四个工具，因此被委派子 agent 的作用域不会列出它们。
-
-### 基于证据的完成报告
-
-在标准 Web 会话中，Agent 可在报告已完成的编码或仓库工作前加载此 Skill。它会区分观察到的更改与工具结果、跳过或受阻的检查、当前 Session 中未看到的验证以及已知限制。DSH 现有 Skill 目录会公开其简短描述；只有 Agent 为匹配的任务选择它时，才会加载完整指导。它不会自动检查或认证 Session 证据、证明语义正确性或启动更多验证。
 
 <a id="public-deployments"></a>
 ### 监听、信任与公开部署
