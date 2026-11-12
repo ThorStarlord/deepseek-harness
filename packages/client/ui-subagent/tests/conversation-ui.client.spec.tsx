@@ -242,6 +242,8 @@ describe('SubagentHeaderLineage', () => {
     }, summaries)
     const view = render(<HeaderCatalog {...input} />)
     fireEvent.click(screen.getByRole('button', { name: '4 个子智能体' }))
+    const activeRow = screen.getByRole('treeitem', { name: /^worker/ })
+    expect(within(activeRow).queryByText(zh['activity.completed'], { exact: true })).toBeNull()
     const header = view.container.ownerDocument.querySelector<HTMLElement>('[data-subagent-section-header]')!
     expect(within(header).getByRole('heading', { name: '子智能体' })).toBeTruthy()
     expect(within(header).queryByRole('button')).toBeNull()
@@ -291,9 +293,13 @@ describe('SubagentHeaderLineage', () => {
     for (const [label, outcome] of outcomes) {
       const shown = outcome === 'token-limit' ? 'latest turn reached token limit'
         : outcome === 'other' ? 'latest turn ended for another reason' : `latest turn ${outcome}`
-      expect(screen.getByRole('treeitem', { name: new RegExp(`${label}.*${shown}`) })).toBeTruthy()
+      const row = screen.getByRole('treeitem', { name: new RegExp(`${label}.*${shown}`) })
+      expect(row).toBeTruthy()
+      expect(within(row).getByText(shown, { exact: true })).toBeTruthy()
     }
-    expect(screen.getByRole('treeitem', { name: /unknown.*latest turn outcome unknown/ })).toBeTruthy()
+    const unknown = screen.getByRole('treeitem', { name: /unknown.*latest turn outcome unknown/ })
+    expect(unknown).toBeTruthy()
+    expect(within(unknown).getByText('latest turn outcome unknown', { exact: true })).toBeTruthy()
   })
 
   it.each([

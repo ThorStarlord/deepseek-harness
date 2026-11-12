@@ -322,6 +322,7 @@ function CatalogRows({
           : entry.mode === 'one-shot' ? t('mode.oneShot') : t('mode.continuable')
         const completed = completedEntry(entry, summary)
         const activity = outcomeLabel(entry, summary, t)
+        const visibleOutcome = entry.activity === 'inactive' ? activity : undefined
         const secondary = [secondaryLabel, requiresOpening ? t('catalog.migrationRequired') : mode, activity]
           .filter(value => value !== undefined)
           .join(' · ')
@@ -409,7 +410,9 @@ function CatalogRows({
                   {secondaryLabel !== undefined && (
                     <span className={css.secondaryLabel}>{secondaryLabel}</span>
                   )}
-                  {requiresOpening && <span className={css.summary}>{t('catalog.migrationRequired')}</span>}
+                  {requiresOpening
+                    ? <span className={css.summary}>{t('catalog.migrationRequired')}</span>
+                    : visibleOutcome !== undefined && <span className={css.summary}>{visibleOutcome}</span>}
                 </span>
                 {metrics !== '' && (
                   <span className={css.metrics}>
