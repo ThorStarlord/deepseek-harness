@@ -2,7 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent, SessionHeader, SessionId , SessionLogOffset as SessionLogOffsetType , SessionSeqCursor } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader, SessionId, SessionLogOffset as SessionLogOffsetType, SessionSeqCursor } from '@deepseek-ai/dsh-session'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import type {
   SessionPersistenceRevision,
@@ -29,9 +29,11 @@ export interface SessionObservation extends Disposable {
   readonly events: readonly SessionEvent[]
   /** Last observed event seq, or -1 for an empty log. */
   readonly cursor: SessionSeqCursor
+  /** Last persisted event seq, or -1 for an empty prepared log; absent for live observations. */
+  readonly persistedCursor?: SessionSeqCursor
   /** Durable source revision for a cold prepared observation. */
   readonly revision?: SessionPersistenceRevision
-  /** Exact projection baseline at {@link cursor}, when the registry is mounted. */
+  /** Exact projection baseline at `persistedCursor` when prepared, or `cursor` when live. */
   readonly projections?: ProjectionSnapshot
   /**
    * Retain the same immutable cut for another Host owner.
@@ -60,6 +62,8 @@ interface PreparedEntry {
   readonly revision: SessionPersistenceRevision
   /** Unpublished Session restored from the balanced log; never entered into the store. */
   readonly session: Session
+  /** Number of events in the stored log before in-memory interrupted-turn closers. */
+  readonly persistedEventCount: SessionLogOffsetType
   /** Immutable balanced log (stored events plus in-memory interrupted-turn closers). */
   readonly events: readonly SessionEvent[]
   /** Active observation leases; a pinned entry (`refs > 0`) is never evicted. */
@@ -142,6 +146,7 @@ export class SessionObservationReader {
           persistenceIdentity: persistence.identity,
           revision: snapshot.revision,
           session,
+          persistedEventCount: loaded.persistedEventCount,
           events: Object.freeze(seed),
           refs: 0,
         }
@@ -254,6 +259,9 @@ export class SessionObservationReader {
         inheritedEventCount: entry.session.inheritedEventCount,
         events: entry.events,
         cursor: entry.events.at(-1)?.seq ?? -1,
+        persistedCursor: entry.persistedEventCount === 0
+          ? -1
+          : SessionSeq(entry.persistedEventCount - 1),
         revision: entry.revision,
         ...projections === undefined ? {} : { projections },
         retain: () => {
@@ -319,9 +327,10 @@ export class SessionObservationReader {
     const registry = this.ctx.get('sessionProjections')
     if (registry === undefined) return undefined
     const cache = this.ctx.get('sessionProjectionCache')
+    const persistedEvents = entry.events.slice(0, entry.persistedEventCount)
     return cache === undefined
-      ? registry.hydrate(entry.session, {}, entry.events, SessionLogOffset(0))
-      : cache.hydratePrepared(entry.session, entry.events)
+      ? registry.hydrate(entry.session, {}, persistedEvents, SessionLogOffset(0))
+      : cache.hydratePrepared(entry.session, persistedEvents)
   }
 }
 

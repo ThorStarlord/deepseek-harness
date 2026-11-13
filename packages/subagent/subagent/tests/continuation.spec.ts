@@ -12,8 +12,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionEventMap, SessionHeader } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
@@ -26,12 +26,13 @@ import SubagentRuntime, {
   SubagentError,
   SUBAGENT_DESCRIPTOR_VERSION,
 } from '../src/index.ts'
+import { establishCatalogChild } from '../src/catalog.ts'
 import type { SubagentRunEndInfo, SubagentRunInfo } from '../src/index.ts'
 import type { SubagentPromptRequestId } from '../src/control-types.ts'
 import * as activationResults from '../src/activation.ts'
 import { requireLocalActivation } from '../src/activation.ts'
 import { TestSessionQuery } from './test-session-query.ts'
-import { loadStoredSession } from './persistence-helpers.ts'
+import { loadStoredSession, seedStoredSession } from './persistence-helpers.ts'
 import {
   managerState,
   subagentManager,
@@ -907,6 +908,74 @@ describe('SubagentRuntime.startActivation', () => {
     expect(resumed.options.provider).toBeUndefined()
     expect(resumed.options.model).toBeUndefined()
     await drainManager(fresh)
+  })
+
+  it('keeps a cold synthetic interruption unknown and a persisted interruption recorded', async () => {
+    const { ctx, parent } = await setup([])
+    const repository = makeDirtyRepository()
+    const openChildId = SessionId('cold-open-child')
+    const openChildHeader = {
+      version: SESSION_FORMAT_VERSION,
+      id: openChildId,
+      createdAt: 2,
+      cwd: repository.root,
+      parentSession: parent.id,
+      isSeeded: false,
+      origin: 'subagent',
+      delegationDepth: 1,
+    } satisfies SessionHeader
+    const childDescriptor = { mode: 'continuable' as const, label: 'open turn' }
+    establishCatalogChild(parent.session, openChildHeader, childDescriptor, 'open-child')
+    await ctx.sessionPersistence.flush()
+    await seedStoredSession(ctx.sessionPersistence, openChildHeader, [
+      {
+        type: 'subagent/descriptor',
+        seq: SessionSeq(0),
+        time: 1,
+        data: { version: SUBAGENT_DESCRIPTOR_VERSION, mode: 'continuable', provider: 'spawn', label: 'open turn' },
+      },
+      { type: 'turn/start', seq: SessionSeq(1), time: 2, data: { turn: 1 } },
+    ])
+
+    const before = await loadStoredSession(ctx.sessionPersistence, openChildId)
+    using open = await ctx.sessionQuery.observeSession(openChildId)
+    using repeated = await ctx.sessionQuery.observeSession(openChildId)
+    expect(open.header.cwd).toBe(repository.root)
+    expect(open.events.at(-1)).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'interrupted' } } })
+    expect(open.persistedCursor).toBe(SessionSeq(1))
+    expect(open.projections?.values.subagentTiming).toMatchObject({ active: expect.any(Object) })
+    expect(open.projections?.values.subagentTiming).not.toHaveProperty('lastTurnOutcome')
+    expect(open.projections?.values.subagentTiming).not.toHaveProperty('lastTurnCompleted')
+    expect(repeated.projections?.values.subagentTiming).toEqual(open.projections?.values.subagentTiming)
+    expect(ctx.agents.get(openChildId)).toBeUndefined()
+    expect((await loadStoredSession(ctx.sessionPersistence, openChildId)).events).toEqual(before.events)
+
+    const durableChildId = SessionId('cold-durable-interrupted-child')
+    const durableChildHeader = { ...openChildHeader, id: durableChildId, createdAt: 3 }
+    establishCatalogChild(parent.session, durableChildHeader, { mode: 'continuable', label: 'recorded interruption' }, 'durable-child')
+    await ctx.sessionPersistence.flush()
+    await seedStoredSession(ctx.sessionPersistence, durableChildHeader, [
+      {
+        type: 'subagent/descriptor',
+        seq: SessionSeq(0),
+        time: 1,
+        data: {
+          version: SUBAGENT_DESCRIPTOR_VERSION, mode: 'continuable', provider: 'spawn', label: 'recorded interruption',
+        },
+      },
+      { type: 'turn/start', seq: SessionSeq(1), time: 2, data: { turn: 1 } },
+      { type: 'turn/end', seq: SessionSeq(2), time: 3, data: { turn: 1, reason: { kind: 'interrupted' } } },
+    ])
+    const durableBefore = await loadStoredSession(ctx.sessionPersistence, durableChildId)
+    using durable = await ctx.sessionQuery.observeSession(durableChildId)
+    expect(durable.persistedCursor).toBe(SessionSeq(2))
+    expect(durable.cursor).toBe(SessionSeq(2))
+    expect(durable.events.at(-1)).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'interrupted' } } })
+    expect(durable.projections?.values.subagentTiming)
+      .toMatchObject({ lastTurnOutcome: 'interrupted', lastTurnCompleted: false })
+    expect((await loadStoredSession(ctx.sessionPersistence, durableChildId)).events).toEqual(durableBefore.events)
+    expect(ctx.agents.get(durableChildId)).toBeUndefined()
+    expectRepositoryUnchanged(repository)
   })
 
   it('restores a completed child and cold-resumes it from its original repository scope', async () => {
