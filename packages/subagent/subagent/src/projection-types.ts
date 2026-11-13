@@ -42,9 +42,19 @@ export type SubagentCatalogEntry =
     | { readonly mode: 'unknown'; readonly label?: string }
   )
 
-/** Durable active-turn timing for one descriptor-backed child session. */
+/** Durable outcome categories for the latest closed local child turn. */
+export type SubagentTurnOutcome =
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'blocked'
+  | 'token-limit'
+  | 'interrupted'
+  | 'other'
+
+/** Durable active-turn timing and latest settled outcome for one child session. */
 export interface SubagentTimingProjection {
-  /** Milliseconds accumulated across completed turns after the child's own descriptor. */
+  /** Milliseconds accumulated across closed turns after the child's own descriptor. */
   settledMs: number
   /** Same-cut bounds of the currently open turn, when one has not reached `turn/end`. */
   active?: {
@@ -53,10 +63,9 @@ export interface SubagentTimingProjection {
     /** Latest event time folded into this projection cut. */
     through: number
   }
-  /**
-   * Whether the latest closed turn after the child's own descriptor completed
-   * normally; absent while a turn is open or before one closes.
-   */
+  /** Latest closed local turn outcome; absent while a turn is open or before one closes. */
+  lastTurnOutcome?: SubagentTurnOutcome
+  /** Compatibility alias for existing projection consumers; prefer `lastTurnOutcome`. */
   lastTurnCompleted?: boolean
 }
 
@@ -93,7 +102,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     /** Direct children in parent catalog event order, excluding fork-inherited facts. */
     subagentCatalog: SubagentCatalogEntry[]
-    /** Active-turn duration and latest closed-turn completion for a descriptor-backed subagent session. */
+    /** Active-turn duration and latest durable outcome for a descriptor-backed child session. */
     subagentTiming: SubagentTimingProjection
     /**
      * Identity of a descriptor-backed subagent session. `null` ⟺ no valid

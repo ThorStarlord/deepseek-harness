@@ -230,11 +230,11 @@ describe('SubagentHeaderLineage', () => {
       { id: external, mode: 'external', label: 'external', activity: 'running' },
     ]
     const summaries: Record<SessionId, SessionSummary> = {
-      [CHILD]: { ...summary(CHILD, 1), running: true, projectionValues: { subagentTiming: { settledMs: 0, lastTurnCompleted: true } } },
-      [finished]: { ...summary(finished, 1), projectionValues: { subagentTiming: { settledMs: 0, lastTurnCompleted: true } } },
-      [paused]: { ...summary(paused, 1), projectionValues: { subagentTiming: { settledMs: 0, lastTurnCompleted: false } } },
+      [CHILD]: { ...summary(CHILD, 1), running: true, projectionValues: { subagentTiming: { settledMs: 0, lastTurnOutcome: 'completed' } } },
+      [finished]: { ...summary(finished, 1), projectionValues: { subagentTiming: { settledMs: 0, lastTurnOutcome: 'completed' } } },
+      [paused]: { ...summary(paused, 1), projectionValues: { subagentTiming: { settledMs: 0, lastTurnOutcome: 'interrupted' } } },
       [external]: {
-        ...summary(external, 1), running: true, projectionValues: { subagentTiming: { settledMs: 0, lastTurnCompleted: true } },
+        ...summary(external, 1), running: true, projectionValues: { subagentTiming: { settledMs: 0, lastTurnOutcome: 'completed' } },
       },
     }
     const input = props(catalog({ entries, team: sharedTeam }), {
@@ -242,15 +242,18 @@ describe('SubagentHeaderLineage', () => {
     }, summaries)
     const view = render(<HeaderCatalog {...input} />)
     fireEvent.click(screen.getByRole('button', { name: '4 个子智能体' }))
+    const activeRow = screen.getByRole('treeitem', { name: /^worker/ })
+    expect(within(activeRow).queryByText(zh['activity.completed'], { exact: true })).toBeNull()
     const header = view.container.ownerDocument.querySelector<HTMLElement>('[data-subagent-section-header]')!
     expect(within(header).getByRole('heading', { name: '子智能体' })).toBeTruthy()
     expect(within(header).queryByRole('button')).toBeNull()
-    expect(header.textContent).toBe('子智能体1 已完成\u2002·\u20021 进行中\u2002·\u20021 未运行\u2002·\u20021 外部任务')
+    expect(header.textContent).toBe('子智能体1 个最近轮次已完成\u2002·\u20021 进行中\u2002·\u20021 未运行\u2002·\u20021 外部任务')
     fireEvent.click(screen.getByRole('button', { name: '展开 worker 的下级子智能体' }))
+    expect(screen.getByRole('treeitem', { name: /paused.*已中断/ })).toBeTruthy()
     expect(header.textContent).toContain('1 进行中')
     expect(header.textContent).not.toContain('2 进行中')
     view.rerender(<HeaderCatalog {...input} t={makeTranslate(en)} />)
-    expect(header.textContent).toBe('Subagents1 completed\u2002·\u20021 in progress\u2002·\u20021 not running\u2002·\u20021 external')
+    expect(header.textContent).toBe('Subagents1 with a completed latest turn\u2002·\u20021 in progress\u2002·\u20021 not running\u2002·\u20021 external')
   })
 
   it('omits zero progress counts from a completed-only catalog header', () => {
@@ -262,7 +265,41 @@ describe('SubagentHeaderLineage', () => {
     render(<HeaderCatalog {...input} />)
     fireEvent.click(screen.getByRole('button', { name: '1 个子智能体' }))
     const header = document.querySelector('[data-subagent-section-header]')!
-    expect(header.textContent).toBe('子智能体1 已完成')
+    expect(header.textContent).toBe('子智能体1 个最近轮次已完成')
+  })
+
+  it('shows durable local outcomes and leaves missing outcome evidence unknown', () => {
+    const outcomes = [
+      ['completed', 'completed'],
+      ['failed', 'failed'],
+      ['cancelled', 'cancelled'],
+      ['blocked', 'blocked'],
+      ['limited', 'token-limit'],
+      ['other', 'other'],
+    ] as const
+    const entries: CatalogFixture['entries'] = [
+      ...outcomes.map(([label]) => ({ id: label as SessionId, mode: 'continuable' as const, label, activity: 'inactive' as const })),
+      { id: 'unknown' as SessionId, mode: 'continuable', label: 'unknown', activity: 'inactive' },
+    ]
+    const summaries = Object.fromEntries([
+      ...outcomes.map(([label, outcome]) => [label, {
+        ...summary(label as SessionId, 1),
+        projectionValues: { subagentTiming: { settledMs: 0, lastTurnOutcome: outcome } },
+      }]),
+      ['unknown', summary('unknown' as SessionId, 1)],
+    ]) as Record<SessionId, SessionSummary>
+    render(<HeaderCatalog {...props(catalog({ entries }), {}, summaries)} t={makeTranslate(en)} />)
+    fireEvent.click(screen.getByRole('button', { name: '7 subagents' }))
+    for (const [label, outcome] of outcomes) {
+      const shown = outcome === 'token-limit' ? 'latest turn reached token limit'
+        : outcome === 'other' ? 'latest turn ended for another reason' : `latest turn ${outcome}`
+      const row = screen.getByRole('treeitem', { name: new RegExp(`${label}.*${shown}`) })
+      expect(row).toBeTruthy()
+      expect(within(row).getByText(shown, { exact: true })).toBeTruthy()
+    }
+    const unknown = screen.getByRole('treeitem', { name: /unknown.*latest turn outcome unknown/ })
+    expect(unknown).toBeTruthy()
+    expect(within(unknown).getByText('latest turn outcome unknown', { exact: true })).toBeTruthy()
   })
 
   it.each([
@@ -527,7 +564,7 @@ describe('SubagentHeaderLineage', () => {
     expect(screen.getAllByRole('treeitem')).toHaveLength(2)
     expect(screen.getByText('worker')).toBeTruthy()
     expect(screen.queryByText('正在扫描项目文件')).toBeNull()
-    expect(screen.getByRole('treeitem', { name: /reviewer child-2 · 一次性 · 当前未运行/ })).toBeTruthy()
+    expect(screen.getByRole('treeitem', { name: /reviewer child-2 · 一次性 · 最近轮次结果未知/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: '展开 worker 的下级子智能体' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '展开 reviewer 的下级子智能体' })).toBeTruthy()
 
@@ -1046,9 +1083,9 @@ describe('SubagentHeaderLineage', () => {
           subagentTiming: {
             settledMs,
             ...(id === 'finished'
-              ? { lastTurnCompleted: true }
+              ? { lastTurnOutcome: 'completed' }
               : id === 'interrupted'
-                ? { lastTurnCompleted: false }
+                ? { lastTurnOutcome: 'interrupted' }
                 : {}),
             ...(activeSince === undefined || activeThrough === undefined
               ? {}
@@ -1074,7 +1111,7 @@ describe('SubagentHeaderLineage', () => {
     expect(tokenMetric.nextElementSibling).toBe(durationMetric)
     const finishedRow = screen.getByRole('treeitem', { name: /finished.*已完成.*123 tok · 1小时02分03秒/ })
     expect(finishedRow.querySelector('[data-state="done"]')).not.toBeNull()
-    const interruptedRow = screen.getByRole('treeitem', { name: /interrupted.*当前未运行.*123M tok · 6秒/ })
+    const interruptedRow = screen.getByRole('treeitem', { name: /interrupted.*已中断.*123M tok · 6秒/ })
     expect(interruptedRow.querySelector('[data-state="idle"]')).not.toBeNull()
     for (const row of [runningRow, finishedRow, interruptedRow]) {
       expect(row.querySelector('[data-state]')?.parentElement?.className).toContain('rowActivitySlot')
@@ -1091,7 +1128,7 @@ describe('SubagentHeaderLineage', () => {
     await vi.advanceTimersByTimeAsync(1_000)
     expect(screen.getByRole('treeitem', { name: /running.*4\.6K tok · 1分11秒/ })).toBeTruthy()
     expect(screen.getByRole('treeitem', { name: /finished.*已完成.*123 tok · 1小时02分03秒/ })).toBeTruthy()
-    expect(screen.getByRole('treeitem', { name: /interrupted.*当前未运行.*123M tok · 6秒/ })).toBeTruthy()
+    expect(screen.getByRole('treeitem', { name: /interrupted.*已中断.*123M tok · 6秒/ })).toBeTruthy()
   })
 
   it('ticks expanded running grandchildren under an idle child and releases their clock on collapse', async () => {

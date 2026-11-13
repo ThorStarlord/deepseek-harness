@@ -71,7 +71,7 @@ kind: "package-reference"
 
 ### 耗时、完成状态与 token
 
-每个可见目录层在包含运行中 child 时独立推进时钟；折叠该层或关闭菜单会释放时钟。token 用量总计为四个互不重叠的 `tokenUsage` 桶之和。`subagentTiming` 投影会累加已结束轮次的耗时，并提供 `latestTurnCompleted`，用于成功圆点与已完成数量；新轮次开始时会清除该完成状态，直到自身的 `turn/end` 到达。耗时仅在运行中 child 存在未结束轮次时每秒递增一次，并在 child 变为 inactive 后冻结；被中断的未结束轮次以其同一切面的 `active.through` 为上界，绝不使用更新的会话元数据。
+每个可见目录层在包含运行中 child 时独立推进时钟；折叠该层或关闭菜单会释放该时钟。token 用量是四个互不重叠的 `tokenUsage` 桶之和。`subagentTiming` 投影累加已结束轮次的耗时，并将最新本地 `turn/end` 原因映射为 `lastTurnOutcome` 分类；新轮次开始时会清除该结果。本地 inactive child 行显示最近轮次已完成、失败、取消、阻止、达到 token 上限、中断、因其他原因结束，或在缺少结果证据时显示未知；这些标签描述轮次，不表示委派责任已经完成。外部条目没有本地 Session 结果。耗时仅在运行中 child 存在未结束轮次时每秒递增一次，并在 child 变为 inactive 后冻结；被中断的未结束轮次以其同一切面的 `active.through` 为上界，不使用更新的会话元数据。
 
 ### 编辑器选举
 
@@ -122,7 +122,7 @@ one-shot 和模式未知的 child 选用只读编辑器。可继续 child 经由
 
 这些限制定义目录能显示什么、`@` 引用意味着什么；它们是当前包约束。
 
-- **非完成的 inactive 结果仍合并显示**：目录能区分最近一次正常完成与其他 inactive 状态，但不区分失败、取消、拒绝、token 耗尽或尚无已结束轮次的 child；UI 不公开 Activation 身份，停止能力仅限编辑器上针对运行中可继续 child 的当前轮次 Stop。
+- **Inactive child 结果范围**：本地行只分类最新持久化的 `turn/end` 原因；未结束轮次或缺少 child 投影时显示为未知，外部条目没有本地 Session 结果。标签只描述该轮次，不表示委派责任已经完成。UI 不公开 Activation 身份；停止操作仅限于对运行中 continuable child 使用编辑器当前轮次的 Stop。
 - **`@` 引用仍是显示标题文本**：重复或改名后的 label 会有歧义，因此它们刻意不获得继续执行语义。
 
 <a id="dev-note"></a>

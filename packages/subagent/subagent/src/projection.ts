@@ -11,11 +11,11 @@ import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { foldSubagentDescriptor } from './descriptor.ts'
 import type { SubagentDescriptorData } from './descriptor.ts'
-import type { SubagentIdentityProjection, SubagentTimingProjection } from './projection-types.ts'
+import type { SubagentIdentityProjection, SubagentTimingProjection, SubagentTurnOutcome } from './projection-types.ts'
 
-/** Fold state for a subagent's latest timing snapshot. */
+/** Fold state for a subagent's latest timing and outcome snapshot. */
 export interface TimingState {
-  /** Milliseconds accumulated across completed post-descriptor turns. */
+  /** Milliseconds accumulated across closed post-descriptor turns. */
   settledMs: number
   /** Current open interval kept paired inside the fold. */
   active?: { since: number; through: number } | undefined
@@ -23,8 +23,25 @@ export interface TimingState {
   pendingTurnStart?: number | undefined
   /** Whether the fold has crossed a descriptor in this logical log. */
   descriptorSeen: boolean
-  /** Whether the latest closed post-descriptor turn completed normally; absent while a turn is open or before one closes. */
-  lastTurnCompleted?: boolean | undefined
+  /** Latest closed post-descriptor turn outcome; absent while a turn is open or before one closes. */
+  lastTurnOutcome?: SubagentTurnOutcome | undefined
+}
+
+const turnOutcomeSchema: z.ZodType<SubagentTurnOutcome> = z.enum([
+  'completed', 'failed', 'cancelled', 'blocked', 'token-limit', 'interrupted', 'other',
+])
+
+/** Reduce a durable Session turn reason to the child catalog's stable status vocabulary. */
+function turnOutcome(kind: string): SubagentTurnOutcome {
+  switch (kind) {
+    case 'completed': return 'completed'
+    case 'error': return 'failed'
+    case 'aborted': return 'cancelled'
+    case 'blocked': return 'blocked'
+    case 'max-tokens': return 'token-limit'
+    case 'interrupted': return 'interrupted'
+    default: return 'other'
+  }
 }
 
 const activeIntervalSchema = z.object({
@@ -35,11 +52,14 @@ const activeIntervalSchema = z.object({
 const projectionSchema: z.ZodType<SubagentTimingProjection> = z.object({
   settledMs: z.number().int().nonnegative(),
   active: activeIntervalSchema.optional(),
+  lastTurnOutcome: turnOutcomeSchema.optional(),
   lastTurnCompleted: z.boolean().optional(),
-}).strict().transform(({ settledMs, active, lastTurnCompleted }) => ({
+}).strict().transform(({ settledMs, active, lastTurnOutcome, lastTurnCompleted }) => ({
   settledMs,
   ...active === undefined ? {} : { active },
-  ...lastTurnCompleted === undefined ? {} : { lastTurnCompleted },
+  ...lastTurnOutcome === undefined
+    ? lastTurnCompleted === undefined ? {} : { lastTurnCompleted }
+    : { lastTurnOutcome, lastTurnCompleted: lastTurnOutcome === 'completed' },
 }))
 
 const timingStateSchema: z.ZodType<TimingState> = z.object({
@@ -47,7 +67,7 @@ const timingStateSchema: z.ZodType<TimingState> = z.object({
   active: activeIntervalSchema.optional(),
   pendingTurnStart: z.number().int().nonnegative().optional(),
   descriptorSeen: z.boolean(),
-  lastTurnCompleted: z.boolean().optional(),
+  lastTurnOutcome: turnOutcomeSchema.optional(),
 }).strict()
 
 /**
@@ -64,7 +84,7 @@ export const subagentTimingProjectionDefinition = {
   init: () => ({ descriptorSeen: false, settledMs: 0 }),
   apply: (state, event) => {
     if (event.type === 'turn/start') {
-      const { lastTurnCompleted: _closed, ...openState } = state
+      const { lastTurnOutcome: _closed, ...openState } = state
       return state.descriptorSeen
         ? { ...openState, active: { since: event.time, through: event.time } }
         : { ...openState, pendingTurnStart: event.time }
@@ -90,7 +110,7 @@ export const subagentTimingProjectionDefinition = {
       return {
         ...rest,
         settledMs: state.settledMs + Math.max(0, event.time - active.since),
-        lastTurnCompleted: event.data.reason.kind === 'completed',
+        lastTurnOutcome: turnOutcome(event.data.reason.kind),
       }
     }
     if (state.active === undefined) return state
@@ -101,10 +121,13 @@ export const subagentTimingProjectionDefinition = {
     view: state => ({
       settledMs: state.settledMs,
       ...(state.active === undefined ? {} : { active: state.active }),
-      ...(state.lastTurnCompleted === undefined ? {} : { lastTurnCompleted: state.lastTurnCompleted }),
+      ...(state.lastTurnOutcome === undefined ? {} : {
+        lastTurnOutcome: state.lastTurnOutcome,
+        lastTurnCompleted: state.lastTurnOutcome === 'completed',
+      }),
     }),
   },
-  stateVersion: 3,
+  stateVersion: 4,
 } satisfies ProjectionDefinition<'subagentTiming', TimingState>
 
 /** Descriptor identity retained by the subagent projection. */
