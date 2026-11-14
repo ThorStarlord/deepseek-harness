@@ -268,3 +268,59 @@ it('keeps a live blank Session blank across a graceful server restart', async ()
   const after = await hostRpc(await server.start(0))
   expect(await listed(after)).toMatchObject({ blank: true, agentAvailable: false })
 })
+
+it('creates and reopens a named Activity from a new Session after a Web process restart', async () => {
+  const world = await mkdtemp(join(tmpdir(), 'dsh-home-activity-restart-'))
+  onTestFinished(() => rm(world, { recursive: true, force: true }))
+  const server = new RestartableServer(world, 'http://127.0.0.1:9')
+  onTestFinished(() => server.stop())
+  const workspacePath = join(world, 'workspace')
+  await mkdir(workspacePath)
+
+  const first = await hostRpc(await server.start(0))
+  const { workspace } = await first<{ workspace: { id: string } }>('workspace/create', { request: { path: workspacePath } })
+  const { sessionId: originalSessionId } = await first<{ sessionId: string }>('session/create', {
+    request: { workspaceId: workspace.id },
+  })
+  const created = await first<{ result: { kind: string; text?: string } }>('commands/execute', {
+    agentId: originalSessionId,
+    line: '/activity create {"name":"Release readiness","objective":"Prepare the next release for review.","boundaries":{"inScope":["Review release notes and focused check results."],"outOfScope":["Do not publish or deploy."]}}',
+    submittedAttachments: [],
+  })
+  expect(created.result.kind).toBe('success')
+  expect(created.result.text).toContain('Saved only; its objective has not been started.')
+  const activityId = /ID: ([0-9a-f-]{36})/u.exec(created.result.text ?? '')?.[1]
+  if (activityId === undefined) throw new Error('Activity creation did not return its stable id')
+  const firstList = await first<{ result: { text?: string } }>('commands/execute', {
+    agentId: originalSessionId,
+    line: '/activity list',
+    submittedAttachments: [],
+  })
+  expect(firstList.result.text).toContain(activityId)
+
+  await server.stop()
+  const second = await hostRpc(await server.start(0))
+  const sessions = await second<{ items: { sessionId: string; agentAvailable: boolean }[] }>('session/list', { _request: {} })
+  expect(sessions.items.some(item => item.sessionId === originalSessionId && item.agentAvailable)).toBe(false)
+  const { sessionId: newSessionId } = await second<{ sessionId: string }>('session/create', {
+    request: { workspaceId: workspace.id },
+  })
+  expect(newSessionId).not.toBe(originalSessionId)
+  const secondList = await second<{ result: { text?: string } }>('commands/execute', {
+    agentId: newSessionId,
+    line: '/activity list',
+    submittedAttachments: [],
+  })
+  expect(secondList.result.text).toContain(activityId)
+  const reopened = await second<{ result: { kind: string; text?: string } }>('commands/execute', {
+    agentId: newSessionId,
+    line: `/activity open ${activityId}`,
+    submittedAttachments: [],
+  })
+  expect(reopened.result.kind).toBe('success')
+  expect(reopened.result.text).toContain(`ID: ${activityId}`)
+  expect(reopened.result.text).toContain('Objective: Prepare the next release for review.')
+  expect(reopened.result.text).toContain('In scope: Review release notes and focused check results.')
+  expect(reopened.result.text).toContain('Out of scope: Do not publish or deploy.')
+  expect(reopened.result.text).toContain('does not start work or activate a Goal')
+})

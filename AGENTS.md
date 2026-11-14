@@ -54,6 +54,7 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   spill/                output spill
   storage/              non-session storage
   workspace/            workspace entities
+  home/                 persistent user-directed Activities
   feedback/             human feedback
   identity/             anonymous identity
   settings/             user settings
