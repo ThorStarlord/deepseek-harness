@@ -1,9 +1,6 @@
-// Keyless assembled-browser coverage for the /feedback command over the
-// shipped Web bundles and the real host wire. The command plane settles
-// without a model turn: the host appends the log-only command/run +
-// feedback/record + command/done lifecycle, and the transcript renders the
-// acknowledgement with the session and anonymous user ids as a persistent
-// command row.
+// Keyless assembled-browser coverage for /feedback and /activity commands
+// over the shipped Web bundles and real host wire. Command execution settles
+// without a model turn, and the transcript renders each recorded result.
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
@@ -21,11 +18,12 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/feedback-comm
 const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
 const ACK_EXPECTED = join(SNAPSHOT_DIR, 'ack.expected.md')
 const ACK_EXPANDED_EXPECTED = join(SNAPSHOT_DIR, 'ack-expanded.expected.md')
+const ACTIVITY_EXPECTED = join(SNAPSHOT_DIR, 'activity.expected.md')
 const MODE = webSnapshotMode()
 
 const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 
-describe('web e2e: /feedback command acknowledgement', () => {
+describe('web e2e: command acknowledgements', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
@@ -96,9 +94,25 @@ describe('web e2e: /feedback command acknowledgement', () => {
     expect(tripwire.warnings).toEqual([])
   }, 60_000)
 
+  it.skipIf(MODE === 'record')('renders the Activity list in the same recorded command conversation', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-activity-command'))
+    const input = page.locator('[data-composer-input]').first()
+    await input.fill('/activity list')
+    await input.press('Enter')
+    await page.getByText(/No saved Activities\./).waitFor({ timeout: 10_000 })
+    await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
+    await expect.poll(() => page.getByRole('button', { name: 'Add files or run commands' }).isEnabled(), { timeout: 10_000 }).toBe(true)
+
+    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(ACTIVITY_EXPECTED, snapshot, MODE)
+
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
+  }, 60_000)
+
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.v3.jsonl', 'ack.expected.md', 'ack-expanded.expected.md',
+      'session.v3.jsonl', 'ack.expected.md', 'ack-expanded.expected.md', 'activity.expected.md',
     ])
   })
 })
