@@ -35,7 +35,7 @@ When a before/after comparison is needed, preserve the actual starting implement
 
 Before handoff, review or push, check only new cumulative interactions, missing required checks and invalidated evidence; do not repeat completed verification at each stage. Report results and material gaps accurately. Do not claim full coverage or visual acceptance when required scenes or checks are missing.
 
-These effort levels change only the additional design-review procedure. Existing [client test requirements](../../../packages/client/AGENTS.md), [GUI PR GIF requirements](../record-browser-gif/SKILL.md#every-gui-pull-request-includes-a-gif), and [designer/product approval](#design-review-escalation) still apply, including to local changes when their original triggers are met.
+These effort levels change only the additional design-review procedure. Existing [client test requirements](../../../packages/client/AGENTS.md) and [GUI PR GIF requirements](../record-browser-gif/SKILL.md#every-gui-pull-request-includes-a-gif) still apply. Designer/product approval remains required when its trigger is met, except for a change explicitly eligible under the owner-authorized [Stage 1 alternative](#owner-authorized-stage-1-alternate-assessment).
 
 ## Select the rule owners
 
@@ -116,7 +116,7 @@ Rule changes state applicability, decisions, exceptions and observable verificat
 
 ## Design review escalation
 
-A PR with extensive UI changes, or any clearly user-perceivable change to UI or interaction, must receive an independent review from a qualified human designer or product reviewer. Apply the existing inspection and evidence requirements at a level appropriate to the change's impact and risk; product/design review does not replace technical validation.
+A PR with extensive UI changes, or any clearly user-perceivable change to UI or interaction, must receive an independent review from a qualified human designer or product reviewer, except for an eligible change using the owner-authorized Stage 1 alternative below. Apply the existing inspection and evidence requirements at a level appropriate to the change's impact and risk; product/design review does not replace technical validation.
 
 ### Select a reviewer for this fork
 
@@ -131,8 +131,27 @@ A reviewer may submit a formal GitHub review or a top-level PR comment. If neith
 - **ADVISORY:** suggestions are nonblocking. Advisory feedback alone does not satisfy the required review; the reviewer must separately approve the reviewed revision.
 - **OWNER EXCEPTION:** this process grants no owner-only substitute. A substitute or exception requires a separate policy amendment explicitly ratified by the repository owner before it can apply.
 
-An approval applies only to its reviewed commit. Reassess the affected interaction when a later change can alter the reviewed result. Adopting this process does not approve an open PR; each qualifying change still needs its own substantive disposition. Silence, technical mergeability, an unanswered request, or an agent's assessment does not satisfy this requirement. Agent assessments may help prepare evidence and findings, but they are not independent human approval.
+An approval applies only to its reviewed commit. Reassess the affected interaction when a later change can alter the reviewed result. Adopting this process does not approve an open PR; each qualifying change still needs its own substantive disposition. Silence, technical mergeability, an unanswered request, or an agent's assessment does not satisfy the human-review requirement. An agent assessment is not independent human approval and may substitute only through the explicit Stage 1 alternative below.
 
 ### If no reviewer is available
 
-Seek another qualified reviewer outside the upstream roster. If none is available, keep the PR open and record the external dependency. The repository owner may propose a different review model in a separate governance change; until that change is explicitly ratified and integrated, do not substitute owner-only or agent review for independent human judgment.
+Seek another qualified reviewer outside the upstream roster. If none is available, keep the PR open and record the external dependency, except where the scoped Stage 1 alternative below applies.
+
+### Owner-authorized Stage 1 alternate assessment
+
+For the owner-authorized Home Harness Stage 1 implementation batch (Issues #17–#30), an eligible low- or moderate-risk change may use a separate, read-only agent assessment as an owner-authorized alternative to the human review trigger above. This is an explicit exception for that bounded batch, not an independent human review, an **APPROVE** disposition, or permission to extend an issue's scope. It expires when Issue #30 is integrated; other work still follows the independent-human requirement.
+
+The assessing agent did not implement or materially shape the change. It receives the complete issue criteria, exact diff and head SHA, relevant rendered interaction evidence, and focused validation. Its assessment is separate from the implementation conversation.
+
+A low-risk change is descriptive or cosmetic, has negligible blast radius, and does not add persistent data or execution. A moderate-risk change adds bounded, user-initiated behavior or a new Activity-only record in the strict versioned store, without rewriting existing data or changing authority. A high-risk change alters authentication, authorization, cross-user privacy, existing durable facts, or external permissions; adds automatic or unbounded execution; introduces destructive or irreversible effects; or makes consequential claims about completion, verification, acceptance, source history, or safety without direct evidence. Any unclassified or unresolved risk is high.
+
+A change is eligible only when the assessment confirms that:
+
+- The change stays within an accepted issue's scope.
+- It does not change authentication, authorization, repository permissions, or cross-user identity ownership. Any statement about unchanged permissions is narrowly scoped to this change and directly evidenced.
+- Execution begins only after explicit user action and uses existing provider permission semantics; the change adds no automatic initiation, resume, or unbounded delegation.
+- Persistent additions are safely versioned, preserve existing Session and Activity facts, and have evidenced write-failure, restart, and rollback behavior. Limitations such as unavailable edit or delete operations are explicit and do not make saved data unrecoverable.
+- External effects remain within the user's explicit request and the existing provider contract; the change adds no irreversible or out-of-scope side effect.
+- Direct rendered evidence and focused tests cover the accepted interaction and its recovery. Provider reports, verification, permissions, source history, and user-acceptance claims remain attributed and state uncertainty where evidence is absent.
+
+Record **OWNER-AUTHORIZED AGENT ALTERNATE — ELIGIBLE** or **HUMAN REVIEW REQUIRED**, the assessing agent and model, its independence from implementation, issue and reviewed SHA, risk rationale, inspected interaction and evidence, validation, findings, and residual uncertainty. The alternate is not human approval and must not be recorded as **APPROVE**. The owner's Stage 1 authorization covers eligible issues without a separate per-PR approval. An unresolved high-impact finding, uncertain eligibility, or missing rendered evidence requires a qualified human review; if none is available, keep that PR open.
