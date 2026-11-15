@@ -113,7 +113,7 @@ describe('web e2e: command acknowledgements', () => {
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'session.v3.jsonl', 'ack.expected.md', 'ack-expanded.expected.md', 'activity.expected.md',
-      'activity-create.expected.md',
+      'activity-create.expected.md', 'activity-create-error.expected.md',
     ])
   })
 })

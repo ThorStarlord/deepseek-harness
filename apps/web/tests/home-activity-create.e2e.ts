@@ -14,9 +14,11 @@ import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './suppor
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/feedback-command', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
 const EXPECTED = join(SNAPSHOT_DIR, 'activity-create.expected.md')
+const ERROR_EXPECTED = join(SNAPSHOT_DIR, 'activity-create-error.expected.md')
 const SCREENSHOT_DIR = fileURLToPath(new URL('../../../.artifacts/ui-review', import.meta.url))
 const INPUT_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-create-input.png')
 const SAVED_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-create-saved.png')
+const ERROR_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-create-error.png')
 const MODE = webSnapshotMode()
 const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 
@@ -63,6 +65,15 @@ describe('web e2e: named Activity creation', () => {
     await page.screenshot({ path: SAVED_SCREENSHOT, fullPage: true })
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(EXPECTED, snapshot, MODE)
+
+    await input.fill('/activity create {')
+    await input.press('Enter')
+    await page.getByText(/Activity details must be valid JSON\./).waitFor({ timeout: 10_000 })
+    await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
+    await expect.poll(() => page.getByRole('button', { name: 'Add files or run commands' }).isEnabled(), { timeout: 10_000 }).toBe(true)
+    await page.screenshot({ path: ERROR_SCREENSHOT, fullPage: true })
+    const errorSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(ERROR_EXPECTED, errorSnapshot, MODE)
 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
