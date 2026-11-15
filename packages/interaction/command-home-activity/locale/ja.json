@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Home アクティビティのコマンド",
+    "description": "保存済みアクティビティを作成、一覧表示、再開し、Workspace または DSH Session に関連付けます。"
+  }
+}

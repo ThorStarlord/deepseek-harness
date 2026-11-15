@@ -21,4 +21,4 @@
 {"type":"feedback/record","data":{"text":"the diff view is unreadable"}}
 {"type":"command/done","data":{"commandId":"{{command:1}}","kind":"success","text":"Feedback recorded for session {{session:1}}\nAnonymous user: {{anonymousUserId}}."}}
 {"type":"command/run","data":{"commandId":"{{command:2}}","name":"activity","source":{"kind":"user"}}}
-{"type":"command/done","data":{"commandId":"{{command:2}}","kind":"success","text":"No saved Activities. Usage: /activity create <JSON> | /activity list | /activity open <activity-id>"}}
+{"type":"command/done","data":{"commandId":"{{command:2}}","kind":"success","text":"No saved Activities. Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link <activity-id> workspace|session <context-id> | unlink <activity-id> workspace|session <context-id>"}}

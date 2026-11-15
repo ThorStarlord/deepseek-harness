@@ -14,14 +14,19 @@
   "exports": {
     ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
     "./types": { "types": "./lib/types/types.d.ts", "default": "./lib/types/types.js" },
+    "./associations": { "types": "./lib/types/associations.d.ts", "default": "./lib/types/associations.js" },
+    "./locale/*.json": "./locale/*.json",
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
-  "files": ["lib/index.js", "lib/spec.js", "lib/types/**/*.js", "lib/types/**/*.d.ts"],
+  "files": ["locale/*.json", "lib/index.js", "lib/types/**/*.js", "lib/types/**/*.d.ts"],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-storage-domain": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-persistence": "workspace:*",
+    "@deepseek-ai/dsh-workspace": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"
   },
   "dependencies": { "zod": "4.4.3" },
@@ -30,6 +35,9 @@
     "@deepseek-ai/dsh-storage": "workspace:*",
     "@deepseek-ai/dsh-storage-domain": "workspace:*",
     "@deepseek-ai/dsh-storage-json": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-persistence": "workspace:*",
+    "@deepseek-ai/dsh-workspace": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/cordis-plugin-loader": "workspace:~"
   }

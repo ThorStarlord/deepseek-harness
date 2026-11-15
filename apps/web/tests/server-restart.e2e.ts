@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { expect, it, onTestFailed, onTestFinished } from 'vitest'
@@ -271,16 +271,26 @@ it('keeps a live blank Session blank across a graceful server restart', async ()
 
 it('creates and reopens a named Activity from a new Session after a Web process restart', async () => {
   const world = await mkdtemp(join(tmpdir(), 'dsh-home-activity-restart-'))
-  onTestFinished(() => rm(world, { recursive: true, force: true }))
   const server = new RestartableServer(world, 'http://127.0.0.1:9')
-  onTestFinished(() => server.stop())
-  const workspacePath = join(world, 'workspace')
-  await mkdir(workspacePath)
+  onTestFinished(async () => {
+    const failures: unknown[] = []
+    await server.stop().catch((error: unknown) => failures.push(error))
+    await rm(world, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
+    if (failures.length > 0) throw new AggregateError(failures, 'Home Activity restart test cleanup failed')
+  })
+  const firstWorkspacePath = join(world, 'workspace-one')
+  const secondWorkspacePath = join(world, 'workspace-two')
+  await mkdir(firstWorkspacePath)
+  await mkdir(secondWorkspacePath)
 
   const first = await hostRpc(await server.start(0))
-  const { workspace } = await first<{ workspace: { id: string } }>('workspace/create', { request: { path: workspacePath } })
+  const { workspace: firstWorkspace } = await first<{ workspace: { workspaceId: string } }>('workspace/create', { request: { path: firstWorkspacePath } })
+  const { workspace: secondWorkspace } = await first<{ workspace: { workspaceId: string } }>('workspace/create', { request: { path: secondWorkspacePath } })
   const { sessionId: originalSessionId } = await first<{ sessionId: string }>('session/create', {
-    request: { workspaceId: workspace.id },
+    request: { workspaceId: firstWorkspace.workspaceId },
+  })
+  const { sessionId: linkedSessionId } = await first<{ sessionId: string }>('session/create', {
+    request: { workspaceId: secondWorkspace.workspaceId },
   })
   const created = await first<{ result: { kind: string; text?: string } }>('commands/execute', {
     agentId: originalSessionId,
@@ -297,30 +307,38 @@ it('creates and reopens a named Activity from a new Session after a Web process 
     submittedAttachments: [],
   })
   expect(firstList.result.text).toContain(activityId)
+  const execute = async (rpc: HostRpc, agentId: string, line: string) => await rpc<{ result: { kind: string; text?: string } }>(
+    'commands/execute', { agentId, line, submittedAttachments: [] },
+  )
+  for (const workspaceId of [firstWorkspace.workspaceId, secondWorkspace.workspaceId]) {
+    const linked = await execute(first, originalSessionId, `/activity link ${activityId} workspace ${workspaceId}`)
+    expect(linked.result.kind).toBe('success')
+  }
+  for (const sessionId of [originalSessionId, linkedSessionId]) {
+    const linked = await execute(first, originalSessionId, `/activity link ${activityId} session ${sessionId}`)
+    expect(linked.result.kind).toBe('success')
+  }
 
   await server.stop()
   const second = await hostRpc(await server.start(0))
   const sessions = await second<{ items: { sessionId: string; agentAvailable: boolean }[] }>('session/list', { _request: {} })
   expect(sessions.items.some(item => item.sessionId === originalSessionId && item.agentAvailable)).toBe(false)
   const { sessionId: newSessionId } = await second<{ sessionId: string }>('session/create', {
-    request: { workspaceId: workspace.id },
+    request: { workspaceId: firstWorkspace.workspaceId },
   })
   expect(newSessionId).not.toBe(originalSessionId)
-  const secondList = await second<{ result: { text?: string } }>('commands/execute', {
-    agentId: newSessionId,
-    line: '/activity list',
-    submittedAttachments: [],
-  })
+  const secondList = await execute(second, newSessionId, '/activity list')
   expect(secondList.result.text).toContain(activityId)
-  const reopened = await second<{ result: { kind: string; text?: string } }>('commands/execute', {
-    agentId: newSessionId,
-    line: `/activity open ${activityId}`,
-    submittedAttachments: [],
-  })
+  const reopened = await execute(second, newSessionId, `/activity open ${activityId}`)
   expect(reopened.result.kind).toBe('success')
   expect(reopened.result.text).toContain(`ID: ${activityId}`)
   expect(reopened.result.text).toContain('Objective: Prepare the next release for review.')
   expect(reopened.result.text).toContain('In scope: Review release notes and focused check results.')
   expect(reopened.result.text).toContain('Out of scope: Do not publish or deploy.')
+  expect(reopened.result.text).toContain(`Workspace: ${basename(firstWorkspacePath)} — ${firstWorkspace.workspaceId}`)
+  expect(reopened.result.text).toContain(`Workspace: ${basename(secondWorkspacePath)} — ${secondWorkspace.workspaceId}`)
+  expect(reopened.result.text).toContain(`DSH Session: ${originalSessionId}`)
+  expect(reopened.result.text).toContain(`DSH Session: ${linkedSessionId}`)
+  expect(reopened.result.text).toContain('these links do not assign Sessions to Workspaces')
   expect(reopened.result.text).toContain('does not start work or activate a Goal')
 })

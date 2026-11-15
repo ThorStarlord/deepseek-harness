@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "主页活动命令",
+    "description": "创建、列出、重新打开已保存的活动，并将其关联到 Workspace 或 DSH Session。"
+  }
+}

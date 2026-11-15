@@ -6,6 +6,8 @@
     { "path": "../../../vendor/cosmokit" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../interaction/commands" },
-    { "path": "../../home/activity" }
+    { "path": "../../home/activity" },
+    { "path": "../../session/session-persistence" },
+    { "path": "../../workspace/workspace" }
   ]
 }

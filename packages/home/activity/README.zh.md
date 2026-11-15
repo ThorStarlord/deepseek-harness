@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-保存命名 Activity、目标和描述性边界，使其在原 Session 结束后仍可使用。通过 Web `/activity` 命令列出并重新打开同一 Activity。创建或打开 Activity 不会执行目标、创建 Goal、关联 Session，也不会授予运行时权限。
+保存命名 Activity、目标和描述性边界，使其在原 Session 结束后仍可使用。Web `/activity` 命令可关联用户选择的 Workspace 与 DSH Session 身份，也可从另一个 Session 重新打开这些引用。关联不会将 Session 分配到 Workspace，不会执行目标、创建 Goal 或授予运行时权限。
 
 ## 目录
 
@@ -44,6 +44,7 @@ Web 配置会将此服务与 JSON StorageDomain 提供方及人工调用的 `/ac
   config:
     backend: json
 - name: '@deepseek-ai/dsh-home-activity'
+- name: '@deepseek-ai/dsh-home-activity/associations'
 ```
 
 存储提供方拥有各自的设置；请参阅 [JSON 后端](../../storage/storage-json/README.zh.md)和 [StorageDomain](../../storage/storage-domain/README.zh.md)参考。
@@ -56,14 +57,18 @@ Web 配置会将此服务与 JSON StorageDomain 提供方及人工调用的 `/ac
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-Activity 记录使用版本 1 的 `home_activities` StorageDomain，并独立于 Session、Goal 和 Workspace 记录。此服务提供持久创建与同步读取，没有执行或激活路径。
+Activity 记录仍保存在严格的版本 1 `home_activities` StorageDomain 中。用户分别选择的 Workspace 与 Session 引用保存在附加的版本 1 `home_activity_associations` 域中。Workspace 关联指向已注册的 Workspace 目录，不推断 Git 根目录；Session 关联是独立身份，不表示 Workspace 成员关系。两类关联都不会重写 Session 日志或启动执行。
 
 | 文件 | 职责 |
 |---|---|
 | [`src/types.ts`](src/types.ts) | Activity 身份与请求类型 |
 | [`src/spec.ts`](src/spec.ts) | 带版本的持久化记录 schema |
 | [`src/index.ts`](src/index.ts) | StorageDomain 服务 |
-| [`tests/activity.spec.ts`](tests/activity.spec.ts) | 存储关闭、重开与校验行为 |
+| [`src/association-types.ts`](src/association-types.ts) | 分开的 Workspace 与 Session 引用 |
+| [`src/association-spec.ts`](src/association-spec.ts) | 带版本的关联记录 schema |
+| [`src/associations.ts`](src/associations.ts) | 关联校验与 StorageDomain 服务 |
+| [`tests/activity.spec.ts`](tests/activity.spec.ts) | Activity 持久化与校验行为 |
+| [`tests/associations.spec.ts`](tests/associations.spec.ts) | 关联校验、重启、幂等与写入回滚 |
 
 </details>
 
@@ -93,7 +98,8 @@ Activity 记录使用版本 1 的 `home_activities` StorageDomain，并独立于
 当前记录保存用户意图，但不协调执行。
 
 - 边界是描述性陈述，不是沙箱根目录或权限授予。
-- Activity 尚未关联仓库、Session、委派工作、可复用知识或执行证据。
+- Workspace 引用标识 DSH Workspace 目录记录，不证明 Git 仓库根目录。Workspace 与 Session 引用由用户分别选择，不提供仓库归属或 Session 成员关系。
+- Activity 尚未关联委派工作、可复用知识或执行证据。
 - 此服务没有编辑、删除、调度或执行操作。
 
 <a id="dev-note"></a>
