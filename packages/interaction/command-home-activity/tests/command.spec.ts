@@ -3,21 +3,48 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
 import { createInboxStub, unsupportedModel } from '@deepseek-ai/dsh-agent-loop-testkit'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import type { Session } from '@deepseek-ai/dsh-session'
+import type { Agent as DshAgent } from '@deepseek-ai/dsh-agent'
+import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import Storage, { StorageError } from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import HomeActivityService, { ActivityError } from '@deepseek-ai/dsh-home-activity'
+import HomeActivityDelegations from '@deepseek-ai/dsh-home-activity/delegations'
 import * as commandHomeActivity from '../src/index.ts'
 
 const roots: string[] = []
 const contexts: Context[] = []
+
+class FixtureWorkingDirectory extends Service {
+  private readonly directories = new WeakMap<Session, string>()
+
+  constructor(ctx: Context) {
+    super(ctx, 'workingDirectory')
+  }
+
+  get(session: Session): string {
+    return this.directories.get(session) ?? session.header.cwd ?? process.cwd()
+  }
+
+  async ensure(agent: DshAgent, signal?: AbortSignal): Promise<string> {
+    signal?.throwIfAborted()
+    return this.get(agent.session)
+  }
+
+  async set(agent: DshAgent, path: string, signal?: AbortSignal): Promise<string> {
+    signal?.throwIfAborted()
+    this.directories.set(agent.session, path)
+    return path
+  }
+}
 
 afterEach(async () => {
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
@@ -33,8 +60,11 @@ async function harness() {
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentRegistry)
+  await ctx.plugin(FixtureWorkingDirectory)
+  await ctx.plugin(SubagentRuntime)
   await ctx.plugin(CommandRuntime)
   await ctx.plugin(HomeActivityService)
+  await ctx.plugin(HomeActivityDelegations)
   const commandFiber = await ctx.plugin(commandHomeActivity)
   const session = ctx.sessions.create(SessionId(`home-activity-${randomUUID()}`))
   const inbox = createInboxStub()
@@ -72,11 +102,11 @@ async function run(test: Awaited<ReturnType<typeof harness>>, suffix: string) {
 
 it('registers a discoverable command and creates, lists, and reopens without starting work', async () => {
   const test = await harness()
-  expect(commandHomeActivity.inject).toEqual(['commands', 'homeActivities'])
+  expect(commandHomeActivity.inject).toEqual(['commands', 'homeActivities', 'homeActivityDelegations', 'subagents'])
   expect(test.ctx.commands.list(test.agent)).toContainEqual(expect.objectContaining({
     definitionId: '@deepseek-ai/dsh-command-home-activity',
     name: 'activity',
-    input: { hint: 'create <JSON> | list | open <activity-id>' },
+    input: { hint: 'create <JSON> | list | open <activity-id> | delegate <activity-id> spawn <task>' },
   }))
 
   const create = await run(test, ' create {"name":"Release readiness","objective":"Prepare the next release for review.","boundaries":{"inScope":["Review release notes"],"outOfScope":["Do not publish"]}}')

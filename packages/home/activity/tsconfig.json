@@ -7,6 +7,8 @@
     { "path": "../../../vendor/cordis" },
     { "path": "../../util/brand" },
     { "path": "../../storage/storage" },
-    { "path": "../../storage/storage-domain" }
+    { "path": "../../storage/storage-domain" },
+    { "path": "../../core/session" },
+    { "path": "../../subagent/subagent" }
   ]
 }

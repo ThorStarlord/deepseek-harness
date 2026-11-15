@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 Web composer 中使用 `/activity` 创建带目标和描述性边界的命名 Activity、列出已保存的 Activity，或重新打开其已保存详情。此命令无需模型往返，也不会启动已保存目标。它需要 `ctx.commands` 注册表和 `ctx.homeActivities` 服务。
+在 Web composer 中使用 `/activity` 创建、列出和打开已保存的 Activity，或明确地将一项任务委派给 DSH 原生 `spawn` 提供方。委派会启动单独的一次性子级 Session，并记录提供方报告的结果。Activity 目标不会自动执行。此命令需要 `ctx.commands`、`ctx.homeActivities`、`ctx.homeActivityDelegations` 和 `ctx.subagents` 服务。
 
 ## 目录
 
@@ -41,15 +41,18 @@ Web 配置会将此命令与命令注册表及持久 Activity 服务一同加载
 
 [命令注册表](../commands/README.zh.md)负责直接调用人工命令，[`dsh-home-activity`](../../home/activity/README.zh.md)负责持久记录。
 
+启用委派的组合还需挂载 `@deepseek-ai/dsh-home-activity/delegations`、`@deepseek-ai/dsh-subagent` 和受支持的 DSH 原生提供方。当前命令支持 `spawn`。
+
 ### 命令参考
 
 | 命令 | 行为 |
 |---|---|
 | `/activity create <JSON>` | 保存名称、目标，以及包含 `inScope` 和 `outOfScope` 字符串数组的 `boundaries` 对象。至少需要一项 `inScope` 内容。 |
 | `/activity list` | 按创建时间从新到旧列出已保存 Activity 的名称和稳定 id。 |
-| `/activity open <activity-id>` | 显示已保存目标和描述性边界。 |
+| `/activity open <activity-id>` | 显示已保存目标、描述性边界和委派记录。 |
+| `/activity delegate <activity-id> spawn <task>` | 保存请求，明确启动一个 DSH 原生子级 activation，并单独报告提供方结果。任务最多为 4,096 个 UTF-8 字节。 |
 
-创建请求最多为 16,384 个 UTF-8 字节。如果存储错误导致提交状态不确定，命令会提示用户先列出 Activity 再重试。
+创建 JSON 最多为 16,384 个 UTF-8 字节。委派请求会先持久保存，再启动提供方；DSH 接受 activation 后命令即返回，结果记录在后台继续进行。启动被拒绝时记录为未接受。若 admission 或结果持久化状态不确定，请先检查 Activity 和子级 Session，再重试。提供方输出按原样报告，不会标记为已验证或已接受。
 
 -----
 
@@ -59,12 +62,14 @@ Web 配置会将此命令与命令注册表及持久 Activity 服务一同加载
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-此命令注册为人工命令，而非模型工具。处理器通过 `ctx.homeActivities` 持久化记录；它不会创建 Session turn、Goal、Workspace project 或执行请求。
+此命令供用户明确调用，而非模型工具。创建、列出和打开通过 `ctx.homeActivities` 执行；委派使用现有 `ctx.subagents.startActivation` 生命周期和单独的持久记录。此命令不会创建 Goal，也不会声称提供方报告已经过验证或接受。
 
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 命令注册、输入校验与用户可见结果 |
+| [`src/delegation-command.ts`](src/delegation-command.ts) | 委派解析、生命周期与用户可见结果 |
 | [`tests/command.spec.ts`](tests/command.spec.ts) | 命令行为、安全失败与不执行断言 |
+| [`tests/delegation.e2e.spec.ts`](tests/delegation.e2e.spec.ts) | 通过宿主调用路径验证提供方委派成功与失败 |
 
 </details>
 
@@ -82,19 +87,19 @@ Web 配置会将此命令与命令注册表及持久 Activity 服务一同加载
 <a id="model-experience"></a>
 ## 模型体验
 
-此命令由用户调用，不会增加模型可见输入或模型请求。
+无此类模型体验，因为人工命令只读取和写入 Activity 记录，不会发起模型请求。
 
 #### KV 缓存影响
 
-无；此命令不会创建模型请求或改变模型上下文。
+无；委派任务使用独立子级 Session，不会修改父级上下文。
 
 ## 已知限制与后续工作
 <a id="known-limitations-and-deferred-work"></a>
 
-此命令仅保存和显示意图。
+Activity 范围说明描述请求的工作；它们不会限制子级工具或权限。访问由 DSH 当前运行时策略控制。
 
 - Web composer 是唯一交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。
-- 创建输入使用 JSON 文本，且无法通过此命令编辑或删除 Activity。
+- 创建输入使用 JSON 文本，且无法通过此命令编辑或删除 Activity。委派目前只支持 `spawn` DSH 原生提供方。
 
 <a id="dev-note"></a>
 ### 开发备注
