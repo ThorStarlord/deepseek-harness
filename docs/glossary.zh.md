@@ -20,6 +20,10 @@ DeepSeek Harness 的领域词汇为每个概念规定一个规范术语。各术
 - **setup window**：创建者组装 agent 作用域环境的创建时隙（`CreateAgentOptions.setup`）：此时 scope 和 agent 对象已存在，但 agent 或会话尚未发布，`agent/created` 尚未触发，首次提示词尚未组装。setup 只做注册，从不驱动 agent。
 - **lineage**：以数据形式携带的父子关系事实（`parentSession`、持久的 `delegationDepth`、运行时 `subagentDepth`）；从不影响可见性。<a id="lineage"></a>
 
+## home-activity
+
+- **Home Activity**：具有稳定身份、目标和描述性范围的持久用户事务。它独立于 Session，不代表执行，也不授予权限。
+
 ## 目标
 
 - **目标**：附着在现有会话上的单个持久完成目标，带有按修订号演进的 `active` / `paused` / `blocked` / `complete` 阶段和 Goal Round 上限；`blocked` 保留策略代码与说明。目标是一种状态，不是调度器，也不是一段独立对话；会话日志仍是其真源。

@@ -20,6 +20,10 @@ Domain vocabulary for DeepSeek Harness uses one canonical term per concept. Term
 - **setup window** — the creation slot where a creator composes an agent's scoped world (`CreateAgentOptions.setup`): after the scope and agent object exist but before the agent or session is published, `agent/created` fires, or the first prompt is assembled. Setup registers; it never drives the agent.
 - **lineage** — parent/child facts carried as data (`parentSession`, durable `delegationDepth`, runtime `subagentDepth`); never affects visibility. <a id="lineage"></a>
 
+## home-activity
+
+- **Home Activity** — a persistent user-directed undertaking with a stable identity, objective, and descriptive scope. It is independent of Sessions and does not imply execution or grant permission.
+
 ## goal
 
 - **goal** — one durable completion objective attached to an existing session, with a revisioned `active` / `paused` / `blocked` / `complete` phase and a goal-round cap; `blocked` retains a policy code and explanation. A goal is state, not a scheduler or a separate conversation; the session log remains its source of truth.

@@ -278,6 +278,12 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-repeat-tool-reminder` | yes | Repeat-tool-call guard plugin: advisory reminders when an agent loops on identical tool calls |
 | `@deepseek-ai/dsh-tool-call-timeout-policy` | no | Tool-call timeout policy: a tools/execute wrapper that arms a per-tool deadline on exec.signal and returns TOOL_TIMEOUT when it wins |
 
+## home
+
+| Package | Config | Description |
+|---|---|---|
+| `@deepseek-ai/dsh-home-activity` | no | Durable user-directed Home Activities independent of Session and Goal lifecycle |
+
 ## host
 
 | Package | Config | Description |
@@ -296,6 +302,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | Package | Config | Description |
 |---|---|---|
 | `@deepseek-ai/dsh-command-code-review` | yes | Read-only, findings-first review command for current Git working-tree changes |
+| `@deepseek-ai/dsh-command-home-activity` | no | Human slash commands for creating, listing, and reopening saved Home Activities |
 | `@deepseek-ai/dsh-commands` | no | Plugin-owned human command registry for DeepSeek Harness UIs |
 | `@deepseek-ai/dsh-permission-presets` | yes | User-facing permission presets (ctx.permissionPresets) for the DeepSeek Harness: one product-level Permissions select bundling the sandbox-mode and approval-policy knobs, written through to their own session events |
 | `@deepseek-ai/dsh-tool-ask-user` | yes | Model-facing ask_user_question tool over the ctx.userQuestions seam |

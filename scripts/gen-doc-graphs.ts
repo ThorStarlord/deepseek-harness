@@ -579,6 +579,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns WorkspaceId-branded records over the domain facility; stable sessionIds accounts drive Host RPC and GUI projections.',
   },
   {
+    key: 'homeActivities',
+    pkg: 'home-activity',
+    title: 'Persistent user-directed Activities',
+    mode: 'service',
+    consumers: ['command-home-activity'],
+    note: 'Stores named objectives and descriptive boundaries independently of Sessions; the human command creates, lists, and opens records without executing them.',
+  },
+  {
     key: 'sessionQuery',
     pkg: 'session-query',
     title: 'Session reads, traces, filters, and search',

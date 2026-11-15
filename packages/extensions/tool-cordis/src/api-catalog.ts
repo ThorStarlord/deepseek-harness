@@ -1731,6 +1731,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'homeActivities',
+    summary: 'Durable Activity catalog mounted as `ctx.homeActivities`.',
+    description: 'Durable Activity catalog mounted as `ctx.homeActivities`.',
+    methods: [
+      {
+        signature: 'async create(request: CreateActivityRequest): Promise<Activity>',
+        description: 'Save a new Activity without creating a Session, Goal, or execution.',
+        parameters: [{ name: 'request', description: 'Name, objective, and descriptive scope statements.' }],
+        returns: 'the saved record with its stable identity and creation time.',
+      },
+      {
+        signature: 'list(): readonly Activity[]',
+        description: 'List saved Activities newest first. This read does not activate execution.',
+        parameters: [],
+        returns: 'a detached snapshot of the saved records.',
+      },
+      {
+        signature: 'get(id: ActivityId): Activity | undefined',
+        description: 'Read one saved Activity by stable identity.',
+        parameters: [{ name: 'id', description: 'Stable Activity identity.' }],
+        returns: 'a detached record, or `undefined` when no such Activity exists.',
+      },
+    ],
+  },
+  {
     key: 'inspector',
     summary: 'Shared Host/Client service façade over the realm\'s source publisher.',
     description: 'Shared Host/Client service façade over the realm\'s source publisher.',
@@ -5508,6 +5533,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ActionCardView {\n    readonly proposals: Readonly<Record<string, ActionCardProposal>>;\n    readonly decisions: Readonly<Record<string, ActionCardDecision>>;\n}',
   },
   {
+    name: 'Activity',
+    declaration: 'export interface Activity {\n    readonly id: ActivityId;\n    readonly name: string;\n    readonly objective: string;\n    readonly boundaries: ActivityBoundaries;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'ActivityBoundaries',
+    declaration: 'export interface ActivityBoundaries {\n    readonly inScope: readonly string[];\n    readonly outOfScope: readonly string[];\n}',
+  },
+  {
     name: 'AdapterRegistrationHandle',
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
@@ -6110,6 +6143,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CotTranslationSnapshot',
     declaration: 'export interface CotTranslationSnapshot {\n    maxTextChars: number;\n    preferences: CotTranslationPreferences;\n    availableProviders: readonly TranslationProvider[];\n}',
+  },
+  {
+    name: 'CreateActivityRequest',
+    declaration: 'export type CreateActivityRequest = Pick<Activity, \'name\' | \'objective\' | \'boundaries\'>;',
   },
   {
     name: 'CreateAgentOptions',
