@@ -116,4 +116,23 @@ Rule changes state applicability, decisions, exceptions and observable verificat
 
 ## Design review escalation
 
-- A PR with extensive UI changes, or any clearly user-perceivable change to UI or interaction, must get a designer or product review. When no approver holds that role, suggest requesting one from the design/product reviewers (roster as of 2026-09: yx zhang, yifffan, zhangziya, gaokaige; update this list here when membership changes).
+A PR with extensive UI changes, or any clearly user-perceivable change to UI or interaction, must receive an independent review from a qualified human designer or product reviewer. Apply the existing inspection and evidence requirements at a level appropriate to the change's impact and risk; product/design review does not replace technical validation.
+
+### Select a reviewer for this fork
+
+The repository owner may designate a reviewer for each qualifying PR. Reviewers may come from outside the upstream design/product roster and need not be repository collaborators. A reviewer must have relevant product or design responsibility or demonstrable experience evaluating comparable interactions, must not author or materially implement the change, and must make an independent assessment. Record the reviewer's GitHub identity, concise qualification basis, and any relationship that could affect independence in the PR.
+
+### Record the review
+
+A reviewer may submit a formal GitHub review or a top-level PR comment. If neither channel is available, link the original, verifiable review record from the PR and identify its reviewer. The record includes reviewer identity, reviewed commit SHA, inspected interaction and evidence, findings, date, and one disposition:
+
+- **APPROVE:** the reviewed revision has no blocking product/design findings. This disposition covers product/design only; technical validation and merge authority remain separate.
+- **CHANGES REQUESTED:** the findings block completion until they are addressed and a final disposition is recorded against the resulting revision.
+- **ADVISORY:** suggestions are nonblocking. Advisory feedback alone does not satisfy the required review; the reviewer must separately approve the reviewed revision.
+- **OWNER EXCEPTION:** this process grants no owner-only substitute. A substitute or exception requires a separate policy amendment explicitly ratified by the repository owner before it can apply.
+
+An approval applies only to its reviewed commit. Reassess the affected interaction when a later change can alter the reviewed result. Adopting this process does not approve an open PR; each qualifying change still needs its own substantive disposition. Silence, technical mergeability, an unanswered request, or an agent's assessment does not satisfy this requirement. Agent assessments may help prepare evidence and findings, but they are not independent human approval.
+
+### If no reviewer is available
+
+Seek another qualified reviewer outside the upstream roster. If none is available, keep the PR open and record the external dependency. The repository owner may propose a different review model in a separate governance change; until that change is explicitly ratified and integrated, do not substitute owner-only or agent review for independent human judgment.

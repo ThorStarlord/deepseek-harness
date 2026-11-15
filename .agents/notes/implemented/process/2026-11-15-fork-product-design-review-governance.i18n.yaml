@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-11-15-fork-product-design-review-governance.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-11-15-fork-product-design-review-governance.md
+/agent-note-fork-specific-product-design-review-governance:
+  en: 26c502e9af1ab946
+  zh: e58c83361bd5cc8d
+/agent-note-fork-specific-product-design-review-governance/problem:
+  en: f5d8f043b9e57a03
+  zh: 0b42bb467450faa0
+/agent-note-fork-specific-product-design-review-governance/decision:
+  en: c3eda2b3966628dc
+  zh: 69072ed32b566d71
+/agent-note-fork-specific-product-design-review-governance/alternatives-considered:
+  en: ec768b5deddc49fe
+  zh: cf7b98fb126a7f2e
+/agent-note-fork-specific-product-design-review-governance/consequences:
+  en: 020ebdce466da090
+  zh: adc8e009d93eb259
+/agent-note-fork-specific-product-design-review-governance/verification:
+  en: 0fa8a8b0b14450e2
+  zh: c64dd13bb619bd13
