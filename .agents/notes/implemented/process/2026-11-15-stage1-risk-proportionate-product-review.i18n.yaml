@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-11-15-stage1-risk-proportionate-product-review.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-11-15-stage1-risk-proportionate-product-review.md
+/agent-note-stage-1-risk-proportionate-product-review:
+  en: b4dc30ca8e2ab98a
+  zh: 971dc439c494f754
+/agent-note-stage-1-risk-proportionate-product-review/problem:
+  en: 6323858edc98e12b
+  zh: 706797a6f0ad54b4
+/agent-note-stage-1-risk-proportionate-product-review/decision:
+  en: 3875f073c405f15b
+  zh: dafae65b5074c0d2
+/agent-note-stage-1-risk-proportionate-product-review/alternatives-considered:
+  en: 60ea5f92362e8100
+  zh: 1396a7b37b5ede80
+/agent-note-stage-1-risk-proportionate-product-review/consequences:
+  en: 00538429f898be42
+  zh: 3f7c7ecf2f9923d2
+/agent-note-stage-1-risk-proportionate-product-review/verification:
+  en: ff7326e2bfe3d580
+  zh: 85845c241b328d53
