@@ -1,4 +1,7 @@
-/** Human commands for creating, listing, and reopening Home Activities. @module @deepseek-ai/dsh-command-home-activity */
+/**
+ * Human commands for saved Home Activities and explicit DSH-native delegation.
+ * @module @deepseek-ai/dsh-command-home-activity
+ */
 
 import type { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'

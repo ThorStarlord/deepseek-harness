@@ -87,7 +87,7 @@ The command is registered for explicit human invocation, not as a model tool. Sa
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as the human command reads and writes Activity records without a model request.
+Indirectly, through the explicit `/activity delegate` command, which starts one DSH-native child activation with the selected provider and records the request, DSH admission, and provider report separately without implying verification or user acceptance.
 
 #### KV Cache effect
 
