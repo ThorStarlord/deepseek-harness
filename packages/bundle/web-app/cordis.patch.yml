@@ -94,6 +94,10 @@
     - id: home-activity-delegations
       name: '@deepseek-ai/dsh-home-activity/delegations'
 
+    # Activity-to-context references use separate Workspace and Session ids.
+    - id: home-activity-associations
+      name: '@deepseek-ai/dsh-home-activity/associations'
+
     - id: command-home-activity
       name: '@deepseek-ai/dsh-command-home-activity'
 

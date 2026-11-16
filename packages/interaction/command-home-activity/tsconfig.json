@@ -8,6 +8,8 @@
     { "path": "../../interaction/commands" },
     { "path": "../../home/activity" },
     { "path": "../../subagent/subagent" },
-    { "path": "../../core/session" }
+    { "path": "../../core/session" },
+    { "path": "../../session/session-persistence" },
+    { "path": "../../workspace/workspace" }
   ]
 }

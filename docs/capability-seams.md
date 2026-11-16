@@ -169,6 +169,7 @@ flowchart LR
   svc_homeActivities["ctx.homeActivities<br/>Persistent user-directed Activities"]
   pkg_command_home_activity["command-home-activity"]
   svc_homeActivityDelegations["ctx.homeActivityDelegations<br/>Recorded Home Activity delegations"]
+  svc_homeActivityAssociations["ctx.homeActivityAssociations<br/>Activity Workspace and Session references"]
   svc_sessionQuery["ctx.sessionQuery<br/>Session reads, traces, filters, and search"]
   pkg_session_reference["session-reference"]
   pkg_tool_session_query["tool-session-query"]
@@ -392,6 +393,7 @@ flowchart LR
   pkg_headless --> svc_headlessStartup
   pkg_hmr --> svc_hmr
   pkg_home_activity --> svc_homeActivities
+  pkg_home_activity --> svc_homeActivityAssociations
   pkg_home_activity --> svc_homeActivityDelegations
   pkg_host_directory_picker --> svc_directoryPicker
   pkg_host_directory_picker_browse --> svc_directoryPicker
@@ -535,6 +537,7 @@ flowchart LR
   svc_headlessStartup --> pkg_headless
   svc_hmr --> pkg_app_boot
   svc_homeActivities --> pkg_command_home_activity
+  svc_homeActivityAssociations --> pkg_command_home_activity
   svc_homeActivityDelegations --> pkg_command_home_activity
   svc_jobs --> pkg_api_job_controller
   svc_jobs --> pkg_tool_bash
@@ -719,6 +722,7 @@ flowchart LR
 | `ctx.workspaceRegistry` | `core` | [`workspace`](../packages/workspace/workspace) | - | [`api-workspace-controller`](../packages/api/workspace-controller), [`api-session-controller`](../packages/api/session-controller) | - | Owns WorkspaceId-branded records over the domain facility; stable sessionIds accounts drive Host RPC and GUI projections. |
 | `ctx.homeActivities` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | Stores named objectives and descriptive boundaries independently of Sessions; the human command creates, lists, and opens records without executing them. |
 | `ctx.homeActivityDelegations` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | Persists explicit requests, accepted DSH activation references, and provider reports as separate facts; the human command uses the existing subagent runtime and does not claim verification or acceptance. |
+| `ctx.homeActivityAssociations` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | Stores separately selected Workspace registry identities and DSH Session identities without changing either source record or inferring a relationship between them. |
 | `ctx.sessionQuery` | `seam` | [`session-query`](../packages/session-query/session-query) | [`session-query-sqlite`](../packages/session-query/session-query-sqlite) | [`session-reference`](../packages/context/session-reference), [`tool-session-query`](../packages/experimental/tool-session-query) | - | The interface supplies exact reads, filters, and traces; its concrete backend adds full-text reconciliation, ranking, snippets, and cursor generations, while the model consumer owns workspace authority and cursor-free rendering. |
 | `ctx.fileReferences` | `seam` | [`file-reference`](../packages/context/file-reference) | [`file-reference-local`](../packages/context/file-reference-local) | [`api-session-controller`](../packages/api/session-controller) | - | The interface returns path-only completion candidates within an Agent cwd; providers own namespace access and ranking without reading file contents. |
 | `ctx.sessionReferenceResolver` | `core` | [`session-reference`](../packages/context/session-reference) | - | - | - | Projects bounded current-surface conversation snapshots into durable untrusted message context; host adapters own mention syntax. |

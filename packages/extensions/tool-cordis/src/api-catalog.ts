@@ -1756,6 +1756,48 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'homeActivityAssociations',
+    summary: 'Context references persisted separately from the strict Activity v1 record.',
+    description: 'Context references persisted separately from the strict Activity v1 record.',
+    methods: [
+      {
+        signature: 'get(activityId: ActivityId): HomeActivityAssociations',
+        description: 'Read separately authored Workspace and Session ids for one saved Activity.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Detached ids; an Activity with no links returns two empty arrays.',
+        throws: ['{HomeActivityAssociationError} when the Activity does not exist.'],
+      },
+      {
+        signature: 'linkWorkspace(activityId: ActivityId, workspaceId: WorkspaceId): Promise<boolean>',
+        description: 'Add a selected existing Workspace reference; repeated links are idempotent.',
+        parameters: [{ name: 'activityId', description: 'Saved Activity receiving the reference.' }, { name: 'workspaceId', description: 'Existing Workspace registry identity.' }],
+        returns: '`true` when a new durable link was written.',
+        throws: ['{HomeActivityAssociationError} when the Activity or Workspace is unknown or the Activity already has the maximum number of Workspace references.'],
+      },
+      {
+        signature: 'linkSession(activityId: ActivityId, sessionId: SessionId): Promise<boolean>',
+        description: 'Add a selected existing DSH Session reference; repeated links are idempotent.',
+        parameters: [{ name: 'activityId', description: 'Saved Activity receiving the reference.' }, { name: 'sessionId', description: 'Existing DSH Session identity.' }],
+        returns: '`true` when a new durable link was written.',
+        throws: ['{HomeActivityAssociationError} when the Activity or Session is unknown or the Activity already has the maximum number of Session references.'],
+      },
+      {
+        signature: 'unlinkWorkspace(activityId: ActivityId, workspaceId: WorkspaceId): Promise<boolean>',
+        description: 'Remove a Workspace reference without mutating its Workspace record.',
+        parameters: [{ name: 'activityId', description: 'Saved Activity whose reference is removed.' }, { name: 'workspaceId', description: 'Workspace identity, including an unavailable old identity.' }],
+        returns: '`true` when a durable link was removed.',
+        throws: ['{HomeActivityAssociationError} when the Activity is unknown.'],
+      },
+      {
+        signature: 'unlinkSession(activityId: ActivityId, sessionId: SessionId): Promise<boolean>',
+        description: 'Remove a DSH Session reference without mutating its Session log.',
+        parameters: [{ name: 'activityId', description: 'Saved Activity whose reference is removed.' }, { name: 'sessionId', description: 'Session identity, including an unavailable old identity.' }],
+        returns: '`true` when a durable link was removed.',
+        throws: ['{HomeActivityAssociationError} when the Activity is unknown.'],
+      },
+    ],
+  },
+  {
     key: 'homeActivityDelegations',
     summary: 'Durable request, DSH admission, and provider-report records mounted as `ctx.homeActivityDelegations`.',
     description: 'Durable request, DSH admission, and provider-report records mounted as `ctx.homeActivityDelegations`.',
@@ -6796,6 +6838,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'GrantRecord',
     declaration: 'export interface GrantRecord {\n    readonly kind: \'grant\';\n    readonly payload: unknown;\n}',
+  },
+  {
+    name: 'HomeActivityAssociations',
+    declaration: 'export interface HomeActivityAssociations {\n    readonly workspaceIds: readonly WorkspaceId[];\n    readonly sessionIds: readonly SessionId[];\n}',
   },
   {
     name: 'HookBudget',

@@ -1,5 +1,5 @@
 ---
-description: "通过 Web 命令 composer 创建、列出并重新打开已保存的 Home Activity，且不启动其目标。"
+description: "通过 Web 命令 composer 创建、列出、重新打开、关联并明确委派已保存的 Home Activity。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 Web composer 中使用 `/activity` 创建、列出和打开已保存的 Activity，或明确地将一项任务委派给 DSH 原生 `spawn` 提供方。委派会启动单独的一次性子级 Session，并记录提供方报告的结果。Activity 目标不会自动执行。此命令需要 `ctx.commands`、`ctx.homeActivities`、`ctx.homeActivityDelegations` 和 `ctx.subagents` 服务。
+在 Web composer 中使用 `/activity` 创建、列出和打开已保存的 Activity，或明确地将一项任务委派给 DSH 原生 `spawn` 提供方。委派会启动单独的一次性子级 Session，并记录提供方报告的结果。Activity 目标不会自动执行。此命令需要 `ctx.commands`、`ctx.homeActivities`、`ctx.homeActivityDelegations` 和 `ctx.subagents` 服务。 命令还可通过 `ctx.homeActivityAssociations`、Workspace 注册表和 Session 持久化服务，将用户选定的 Workspace 与 DSH Session 作为独立上下文引用关联到 Activity；这不会把 Session 分配给 Workspace。
 
 ## 目录
 
@@ -33,7 +33,7 @@ Web 配置会将此命令与命令注册表及持久 Activity 服务一同加载
 
 ### 最小配置
 
-此包没有配置字段。在已经提供这两个注入服务的组合中，添加此插件：
+在已提供命令注册、Activity、上下文关联和委派所需服务的组合中，添加此插件：
 
 ```yaml
 - name: '@deepseek-ai/dsh-command-home-activity'
@@ -50,9 +50,15 @@ Web 配置会将此命令与命令注册表及持久 Activity 服务一同加载
 | `/activity create <JSON>` | 保存名称、目标，以及包含 `inScope` 和 `outOfScope` 字符串数组的 `boundaries` 对象。至少需要一项 `inScope` 内容。 |
 | `/activity list` | 按创建时间从新到旧列出已保存 Activity 的名称和稳定 id。 |
 | `/activity open <activity-id>` | 显示已保存目标、描述性边界和委派记录。 |
+| `/activity workspaces` | 列出可以关联的注册 Workspace 上下文。 |
+| `/activity sessions` | 列出已存储的 DSH Session 及可用摘要元数据。 |
+| `/activity link <activity-id> workspace <workspace-id>` | 添加 Workspace 引用，不修改 Workspace 记录。 |
+| `/activity link <activity-id> session <session-id>` | 添加 DSH Session 引用，不修改 Session 日志。 |
+| `/activity unlink <activity-id> workspace <workspace-id>` | 删除 Workspace 引用，保留源记录。 |
+| `/activity unlink <activity-id> session <session-id>` | 删除 DSH Session 引用，保留 Session 日志。 |
 | `/activity delegate <activity-id> spawn <task>` | 保存请求，明确启动一个 DSH 原生子级 activation，并单独报告提供方结果。任务最多为 4,096 个 UTF-8 字节。 |
 
-创建 JSON 最多为 16,384 个 UTF-8 字节。委派请求和拟请求的子级 Session id 会在启动提供方前持久保存；该 id 不代表已获准入。DSH 接受 activation 后命令即返回，结果记录在后台继续进行。启动被拒绝时记录为未准入。若准入状态不确定，请用 `/activity sessions` 检查拟请求的 id 并查看对应 Session，再决定是否重试；Session 记录缺失也不能证明启动失败。提供方输出按原样报告，不会标记为已验证或已接受。
+若准入状态不确定，`/activity sessions` 会显示是否存在拟议 id 的已存储 Session 及可用摘要元数据；该命令不会查看子 Session 的对话。未找到 Session 不能证明启动失败。提供方输出仍按原样报告，不会标为已验证或已接受。
 
 -----
 
@@ -68,6 +74,7 @@ Web 配置会将此命令与命令注册表及持久 Activity 服务一同加载
 |---|---|
 | [`src/index.ts`](src/index.ts) | 命令注册、输入校验与用户可见结果 |
 | [`src/delegation-command.ts`](src/delegation-command.ts) | 委派解析、生命周期与用户可见结果 |
+| [`src/association-command.ts`](src/association-command.ts) | Workspace 和 Session 目录、引用命令与解析 |
 | [`tests/command.spec.ts`](tests/command.spec.ts) | 命令行为、安全失败与不执行断言 |
 | [`tests/delegation.e2e.spec.ts`](tests/delegation.e2e.spec.ts) | 通过宿主调用路径验证提供方委派成功与失败 |
 

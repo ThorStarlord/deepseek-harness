@@ -1,5 +1,5 @@
 ---
-description: "独立于 agent Session 保存、列出并重新打开命名的用户 Activity。"
+description: "独立于 agent Session 保存、列出并重新打开命名的用户 Activity，并记录独立的上下文引用。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-保存命名 Activity、目标和描述性范围说明，使其在原 Session 结束后仍可使用。单独的委派服务会记录用户明确请求的 DSH 原生子级 activation 及其提供方报告。创建或打开 Activity 不会执行其目标、创建 Goal、关联 Session，也不会授予运行时权限。
+保存命名 Activity、目标和描述性范围说明，使其在原 Session 结束后仍可使用。单独的委派服务会记录用户明确请求的 DSH 原生子级 activation 及其提供方报告。创建或打开 Activity 不会执行其目标、创建 Goal、关联 Session，也不会授予运行时权限。 关联服务会在单独的持久化记录中保存用户选定的 Workspace 和 DSH Session id；两者不会因此互相关联。
 
 ## 目录
 
@@ -44,6 +44,7 @@ Web 配置会将此服务与 JSON StorageDomain 提供方及人工调用的 `/ac
   config:
     backend: json
 - name: '@deepseek-ai/dsh-home-activity'
+- name: '@deepseek-ai/dsh-home-activity/associations'
 ```
 
 存储提供方拥有各自的设置；请参阅 [JSON 后端](../../storage/storage-json/README.zh.md)和 [StorageDomain](../../storage/storage-domain/README.zh.md)参考。
@@ -60,6 +61,8 @@ Web 配置会将此服务与 JSON StorageDomain 提供方及人工调用的 `/ac
 
 Activity 记录使用版本 1 的 `home_activities` StorageDomain，并继续独立于 Session、Goal 和 Workspace 记录。委派记录使用单独的版本 1 `home_activity_delegations` 域；每个请求都会在启动前保存拟请求的子级 Session id，之后再分别记录准入和报告事实。拟请求的 id 不代表已获准入。应用重启会将未完成记录改为 `unconfirmed`，且不会重新启动子任务。
 
+Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associations` 域中。显示时会通过各自的注册表解析引用；过期引用会明确显示为不可用，直到用户解除关联。关联不会修改 Workspace 记录、Session 日志或 Activity 记录。
+
 | 文件 | 职责 |
 |---|---|
 | [`src/types.ts`](src/types.ts) | Activity 身份与请求类型 |
@@ -68,8 +71,12 @@ Activity 记录使用版本 1 的 `home_activities` StorageDomain，并继续独
 | [`src/delegation-types.ts`](src/delegation-types.ts) | 委派生命周期事实类型 |
 | [`src/delegation-spec.ts`](src/delegation-spec.ts) | 带版本的委派记录 schema |
 | [`src/delegations.ts`](src/delegations.ts) | 独立委派 StorageDomain 服务 |
+| [`src/association-types.ts`](src/association-types.ts) | Workspace 和 Session 引用类型 |
+| [`src/association-spec.ts`](src/association-spec.ts) | 版本化关联记录 schema |
+| [`src/associations.ts`](src/associations.ts) | 独立关联 StorageDomain 服务 |
 | [`tests/activity.spec.ts`](tests/activity.spec.ts) | 存储关闭、重开与校验行为 |
 | [`tests/delegations.spec.ts`](tests/delegations.spec.ts) | 委派事实持久化、重启恢复与校验 |
+| [`tests/associations.spec.ts`](tests/associations.spec.ts) | 关联校验、重启恢复、幂等性与写入回滚 |
 
 </details>
 
@@ -101,6 +108,8 @@ Activity 范围仍是描述性内容；委派不会将其作为授权规则执�
 - 边界是描述性陈述，不是沙箱根目录或权限授予。
 - 委派记录标识请求 Session 和已接受的子级 Session，但不会创建 Activity 与 Session 的关联，也不会提供可复用知识。
 - 委派执行由单独的显式 `/activity delegate` 命令启动；Activity 服务本身没有编辑、删除或调度操作。提供方报告的输出不会被标记为已验证或已接受。
+
+- Workspace 和 Session 引用由用户分别选择。Workspace id 表示已注册的 DSH Workspace 目录，而非推断出的仓库根目录；共享 Activity 不会把 Session 分配给 Workspace。
 
 <a id="dev-note"></a>
 ### 开发备注

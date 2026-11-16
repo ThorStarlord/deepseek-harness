@@ -10,6 +10,12 @@ Home Activity 是由用户发起并持久保存的事务，包含稳定身份、
 
 `home_activities` 域使用格式版本 1。单独的版本 1 `home_activity_delegations` 域会在启动前保存用户请求和拟请求的子级 Session id，之后再分别保存 DSH 准入和提供方报告事实。拟请求的 id 不代表已获准入。应用重启时，缺少后续事实的请求或 admission 会变为 `unconfirmed`；不会重新启动 activation。若准入状态不确定，可用 `/activity sessions` 检查拟请求的 id；Session 记录缺失不能证明启动失败。提供方输出只是报告，不代表验证或用户接受。子级权限由 DSH 运行时策略控制；Activity 范围不是授权约束。不涉及 Session 格式版本变更。
 
+## 上下文关联
+
+独立的版本 1 `home_activity_associations` 域会在 Activity 记录之外保存用户选定的 Workspace 和 DSH Session id，每种引用最多 256 个。两类 id 分别选择；共享 Activity 不会把 Session 分配给 Workspace，也不会从 Workspace 目录推断 Git 仓库根目录。删除引用只修改关联记录，不会重写 Workspace 记录或 Session 日志。
+
+打开 Activity 时，系统会通过各自的注册表解析 id。已删除的上下文会标记为不可用，直到用户主动解除关联。目录、注册表或持久化读取失败会显示为未知状态，而不会误报为引用不存在。
+
 ## Cordis API
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
@@ -49,6 +55,64 @@ get(id: ActivityId): Activity | undefined
 ```
 
 Source: [`packages/home/activity/src/index.ts`](../../packages/home/activity/src/index.ts)
+
+<a id="ctxhomeactivityassociations--homeactivityassociationservice"></a>
+
+### `ctx.homeActivityAssociations` — `HomeActivityAssociationService`
+
+Context references persisted separately from the strict Activity v1 record.
+
+```ts cordis-catalog
+/**
+ * Read separately authored Workspace and Session ids for one saved Activity.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached ids; an Activity with no links returns two empty arrays.
+ * @throws {HomeActivityAssociationError} when the Activity does not exist.
+ */
+get(activityId: ActivityId): HomeActivityAssociations
+
+/**
+ * Add a selected existing Workspace reference; repeated links are idempotent.
+ * @param activityId - Saved Activity receiving the reference.
+ * @param workspaceId - Existing Workspace registry identity.
+ * @returns `true` when a new durable link was written.
+ * @throws {HomeActivityAssociationError} when the Activity or Workspace is unknown
+ *   or the Activity already has the maximum number of Workspace references.
+ */
+linkWorkspace(activityId: ActivityId, workspaceId: WorkspaceId): Promise<boolean>
+
+/**
+ * Add a selected existing DSH Session reference; repeated links are idempotent.
+ * @param activityId - Saved Activity receiving the reference.
+ * @param sessionId - Existing DSH Session identity.
+ * @returns `true` when a new durable link was written.
+ * @throws {HomeActivityAssociationError} when the Activity or Session is unknown
+ *   or the Activity already has the maximum number of Session references.
+ */
+linkSession(activityId: ActivityId, sessionId: SessionId): Promise<boolean>
+
+/**
+ * Remove a Workspace reference without mutating its Workspace record.
+ * @param activityId - Saved Activity whose reference is removed.
+ * @param workspaceId - Workspace identity, including an unavailable old identity.
+ * @returns `true` when a durable link was removed.
+ * @throws {HomeActivityAssociationError} when the Activity is unknown.
+ */
+unlinkWorkspace(activityId: ActivityId, workspaceId: WorkspaceId): Promise<boolean>
+
+/**
+ * Remove a DSH Session reference without mutating its Session log.
+ * @param activityId - Saved Activity whose reference is removed.
+ * @param sessionId - Session identity, including an unavailable old identity.
+ * @returns `true` when a durable link was removed.
+ * @throws {HomeActivityAssociationError} when the Activity is unknown.
+ */
+unlinkSession(activityId: ActivityId, sessionId: SessionId): Promise<boolean>
+```
+
+Types: [SessionId](core.zh.md) · [WorkspaceId](workspace.zh.md)
+
+Source: [`packages/home/activity/src/associations.ts`](../../packages/home/activity/src/associations.ts)
 
 <a id="ctxhomeactivitydelegations--homeactivitydelegationservice"></a>
 

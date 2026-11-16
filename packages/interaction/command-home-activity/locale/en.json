@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Home activity commands",
-    "description": "Create, list, reopen, and delegate work from saved Activities."
+    "description": "Create, list, reopen, associate saved Activities with Workspaces or DSH Sessions, and delegate bounded tasks from them."
   }
 }

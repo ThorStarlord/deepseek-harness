@@ -4,18 +4,18 @@
 #   pnpm run verify-translation-pairing --write packages/home/activity/README.md
 /:
   en: 14ab06a4a5fee0a7
-  zh: 9c9fee4120b11f0b
+  zh: 72e795bc7246cd35
 /deepseek-ai-dsh-home-activity:
   en: d403a2fefd04fdf0
   zh: d68d83a738897230
 /deepseek-ai-dsh-home-activity/summary:
-  en: 25db35339c6bb3d2
-  zh: ff2b2687fb30875f
+  en: b55dc5e8ebab636c
+  zh: 50825e72cea7a4ce
 /deepseek-ai-dsh-home-activity/table-of-contents:
   en: d152484eb41ac6b4
   zh: f57bb7dc06808f11
 /deepseek-ai-dsh-home-activity/use-this-package:
-  en: 3284541aeb6c4136
+  en: 58e45834a5959aca
   zh: 3b24861dbd33462b
 /deepseek-ai-dsh-home-activity/use-this-package/when-to-choose-it:
   en: bc4f105074dd4c16
@@ -24,8 +24,8 @@
   en: fbfc6874a657ff61
   zh: 7ec7ae5543cdba1f
 /deepseek-ai-dsh-home-activity/understand-the-implementation:
-  en: 3167180ff1def355
-  zh: f3d6c60e5c7f7efe
+  en: 6705f79f6c261c78
+  zh: c420099999b0cc8a
 /deepseek-ai-dsh-home-activity/further-exploration:
   en: 4a88103117fe03d6
   zh: b4e0c610205c0057
@@ -36,8 +36,8 @@
   en: 63121fdaf60ac53b
   zh: 13b045f4c2bd9a3d
 /deepseek-ai-dsh-home-activity/known-limitations-and-deferred-work:
-  en: b489f8683244b09c
-  zh: a2b9c54230b4bd12
+  en: 3e7ea9d5ce205248
+  zh: bc30b37f7ef9376c
 /deepseek-ai-dsh-home-activity/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 8ec3e73528ddb1a6

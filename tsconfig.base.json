@@ -416,6 +416,7 @@
       "@deepseek-ai/dsh-ptc-runtime-node/configuration": ["./packages/ptc-runtime/ptc-runtime-node/src/configuration.ts"],
       "@deepseek-ai/dsh-home-activity": ["./packages/home/activity/src"],
       "@deepseek-ai/dsh-home-activity/delegations": ["./packages/home/activity/src/delegations.ts"],
+      "@deepseek-ai/dsh-home-activity/associations": ["./packages/home/activity/src/associations.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],

@@ -100,6 +100,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   goals: 'goal.md',
   homeActivities: 'home-activity.md',
   homeActivityDelegations: 'home-activity.md',
+  homeActivityAssociations: 'home-activity.md',
   schedule: 'schedule.md',
   inspector: 'extensions.md',
   webServer: 'web-server.md',
@@ -305,6 +306,7 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
   Activity: 'home-activity.md',
+  HomeActivityAssociations: 'home-activity.md',
   ActivityId: 'home-activity.md',
   CreateActivityRequest: 'home-activity.md',
   ActivityDelegation: 'home-activity.md',

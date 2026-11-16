@@ -9,6 +9,8 @@
     { "path": "../../storage/storage" },
     { "path": "../../storage/storage-domain" },
     { "path": "../../core/session" },
-    { "path": "../../subagent/subagent" }
+    { "path": "../../subagent/subagent" },
+    { "path": "../../session/session-persistence" },
+    { "path": "../../workspace/workspace" }
   ]
 }

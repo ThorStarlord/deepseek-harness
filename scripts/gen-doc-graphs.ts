@@ -595,6 +595,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Persists explicit requests, accepted DSH activation references, and provider reports as separate facts; the human command uses the existing subagent runtime and does not claim verification or acceptance.',
   },
   {
+    key: 'homeActivityAssociations',
+    pkg: 'home-activity',
+    title: 'Activity Workspace and Session references',
+    mode: 'service',
+    consumers: ['command-home-activity'],
+    note: 'Stores separately selected Workspace registry identities and DSH Session identities without changing either source record or inferring a relationship between them.',
+  },
+  {
     key: 'sessionQuery',
     pkg: 'session-query',
     title: 'Session reads, traces, filters, and search',

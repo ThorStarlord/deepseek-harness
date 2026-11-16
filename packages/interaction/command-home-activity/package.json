@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-command-home-activity",
-  "description": "Human slash commands for saved Home Activities and explicit DSH-native delegation",
+  "description": "Human slash commands for saved Home Activities, context associations, and explicit DSH-native delegation",
   "version": "0.2.2-rc.1",
   "publishConfig": {
     "access": "public"
@@ -32,6 +32,9 @@
     "@deepseek-ai/dsh-commands": "workspace:*",
     "@deepseek-ai/dsh-home-activity": "workspace:*",
     "@deepseek-ai/dsh-subagent": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-persistence": "workspace:*",
+    "@deepseek-ai/dsh-workspace": "workspace:*",
     "@deepseek-ai/dsh-storage": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"
   },
@@ -52,6 +55,7 @@
     "@deepseek-ai/dsh-working-directory": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
+    "@deepseek-ai/dsh-workspace": "workspace:*",
     "@deepseek-ai/dsh-storage": "workspace:*",
     "@deepseek-ai/dsh-storage-domain": "workspace:*",
     "@deepseek-ai/dsh-storage-json": "workspace:*",
