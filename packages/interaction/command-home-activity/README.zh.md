@@ -52,7 +52,7 @@ Web 配置会将此命令与命令注册表及持久 Activity 服务一同加载
 | `/activity open <activity-id>` | 显示已保存目标、描述性边界和委派记录。 |
 | `/activity delegate <activity-id> spawn <task>` | 保存请求，明确启动一个 DSH 原生子级 activation，并单独报告提供方结果。任务最多为 4,096 个 UTF-8 字节。 |
 
-创建 JSON 最多为 16,384 个 UTF-8 字节。委派请求会先持久保存，再启动提供方；DSH 接受 activation 后命令即返回，结果记录在后台继续进行。启动被拒绝时记录为未接受。若 admission 或结果持久化状态不确定，请先检查 Activity 和子级 Session，再重试。提供方输出按原样报告，不会标记为已验证或已接受。
+创建 JSON 最多为 16,384 个 UTF-8 字节。委派请求和拟请求的子级 Session id 会在启动提供方前持久保存；该 id 不代表已获准入。DSH 接受 activation 后命令即返回，结果记录在后台继续进行。启动被拒绝时记录为未准入。若准入状态不确定，请用 `/activity sessions` 检查拟请求的 id 并查看对应 Session，再决定是否重试；Session 记录缺失也不能证明启动失败。提供方输出按原样报告，不会标记为已验证或已接受。
 
 -----
 

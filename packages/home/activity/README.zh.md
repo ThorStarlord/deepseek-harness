@@ -58,7 +58,7 @@ Web 配置会将此服务与 JSON StorageDomain 提供方及人工调用的 `/ac
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-Activity 记录使用版本 1 的 `home_activities` StorageDomain，并继续独立于 Session、Goal 和 Workspace 记录。委派记录使用单独的版本 1 `home_activity_delegations` 域；请求、已接受的 activation 和提供方报告分别保存。应用重启会将未完成记录改为 `unconfirmed`，且不会重新启动子任务。
+Activity 记录使用版本 1 的 `home_activities` StorageDomain，并继续独立于 Session、Goal 和 Workspace 记录。委派记录使用单独的版本 1 `home_activity_delegations` 域；每个请求都会在启动前保存拟请求的子级 Session id，之后再分别记录准入和报告事实。拟请求的 id 不代表已获准入。应用重启会将未完成记录改为 `unconfirmed`，且不会重新启动子任务。
 
 | 文件 | 职责 |
 |---|---|

@@ -325,7 +325,9 @@ it('renders every saved delegation state with the right uncertainty and fact ref
     task: 'Review the proposed release checklist.',
     parentSessionId: parent.session.id,
   })
-  expect(renderActivityDelegation(requested).join('\n')).toContain('request saved; provider admission has not been confirmed')
+  const requestedText = renderActivityDelegation(requested).join('\n')
+  expect(requestedText).toContain('request saved; provider admission has not been confirmed')
+  expect(requestedText).toContain(`Requested child Session id (not admission evidence): ${requested.request.requestedChildSessionId}`)
 
   const notAdmitted = await ctx.homeActivityDelegations.createRequest({
     activityId: activity.id,
@@ -374,7 +376,9 @@ it('renders every saved delegation state with the right uncertainty and fact ref
   }
   const noAdmissionText = renderActivityDelegation(noAdmissionUncertainty).join('\n')
   expect(noAdmissionText).toContain('saved facts do not establish whether DSH admitted the request')
-  expect(noAdmissionText).toContain('Check the Session catalog before retrying this request.')
+  expect(noAdmissionText).toContain(`Requested child Session id (not admission evidence): ${requested.request.requestedChildSessionId}`)
+  expect(noAdmissionText).toContain('Check /activity sessions for this exact id and inspect that Session before deciding whether to retry.')
+  expect(noAdmissionText).toContain('A missing Session record does not confirm that admission failed.')
   const missingReason = renderActivityDelegation({ ...noAdmissionUncertainty, uncertainty: undefined }).join('\n')
   expect(missingReason).toContain('The persisted lifecycle state is incomplete.')
 
@@ -395,7 +399,7 @@ it('renders every saved delegation state with the right uncertainty and fact ref
   expect(reasonLines[1]).toContain('application restarted before the provider report was saved')
   expect(reasonLines[2]).toContain('child was accepted, but saving its admission reference failed')
   expect(reasonLines[3]).toContain('Saving the provider report failed after the child Session was admitted')
-  expect(reasonLines[4]).toContain('accepted activation did not return a report')
+  expect(reasonLines[4]).toContain('accepted activation did not provide a usable report')
 })
 
 it('records child and run references and clips a separately attributed provider report', async () => {
@@ -486,7 +490,7 @@ it('records an unknown settled result and contains persistence and observer fail
   await vi.waitFor(() => expect(ctx.homeActivityDelegations.list(activity.id)[0]?.status).toBe('unconfirmed'))
   await vi.waitFor(() => expect(warnings.mock.calls.some(call => String(call[0]).includes('admitted activation result was rejected'))).toBe(true))
   let opened = await run(ctx, parent, ` open ${activity.id}`)
-  expect(opened.text).toContain('accepted activation did not return a report')
+  expect(opened.text).toContain('accepted activation did not provide a usable report')
   expect(opened.text).toContain('The provider report is not verified or accepted.')
 
   const failingResult = Promise.withResolvers<SubagentResult>()
@@ -522,8 +526,28 @@ it('records an unknown settled result and contains persistence and observer fail
     stopReason: 'completed',
   }
   malformed.resolve(invalidResult)
-  await vi.waitFor(() => expect(warnings.mock.calls.some(call => String(call[0]).includes('result observer failed'))).toBe(true))
-  expect(ctx.homeActivityDelegations.get(fourthId)?.status).toBe('admitted')
+  await vi.waitFor(() => expect(ctx.homeActivityDelegations.get(fourthId)?.status).toBe('unconfirmed'))
+  await vi.waitFor(() => expect(warnings.mock.calls.some(
+    call => String(call[0]).includes('settled activation result could not be read'),
+  )).toBe(true))
   opened = await run(ctx, parent, ` open ${activity.id}`)
-  expect(opened.text).toContain('Provider outcome is pending')
+  const openedText = opened.text
+  if (openedText === undefined) throw new Error('Reopened Activity did not return its detail text.')
+  const malformedRecord = openedText.split(`Delegation ${fourthId}: provider spawn`)[1]?.split('\n\nDelegation ')[0] ?? ''
+  expect(malformedRecord).toContain('accepted activation did not provide a usable report')
+  expect(malformedRecord).not.toContain('Provider outcome is pending')
+
+  const malformedObserver = Promise.withResolvers<SubagentResult>()
+  vi.spyOn(ctx.subagents, 'startActivation')
+    .mockImplementationOnce(async spec => fakeActivation(ctx, spec, malformedObserver.promise, false))
+  vi.spyOn(ctx.homeActivityDelegations, 'markUnconfirmed').mockRejectedValueOnce(new Error('private persistence detail'))
+  warnings.mockImplementationOnce(() => { throw new Error('logger failure') })
+  const fifth = await run(ctx, parent, ` delegate ${activity.id} spawn inspect a fifth checklist`)
+  expect(fifth.kind).toBe('success')
+  const fifthId = ctx.homeActivityDelegations.list(activity.id)[0]!.id
+  malformedObserver.resolve(invalidResult)
+  await vi.waitFor(() => expect(warnings.mock.calls.some(
+    call => String(call[0]).includes('result observer failed'),
+  )).toBe(true))
+  expect(ctx.homeActivityDelegations.get(fifthId)?.status).toBe('admitted')
 })

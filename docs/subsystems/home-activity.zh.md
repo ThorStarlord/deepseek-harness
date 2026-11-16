@@ -8,7 +8,7 @@ Home Activity 是由用户发起并持久保存的事务，包含稳定身份、
 
 `ActivityId` 是生成的 UUID。`ActivityBoundaries.inScope` 和 `outOfScope` 是用户撰写的描述，不会更改 sandbox 根目录、工具策略或仓库访问权限。打开 Activity 会显示已保存意图和单独记录的委派。Activity 记录本身没有状态、Session 关联、执行或继续执行语义。
 
-`home_activities` 域使用格式版本 1。单独的版本 1 `home_activity_delegations` 域会将用户请求、已接受的 DSH activation 和提供方报告分别保存。应用重启时，缺少后续事实的请求或 admission 会变为 `unconfirmed`；不会重新启动 activation。提供方输出只是报告，不代表验证或用户接受。子级权限由 DSH 运行时策略控制；Activity 范围不是授权约束。不涉及 Session 格式版本变更。
+`home_activities` 域使用格式版本 1。单独的版本 1 `home_activity_delegations` 域会在启动前保存用户请求和拟请求的子级 Session id，之后再分别保存 DSH 准入和提供方报告事实。拟请求的 id 不代表已获准入。应用重启时，缺少后续事实的请求或 admission 会变为 `unconfirmed`；不会重新启动 activation。若准入状态不确定，可用 `/activity sessions` 检查拟请求的 id；Session 记录缺失不能证明启动失败。提供方输出只是报告，不代表验证或用户接受。子级权限由 DSH 运行时策略控制；Activity 范围不是授权约束。不涉及 Session 格式版本变更。
 
 ## Cordis API
 

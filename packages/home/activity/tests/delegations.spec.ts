@@ -141,6 +141,8 @@ it('recovers unfinished requests and admissions as unconfirmed without rearming 
     status: 'unconfirmed',
     uncertainty: { reason: 'restart-before-admission-recorded' },
   })
+  expect(recoveredRequest?.request.requestedChildSessionId)
+    .toBe(notStarted.request.requestedChildSessionId)
   expect(recoveredRequest?.admission).toBeUndefined()
   expect(recovered.homeActivityDelegations.get(accepted.id)).toMatchObject({
     status: 'unconfirmed',
@@ -201,6 +203,7 @@ it('validates each persisted lifecycle state and rejects mismatched facts', () =
     provider: 'spawn',
     task: 'Inspect the release checklist.',
     parentSessionId: 'parent-session',
+    requestedChildSessionId: 'requested-child-session',
     requestedAt: '2026-11-15T12:00:00.000Z',
     source: 'user-command',
   }

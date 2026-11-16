@@ -5611,7 +5611,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ActivityDelegationRequest',
-    declaration: 'export interface ActivityDelegationRequest {\n    readonly provider: \'spawn\';\n    readonly task: string;\n    readonly parentSessionId: SessionId;\n    readonly requestedAt: string;\n    readonly source: \'user-command\';\n}',
+    declaration: 'export interface ActivityDelegationRequest {\n    readonly provider: \'spawn\';\n    readonly task: string;\n    readonly parentSessionId: SessionId;\n    readonly requestedChildSessionId: SessionId;\n    readonly requestedAt: string;\n    readonly source: \'user-command\';\n}',
   },
   {
     name: 'ActivityDelegationStatus',

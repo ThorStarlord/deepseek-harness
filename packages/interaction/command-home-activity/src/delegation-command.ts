@@ -7,7 +7,6 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import { StorageError } from '@deepseek-ai/dsh-storage'
-import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentRunId } from '@deepseek-ai/dsh-subagent'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { ActivityId } from '@deepseek-ai/dsh-home-activity'
@@ -69,7 +68,7 @@ export async function executeActivityDelegation(
     return { kind: 'error', text: 'Delegation request could not be saved; no provider start was attempted.' }
   }
 
-  const childSessionId = SessionId(randomUUID())
+  const childSessionId = request.request.requestedChildSessionId
   let runId: SubagentRunId | undefined
   const stopObservingStart = ctx.on('subagent/start', (info) => {
     if (info.id === childSessionId && info.parentSessionId === invocation.agent.session.id && info.provider === 'spawn') {
@@ -141,6 +140,7 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
   ]
   if (delegation.status === 'requested') {
     lines.push('Status: request saved; provider admission has not been confirmed.')
+    lines.push(`Requested child Session id (not admission evidence): ${delegation.request.requestedChildSessionId}`)
     return lines
   }
   if (delegation.status === 'not-admitted') {
@@ -150,7 +150,8 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
   if (delegation.status === 'unconfirmed') {
     if (delegation.admission === undefined) {
       lines.push('Status: unconfirmed; saved facts do not establish whether DSH admitted the request.')
-      lines.push('Check the Session catalog before retrying this request.')
+      lines.push(`Requested child Session id (not admission evidence): ${delegation.request.requestedChildSessionId}`)
+      lines.push('Check /activity sessions for this exact id and inspect that Session before deciding whether to retry. A missing Session record does not confirm that admission failed.')
     } else {
       lines.push('Status: DSH admitted this child; its provider report is unconfirmed.')
       lines.push(...renderAdmissionReferences(delegation.admission))
@@ -206,14 +207,27 @@ function observeActivation(
       ctx.logger.warn('command-home-activity: admitted activation result was rejected: %o', error)
       return
     }
-    const report: ActivityDelegationReport = {
-      stopReason: providerResult.stopReason,
-      outputText: truncateUtf8(providerResult.output.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'), 16_384).text,
-      nonTextBlockTypes: providerResult.output.flatMap(block => block.type === 'text' ? [] : [block.type]),
-      outputTruncated: truncateUtf8(providerResult.output.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'), 16_384).truncated,
-      ...(providerResult.diagnostic === undefined ? {} : { diagnostic: providerResult.diagnostic }),
-      reportedAt: new Date().toISOString(),
-      source: 'subagent-activation-result',
+    let report: ActivityDelegationReport
+    try {
+      const output = providerResult.output
+      const text = truncateUtf8(output.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'), 16_384)
+      report = {
+        stopReason: providerResult.stopReason,
+        outputText: text.text,
+        nonTextBlockTypes: output.flatMap(block => block.type === 'text' ? [] : [block.type]),
+        outputTruncated: text.truncated,
+        ...(providerResult.diagnostic === undefined ? {} : { diagnostic: providerResult.diagnostic }),
+        reportedAt: new Date().toISOString(),
+        source: 'subagent-activation-result',
+      }
+    } catch (error: unknown) {
+      try {
+        await ctx.homeActivityDelegations.markUnconfirmed(id, admission, 'startup-result-rejected')
+      } catch (recordError: unknown) {
+        ctx.logger.warn('command-home-activity: unreadable activation result could not be saved as unconfirmed: %o', recordError)
+      }
+      ctx.logger.warn('command-home-activity: settled activation result could not be read as a provider report: %o', error)
+      return
     }
     try {
       await ctx.homeActivityDelegations.recordReported(id, admission, report)
@@ -239,7 +253,7 @@ const uncertaintyMessages: Record<ActivityDelegationUncertainty['reason'], strin
   'restart-before-report-recorded': 'The application restarted before the provider report was saved.',
   'admission-write-failed': 'The child was accepted, but saving its admission reference failed.',
   'report-write-failed': 'Saving the provider report failed after the child Session was admitted.',
-  'startup-result-rejected': 'The accepted activation did not return a report through the managed result API.',
+  'startup-result-rejected': 'The accepted activation did not provide a usable report through the managed result API.',
 }
 
 /** Explain the source of uncertainty in actionable user language. */

@@ -114,6 +114,7 @@ describe('web e2e: command acknowledgements', () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'session.v3.jsonl', 'ack.expected.md', 'ack-expanded.expected.md', 'activity.expected.md',
       'activity-create.expected.md', 'activity-create-error.expected.md',
+      'activity-delegation-pending.expected.md', 'activity-delegation-reported.expected.md',
     ])
   })
 })

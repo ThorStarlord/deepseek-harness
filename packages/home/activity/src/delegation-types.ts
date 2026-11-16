@@ -24,6 +24,8 @@ export interface ActivityDelegationRequest {
   readonly task: string
   /** Exact parent Session that invoked the command. */
   readonly parentSessionId: SessionId
+  /** Child Session identity requested from the provider; does not establish admission. */
+  readonly requestedChildSessionId: SessionId
   /** Time the request was durably saved, in canonical UTC ISO-8601 form. */
   readonly requestedAt: string
   /** Records that the request originated from the human `/activity` command. */

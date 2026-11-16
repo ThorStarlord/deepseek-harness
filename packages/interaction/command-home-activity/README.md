@@ -52,7 +52,7 @@ A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activit
 | `/activity open <activity-id>` | Show the saved objective, descriptive boundaries, and delegation records. |
 | `/activity delegate <activity-id> spawn <task>` | Save the request, explicitly start one DSH-native child activation, and report the provider outcome separately. The task is limited to 4,096 UTF-8 bytes. |
 
-Create JSON is limited to 16,384 UTF-8 bytes. A delegation request is durably saved before provider startup; the command returns after DSH accepts the activation, while outcome recording continues independently. A rejected startup is recorded as not admitted. If admission or outcome persistence is uncertain, inspect the Activity and child Session before retrying. Provider output is reported as supplied and is never labeled verified or accepted.
+Create JSON is limited to 16,384 UTF-8 bytes. A delegation request and proposed child Session id are durably saved before provider startup; the id is not proof of admission. The command returns after DSH accepts the activation, while outcome recording continues independently. A rejected startup is recorded as not admitted. If admission is uncertain, check `/activity sessions` for the proposed id and inspect that Session before deciding whether to retry; an absent Session does not confirm startup failure. Provider output is reported as supplied and is never labeled verified or accepted.
 
 -----
 

@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { ActivityDelegationAdmission, ActivityDelegationReport } from './delegation-types.ts'
 import type {
@@ -84,6 +85,7 @@ export class HomeActivityDelegationService extends Service {
         provider: request.provider,
         task: request.task,
         parentSessionId: request.parentSessionId,
+        requestedChildSessionId: brandString<SessionId>(randomUUID()),
         requestedAt: new Date().toISOString(),
         source: 'user-command',
       },

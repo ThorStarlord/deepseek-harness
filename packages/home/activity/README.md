@@ -58,7 +58,7 @@ A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activit
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-Activity records use the version-1 `home_activities` StorageDomain and remain independent of Session, Goal, and Workspace records. Delegations use a separate version-1 `home_activity_delegations` domain; its request, accepted activation, and provider report are stored as separate facts. A restart changes unfinished records to `unconfirmed` and never restarts a child.
+Activity records use the version-1 `home_activities` StorageDomain and remain independent of Session, Goal, and Workspace records. Delegations use a separate version-1 `home_activity_delegations` domain; each request saves the proposed child Session id before startup, followed by separate admission and report facts. The proposed id does not confirm admission. A restart changes unfinished records to `unconfirmed` and never restarts a child.
 
 | File | Role |
 |---|---|

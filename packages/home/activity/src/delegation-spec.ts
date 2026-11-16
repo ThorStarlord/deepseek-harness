@@ -17,6 +17,7 @@ const requestSchema = z.object({
   task: z.string().trim().min(1).max(4_096)
     .refine(value => Buffer.byteLength(value, 'utf8') <= 4_096, 'task exceeds 4096 UTF-8 bytes'),
   parentSessionId: sessionIdSchema,
+  requestedChildSessionId: sessionIdSchema,
   requestedAt: z.iso.datetime(),
   source: z.literal('user-command'),
 }).strict()
