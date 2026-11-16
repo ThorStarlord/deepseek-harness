@@ -10,7 +10,10 @@ import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import HomeActivityService from '../src/index.ts'
 import { ActivityId } from '../src/index.ts'
-import HomeActivityAssociationService, { HomeActivityAssociationStorageError } from '../src/associations.ts'
+import HomeActivityAssociationService, {
+  HomeActivityAssociationStorageError,
+  MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND,
+} from '../src/associations.ts'
 import type { CreateActivityRequest } from '../src/types.ts'
 
 const contexts: Context[] = []
@@ -164,6 +167,45 @@ it('rejects unknown Activity, Workspace, and Session identities without writing'
   expect(test.ctx.homeActivityAssociations.get(test.activity.id)).toEqual({ workspaceIds: [], sessionIds: [] })
   expect(Object.isFrozen(test.ctx.homeActivityAssociations.get(test.activity.id).workspaceIds)).toBe(true)
   expect(() => test.ctx.homeActivityAssociations.get(unknownActivity)).toThrow(/No saved Activity/u)
+})
+
+it('rejects association overflow and reopens the maximum saved references', async () => {
+  const pool = new MemoryMediaPool()
+  const test = await harness(pool)
+  const workspaceIds = Array.from({ length: MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND + 1 }, (_, index) =>
+    WorkspaceId(`10000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, '0')}`),
+  )
+  const sessionIds = Array.from({ length: MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND + 1 }, (_, index) =>
+    SessionId(`association-limit-session-${index}`),
+  )
+  for (const id of workspaceIds) {
+    test.workspaceMap.set(id, referenceWorkspace(id, `workspace-${id.slice(-4)}`))
+  }
+  for (const id of sessionIds) test.sessionMap.set(id, sessionSnapshot(id))
+
+  for (const id of workspaceIds.slice(0, MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND)) {
+    await test.ctx.homeActivityAssociations.linkWorkspace(test.activity.id, id)
+  }
+  for (const id of sessionIds.slice(0, MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND)) {
+    await test.ctx.homeActivityAssociations.linkSession(test.activity.id, id)
+  }
+  await expect(test.ctx.homeActivityAssociations.linkWorkspace(
+    test.activity.id,
+    workspaceIds[MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND]!,
+  )).rejects.toMatchObject({ code: 'association-limit' })
+  await expect(test.ctx.homeActivityAssociations.linkSession(
+    test.activity.id,
+    sessionIds[MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND]!,
+  )).rejects.toMatchObject({ code: 'association-limit' })
+
+  const saved = test.ctx.homeActivityAssociations.get(test.activity.id)
+  expect(saved.workspaceIds).toHaveLength(MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND)
+  expect(saved.sessionIds).toHaveLength(MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND)
+  await test.ctx.fiber.dispose()
+
+  const reopened = await harness(pool)
+  expect(reopened.ctx.homeActivities.get(test.activity.id)).toEqual(test.activity)
+  expect(reopened.ctx.homeActivityAssociations.get(test.activity.id)).toEqual(saved)
 })
 
 it('retains the prior durable associations when an association write fails', async () => {

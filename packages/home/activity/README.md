@@ -57,7 +57,7 @@ The storage providers own their settings; see the [JSON backend](../../storage/s
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-Activity records remain in the strict version-1 `home_activities` StorageDomain. Separately authored Workspace and Session references use the additive `home_activity_associations` version-1 domain. A Workspace link names a registered Workspace directory, not an inferred Git root; a Session link is a distinct identity and does not imply Workspace membership. Neither link rewrites a Session log or starts execution.
+Activity records remain in the strict version-1 `home_activities` StorageDomain. Separately authored Workspace and Session references use the additive `home_activity_associations` version-1 domain, with at most 256 references of each kind per Activity. A Workspace link names a registered Workspace directory, not an inferred Git root; a Session link is a distinct identity and does not imply Workspace membership. Neither link rewrites a Session log or starts execution.
 
 | File | Role |
 |---|---|

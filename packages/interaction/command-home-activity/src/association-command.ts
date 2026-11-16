@@ -189,7 +189,9 @@ function associationFailure(ctx: Context, error: unknown, activityId: string, op
       ? 'Run /activity list to choose a saved Activity id.'
       : error.code === 'unknown-workspace'
         ? 'Run /activity workspaces to choose a registered Workspace id.'
-        : 'Run /activity sessions to choose a stored DSH Session id.'
+        : error.code === 'unknown-session'
+          ? 'Run /activity sessions to choose a stored DSH Session id.'
+          : `Run /activity open ${activityId} to inspect links, then use /activity unlink ${activityId} workspace <workspace-id> or /activity unlink ${activityId} session <session-id> before retrying.`
     return { kind: 'error', text: error.message + ' ' + recovery }
   }
   ctx.logger.warn(`command-home-activity: ${operation} failed: %o`, error)

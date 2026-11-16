@@ -223,6 +223,27 @@ it('links selected Workspaces and Sessions independently and reopens them from a
   expect(test.session.snapshotEvents()).toEqual(beforeSourceEvents)
 })
 
+it('reports association limits with a safe recovery command', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Review', objective: 'Review the change.',
+    boundaries: { inScope: ['Inspect the patch.'], outOfScope: ['Do not merge.'] },
+  })
+  const workspaceIds = Array.from({ length: 257 }, (_, index) =>
+    `10000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, '0')}`,
+  )
+  for (const id of workspaceIds) test.workspaces.set(id, workspace(id, `Project ${id.slice(-4)}`))
+  for (const id of workspaceIds.slice(0, 256)) {
+    await test.ctx.homeActivityAssociations.linkWorkspace(ActivityId(activity.id), WorkspaceId(id))
+  }
+
+  const result = await run(test, ` link ${activity.id} workspace ${workspaceIds[256]}`)
+  expect(result).toMatchObject({ kind: 'error' })
+  expect(result.text).toContain('An Activity can have at most 256 Workspace references.')
+  expect(result.text).toContain(`Run /activity open ${activity.id}`)
+  expect(result.text).toContain(`/activity unlink ${activity.id} workspace <workspace-id>`)
+})
+
 it('separates unknown references from storage failures and supports unlink correction', async () => {
   const test = await harness()
   const activity = await test.ctx.homeActivities.create({

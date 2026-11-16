@@ -12,7 +12,7 @@ The `home_activities` domain uses format version 1 and keeps its strict record u
 
 ## Context references
 
-The additive version-1 `home_activity_associations` domain stores Workspace and DSH Session ids separately from Activity intent. Users choose each reference explicitly; a Session reference is not assigned to a Workspace because both ids share an Activity. A Workspace id names a registered DSH Workspace directory, not an inferred Git repository root. Removing or correcting a reference changes only this association record, never the Workspace record or Session log.
+The additive version-1 `home_activity_associations` domain stores Workspace and DSH Session ids separately from Activity intent, with at most 256 references of each kind per Activity. The service rejects an additional link before writing; callers can unlink a saved reference and retry. Users choose each reference explicitly; a Session reference is not assigned to a Workspace because both ids share an Activity. A Workspace id names a registered DSH Workspace directory, not an inferred Git repository root. Removing or correcting a reference changes only this association record, never the Workspace record or Session log.
 
 Opening an Activity resolves the saved ids against their owning registries. A removed Workspace or Session remains listed as unavailable until the user explicitly unlinks it. Registry read or storage failures are reported instead of being rendered as missing references.
 
@@ -76,7 +76,8 @@ get(activityId: ActivityId): HomeActivityAssociations
  * @param activityId - Saved Activity receiving the reference.
  * @param workspaceId - Existing Workspace registry identity.
  * @returns `true` when a new durable link was written.
- * @throws {HomeActivityAssociationError} when the Activity or Workspace is unknown.
+ * @throws {HomeActivityAssociationError} when the Activity or Workspace is unknown
+ *   or the Activity already has the maximum number of Workspace references.
  */
 linkWorkspace(activityId: ActivityId, workspaceId: WorkspaceId): Promise<boolean>
 
@@ -85,7 +86,8 @@ linkWorkspace(activityId: ActivityId, workspaceId: WorkspaceId): Promise<boolean
  * @param activityId - Saved Activity receiving the reference.
  * @param sessionId - Existing DSH Session identity.
  * @returns `true` when a new durable link was written.
- * @throws {HomeActivityAssociationError} when the Activity or Session is unknown.
+ * @throws {HomeActivityAssociationError} when the Activity or Session is unknown
+ *   or the Activity already has the maximum number of Session references.
  */
 linkSession(activityId: ActivityId, sessionId: SessionId): Promise<boolean>
 

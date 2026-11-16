@@ -12,7 +12,7 @@ Activity 意图持久保存，且独立于写入时所在的 Session。它包含
 
 ## 上下文引用
 
-附加的 `home_activity_associations` 版本 1 域将 Workspace 和 DSH Session id 与 Activity 意图分开保存。用户分别选择每个引用；Session 引用不会仅因共用 Activity 而被分配到某个 Workspace。Workspace id 指向已注册的 DSH Workspace 目录，不推断 Git 仓库根目录。移除或更正引用只会更改此关联记录，不会修改 Workspace 记录或 Session 日志。
+附加的 `home_activity_associations` 版本 1 域将 Workspace 和 DSH Session id 与 Activity 意图分开保存，每个 Activity 的每种引用最多 256 项。服务会在写入前拒绝超出上限的关联；用户可以移除现有引用后重试。用户分别选择每个引用；Session 引用不会仅因共用 Activity 而被分配到某个 Workspace。Workspace id 指向已注册的 DSH Workspace 目录，不推断 Git 仓库根目录。移除或更正引用只会更改此关联记录，不会修改 Workspace 记录或 Session 日志。
 
 打开 Activity 时会从各自的注册表解析已保存 id。已移除的 Workspace 或 Session 仍会显示为不可用，直到用户明确取消关联。注册表或存储读取失败会显示错误，不会被当作引用缺失。
 
@@ -76,7 +76,8 @@ get(activityId: ActivityId): HomeActivityAssociations
  * @param activityId - Saved Activity receiving the reference.
  * @param workspaceId - Existing Workspace registry identity.
  * @returns `true` when a new durable link was written.
- * @throws {HomeActivityAssociationError} when the Activity or Workspace is unknown.
+ * @throws {HomeActivityAssociationError} when the Activity or Workspace is unknown
+ *   or the Activity already has the maximum number of Workspace references.
  */
 linkWorkspace(activityId: ActivityId, workspaceId: WorkspaceId): Promise<boolean>
 
@@ -85,7 +86,8 @@ linkWorkspace(activityId: ActivityId, workspaceId: WorkspaceId): Promise<boolean
  * @param activityId - Saved Activity receiving the reference.
  * @param sessionId - Existing DSH Session identity.
  * @returns `true` when a new durable link was written.
- * @throws {HomeActivityAssociationError} when the Activity or Session is unknown.
+ * @throws {HomeActivityAssociationError} when the Activity or Session is unknown
+ *   or the Activity already has the maximum number of Session references.
  */
 linkSession(activityId: ActivityId, sessionId: SessionId): Promise<boolean>
 

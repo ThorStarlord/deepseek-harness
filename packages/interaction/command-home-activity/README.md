@@ -55,7 +55,7 @@ The [command registry](../commands/README.md) owns direct human-command invocati
 | `/activity unlink <activity-id> workspace <workspace-id>` | Remove the reference, including an unavailable Workspace id, without changing the Workspace record. |
 | `/activity unlink <activity-id> session <session-id>` | Remove the reference, including an unavailable Session id, without changing the Session log. |
 
-Workspace and Session links are separately user-authored; sharing an Activity does not assign a Session to a Workspace or assert repository origin. Correct a reference by unlinking it and linking the replacement. Command input is limited to 16,384 UTF-8 bytes. An uncertain storage result asks the user to reopen the Activity before retrying.
+Workspace and Session links are separately user-authored; sharing an Activity does not assign a Session to a Workspace or assert repository origin. Each Activity can hold at most 256 links of either kind. At the limit, reopen the Activity, unlink an existing reference, and retry. Correct a reference by unlinking it and linking the replacement. Command input is limited to 16,384 UTF-8 bytes. An uncertain storage result asks the user to reopen the Activity before retrying.
 
 -----
 

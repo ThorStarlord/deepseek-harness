@@ -13,11 +13,14 @@ const workspaceIdSchema = z.uuid().transform(value => brandString<WorkspaceId>(v
 const sessionIdSchema = z.string().min(1).max(256).regex(/^\S+$/u).transform(value => brandString<SessionId>(value))
 const unique = <T extends string>(values: readonly T[]): boolean => new Set(values).size === values.length
 
+/** Maximum number of Workspace or Session references stored for one Activity. */
+export const MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND = 256
+
 /** Strict durable row schema; unrelated fields require a versioned migration. */
 export const homeActivityAssociationRecordSchema = z.object({
   activityId: activityIdSchema,
-  workspaceIds: z.array(workspaceIdSchema).max(256).refine(unique, 'Workspace ids must be unique'),
-  sessionIds: z.array(sessionIdSchema).max(256).refine(unique, 'Session ids must be unique'),
+  workspaceIds: z.array(workspaceIdSchema).max(MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND).refine(unique, 'Workspace ids must be unique'),
+  sessionIds: z.array(sessionIdSchema).max(MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND).refine(unique, 'Session ids must be unique'),
   updatedAt: z.iso.datetime(),
 }).strict().refine(record => record.workspaceIds.length + record.sessionIds.length > 0, 'An empty association row must be deleted')
 

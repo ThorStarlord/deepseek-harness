@@ -10,12 +10,15 @@ import type {} from '@deepseek-ai/dsh-workspace'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ActivityId } from './types.ts'
 import type { HomeActivityAssociationRecord, HomeActivityAssociations } from './association-types.ts'
-import { homeActivityAssociationsDomain } from './association-spec.ts'
+import {
+  homeActivityAssociationsDomain,
+  MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND,
+} from './association-spec.ts'
 
 /** Stable rejection categories for association requests. */
-export type HomeActivityAssociationErrorCode = 'unknown-activity' | 'unknown-workspace' | 'unknown-session'
+export type HomeActivityAssociationErrorCode = 'unknown-activity' | 'unknown-workspace' | 'unknown-session' | 'association-limit'
 
-/** A selected identity does not resolve in its owning registry. */
+/** An identity is unavailable or the Activity reached its reference limit. */
 export class HomeActivityAssociationError extends Error {
   /** @param code - Stable rejection category. @param message - User-readable reason. */
   constructor(readonly code: HomeActivityAssociationErrorCode, message: string) {
@@ -67,7 +70,8 @@ export class HomeActivityAssociationService extends Service {
    * @param activityId - Saved Activity receiving the reference.
    * @param workspaceId - Existing Workspace registry identity.
    * @returns `true` when a new durable link was written.
-   * @throws {HomeActivityAssociationError} when the Activity or Workspace is unknown.
+   * @throws {HomeActivityAssociationError} when the Activity or Workspace is unknown
+   *   or the Activity already has the maximum number of Workspace references.
    */
   linkWorkspace(activityId: ActivityId, workspaceId: WorkspaceId): Promise<boolean> {
     return this.enqueue(async () => {
@@ -84,7 +88,8 @@ export class HomeActivityAssociationService extends Service {
    * @param activityId - Saved Activity receiving the reference.
    * @param sessionId - Existing DSH Session identity.
    * @returns `true` when a new durable link was written.
-   * @throws {HomeActivityAssociationError} when the Activity or Session is unknown.
+   * @throws {HomeActivityAssociationError} when the Activity or Session is unknown
+   *   or the Activity already has the maximum number of Session references.
    */
   linkSession(activityId: ActivityId, sessionId: SessionId): Promise<boolean> {
     return this.enqueue(async () => {
@@ -128,6 +133,13 @@ export class HomeActivityAssociationService extends Service {
     const current = this.readRecord(activityId)
     const ids = current?.[key] ?? []
     if (ids.some(existing => existing === id)) return false
+    if (ids.length >= MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND) {
+      const kind = key === 'workspaceIds' ? 'Workspace' : 'DSH Session'
+      throw new HomeActivityAssociationError(
+        'association-limit',
+        `An Activity can have at most ${MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND} ${kind} references. Remove an existing ${kind} reference before adding another.`,
+      )
+    }
     const next = freezeRecord({
       activityId,
       workspaceIds: current?.workspaceIds ?? [],
@@ -212,7 +224,11 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-export { homeActivityAssociationRecordSchema, homeActivityAssociationsDomain } from './association-spec.ts'
+export {
+  homeActivityAssociationRecordSchema,
+  homeActivityAssociationsDomain,
+  MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND,
+} from './association-spec.ts'
 export type { HomeActivityAssociationRecord, HomeActivityAssociations } from './association-types.ts'
 export const name = 'home-activity-associations'
 export default HomeActivityAssociationService

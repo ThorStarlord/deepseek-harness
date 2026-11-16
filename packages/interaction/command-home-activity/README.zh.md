@@ -55,7 +55,7 @@ Web 配置会将此命令与命令注册表、持久 Activity 和关联服务、
 | `/activity unlink <activity-id> workspace <workspace-id>` | 移除 Workspace 引用，包括已不可用的旧 id；不修改 Workspace 记录。 |
 | `/activity unlink <activity-id> session <session-id>` | 移除 Session 引用，包括已不可用的旧 id；不修改 Session 日志。 |
 
-Workspace 和 Session 引用由用户分别选择；共用一个 Activity 不表示 Session 属于某个 Workspace，也不表示仓库来源。更正引用时先取消旧关联，再添加替代项。命令输入最多为 16,384 个 UTF-8 字节。如果存储结果不确定，命令会提示用户先重新打开 Activity 检查关联，再重试。
+Workspace 和 Session 引用由用户分别选择；共用一个 Activity 不表示 Session 属于某个 Workspace，也不表示仓库来源。每个 Activity 的每种引用最多保存 256 项。达到上限时，请重新打开 Activity，取消关联现有项后再重试。更正引用时先取消旧关联，再添加替代项。命令输入最多为 16,384 个 UTF-8 字节。如果存储结果不确定，命令会提示用户先重新打开 Activity 检查关联，再重试。
 
 -----
 

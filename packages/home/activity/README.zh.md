@@ -57,7 +57,7 @@ Web 配置会将此服务与 JSON StorageDomain 提供方及人工调用的 `/ac
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-Activity 记录仍保存在严格的版本 1 `home_activities` StorageDomain 中。用户分别选择的 Workspace 与 Session 引用保存在附加的版本 1 `home_activity_associations` 域中。Workspace 关联指向已注册的 Workspace 目录，不推断 Git 根目录；Session 关联是独立身份，不表示 Workspace 成员关系。两类关联都不会重写 Session 日志或启动执行。
+Activity 记录仍保存在严格的版本 1 `home_activities` StorageDomain 中。用户分别选择的 Workspace 与 Session 引用保存在附加的版本 1 `home_activity_associations` 域中，每类 Activity 最多可保存 256 个引用。Workspace 关联指向已注册的 Workspace 目录，不推断 Git 根目录；Session 关联是独立身份，不表示 Workspace 成员关系。两类关联都不会重写 Session 日志或启动执行。
 
 | 文件 | 职责 |
 |---|---|

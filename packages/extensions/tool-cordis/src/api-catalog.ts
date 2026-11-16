@@ -1772,14 +1772,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Add a selected existing Workspace reference; repeated links are idempotent.',
         parameters: [{ name: 'activityId', description: 'Saved Activity receiving the reference.' }, { name: 'workspaceId', description: 'Existing Workspace registry identity.' }],
         returns: '`true` when a new durable link was written.',
-        throws: ['{HomeActivityAssociationError} when the Activity or Workspace is unknown.'],
+        throws: ['{HomeActivityAssociationError} when the Activity or Workspace is unknown or the Activity already has the maximum number of Workspace references.'],
       },
       {
         signature: 'linkSession(activityId: ActivityId, sessionId: SessionId): Promise<boolean>',
         description: 'Add a selected existing DSH Session reference; repeated links are idempotent.',
         parameters: [{ name: 'activityId', description: 'Saved Activity receiving the reference.' }, { name: 'sessionId', description: 'Existing DSH Session identity.' }],
         returns: '`true` when a new durable link was written.',
-        throws: ['{HomeActivityAssociationError} when the Activity or Session is unknown.'],
+        throws: ['{HomeActivityAssociationError} when the Activity or Session is unknown or the Activity already has the maximum number of Session references.'],
       },
       {
         signature: 'unlinkWorkspace(activityId: ActivityId, workspaceId: WorkspaceId): Promise<boolean>',
