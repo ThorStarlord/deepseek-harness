@@ -18,7 +18,7 @@ Low risk means descriptive or cosmetic behavior with negligible blast radius and
 
 An assessing agent must not implement or materially shape the change. It reviews the complete issue criteria, exact PR diff and head SHA, direct rendered interaction evidence, focused validation, findings, and remaining uncertainty in a fresh read-only assessment. For each user-visible interaction, the PR includes rendered evidence that covers the actual affected behavior; tests and implementation inspection support that evidence but do not replace it.
 
-The PR records **OWNER-AUTHORIZED AGENT ALTERNATE — ELIGIBLE** or **HUMAN REVIEW REQUIRED**, the assessing agent and model, its separation from implementation, issue and reviewed SHA, risk rationale, inspected interaction and evidence, validation, findings, and residual uncertainty. The owner's Stage 1 scope authorization covers an eligible PR without a separate per-ticket approval. An uncertain eligibility decision, missing rendered evidence, unresolved high-impact finding, or high-risk change requires a qualified independent human review. If no qualified reviewer is available, the affected PR remains open.
+The PR records **OWNER-AUTHORIZED AGENT ALTERNATE — ELIGIBLE** or **HUMAN REVIEW REQUIRED**, the assessing agent and model, its separation from implementation, issue and reviewed SHA, risk rationale, inspected interaction and evidence, validation, findings, and residual uncertainty. Under the policy adopted on 2026-11-15, the owner's Stage 1 scope authorization covered an eligible PR without a separate per-ticket approval. An uncertain eligibility decision, missing rendered evidence, unresolved high-impact finding, or high-risk change required a qualified independent human review. If no qualified reviewer was available, the affected PR remained open. The owner extended this Stage 1 alternative to high-risk changes in the [successor Agent Note](../../implemented/process/2026-11-16-stage1-agent-assisted-assurance.md); this note records the original decision adopted on 2026-11-15.
 
 ## Alternatives considered
 
@@ -28,9 +28,9 @@ The PR records **OWNER-AUTHORIZED AGENT ALTERNATE — ELIGIBLE** or **HUMAN REVI
 
 ## Consequences
 
-The scoped alternative enables bounded Stage 1 work to proceed without routine per-ticket owner approvals. It has less independent human judgment than a designer or product review and can miss subjective usability concerns. A fresh read-only assessment, explicit risk criteria, direct interaction evidence, focused tests, recorded limitations, and human escalation for unresolved or high-risk issues reduce that risk without claiming equivalence to human review.
+The scoped alternative enables bounded Stage 1 work to proceed without routine per-ticket owner approvals. It has less independent human judgment than a designer or product review and can miss subjective usability concerns. A fresh read-only assessment, explicit risk criteria, direct interaction evidence, focused tests, recorded limitations, and escalation of unresolved or protected decisions reduce that risk without claiming equivalence to human review.
 
-The alternative changes no authentication, permissions, provider authority, or issue acceptance criteria. It does not authorize execution or begin Stage 2 or Stage 3. High-risk work remains dependent on a qualified human reviewer when no eligible reviewer is available.
+The original alternative changed no authentication, permissions, provider authority, or issue acceptance criteria. It did not authorize execution or begin Stage 2 or Stage 3. Under that original decision, high-risk work remained dependent on a qualified human reviewer; the successor note records the owner's ratified extension for Issues #17–#30.
 
 ## Verification
 
