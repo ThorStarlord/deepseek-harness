@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-11-16-stage1-agent-assisted-assurance.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-11-16-stage1-agent-assisted-assurance.md
+/agent-note-stage-1-agent-assisted-assurance:
+  en: c010cf7e3d400e89
+  zh: 843147c162a90024
+/agent-note-stage-1-agent-assisted-assurance/problem:
+  en: 41f392b223515bd9
+  zh: 4cf43ec6f1ea962c
+/agent-note-stage-1-agent-assisted-assurance/decision:
+  en: a22321cb1c26bddb
+  zh: 9acf14a6b238c6d6
+/agent-note-stage-1-agent-assisted-assurance/alternatives-considered:
+  en: e2688c8225a300e0
+  zh: 79473d9b896e10d8
+/agent-note-stage-1-agent-assisted-assurance/verification:
+  en: 233e04b865e06acd
+  zh: d03407133a3bab55
+/agent-note-stage-1-agent-assisted-assurance/consequences:
+  en: f52cc396b2480eb7
+  zh: 7cf557184be34ff4
