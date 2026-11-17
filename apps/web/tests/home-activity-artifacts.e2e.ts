@@ -322,17 +322,28 @@ describe('web e2e: Home Activity artifact pointers', () => {
     expect(reportedSnapshot).not.toContain('Status: accepted.')
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    await connectFreshWorkspace(page, scaffold.workspaceCwd)
-    const reloadedInput = page.locator('[data-composer-input]').first()
-    await reloadedInput.fill(`/activity open ${activity.id}`)
-    await reloadedInput.press('Enter')
-    await page.getByText(/Activity: Release readiness/u).last().waitFor({ timeout: 10_000 })
-    await page.getByRole('button', { name: /Activity: Release readiness/u }).last().click()
-    const recoveredText = await page.locator('pre').filter({ hasText: 'User-linked artifact references' }).last().textContent() ?? ''
-    expect(recoveredText).toContain('Repository one report')
-    expect(recoveredText).toContain('Repository two patch')
-    expect(recoveredText).toContain('Source revision: unknown')
-    expect(recoveredText).toContain(`Source revision: ${secondRepository.revision}`)
+    const { sessionId: recoveryParentSessionId } = await hostRpc<{ sessionId: string }>(
+      scaffold, 'session/create', { request: { workspaceId: firstWorkspaceId } },
+    )
+    expect(recoveryParentSessionId).not.toBe(parentSessionId)
+    expect(recoveryParentSessionId).not.toBe(secondParentSessionId)
+    const recoveryOpen = await executeCommand(
+      scaffold, recoveryParentSessionId, `/activity open ${activity.id}`,
+    )
+    expect(recoveryOpen.kind).toBe('success')
+    const reopenedActivityText = recoveryOpen.text ?? ''
+    expect(reopenedActivityText).toContain('Repository one report')
+    expect(reopenedActivityText).toContain('Repository two patch')
+    expect(reopenedActivityText).toContain('Source revision: unknown')
+    expect(reopenedActivityText).toContain(`Source revision: ${secondRepository.revision}`)
+    expect(reopenedActivityText).toContain(`Requesting Session: ${parentSessionId}`)
+    expect(reopenedActivityText).toContain(`Requesting Session: ${secondParentSessionId}`)
+    expect(reopenedActivityText).toContain(
+      `User-selected Workspace context (execution Workspace unverified): workspace — ${firstWorkspaceId}`,
+    )
+    expect(reopenedActivityText).toContain(
+      `User-selected Workspace context (execution Workspace unverified): artifact-repository-two — ${secondWorkspaceId}`,
+    )
     expect(start).toHaveBeenCalledTimes(2)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
