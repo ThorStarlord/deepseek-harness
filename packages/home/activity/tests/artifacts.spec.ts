@@ -32,6 +32,10 @@ function workspace(id: string, title: string): Workspace {
     createdAt: '2026-11-17T00:00:00.000Z',
     updatedAt: '2026-11-17T00:00:00.000Z',
     sessionIds: [],
+    setTitle: async (_title: string) => {},
+    attachSession: async (_sessionId: SessionId) => {},
+    insertSessionBefore: async (_sessionId: SessionId, _beforeSessionId?: SessionId) => {},
+    detachSession: async (_sessionId: SessionId) => {},
     status: async () => 'ok',
   }
 }
