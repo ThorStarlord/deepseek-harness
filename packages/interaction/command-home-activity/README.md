@@ -1,5 +1,5 @@
 ---
-description: "Create, list, and reopen saved Home Activities through the Web command composer without starting their objectives."
+description: "Create, list, reopen, and associate saved Home Activities with Workspace or DSH Session references through the Web command composer without starting their objectives."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use `/activity` in the Web composer to create a named Activity with its objective and descriptive boundaries, list saved Activities, or reopen their saved details. The command runs without a model round trip and does not start the saved objective. It requires the `ctx.commands` registry and `ctx.homeActivities` service.
+Use `/activity` in the Web composer or SDK `session.run()` to create a named Activity with its objective and descriptive boundaries, list saved Activities, reopen saved details, and link selected Workspace or DSH Session identities. The command runs without a model round trip and does not start the saved objective. It requires the command registry, Activity and association services, Workspace registry, and Session persistence.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Use `/activity` in the Web composer to create a named Activity with its objectiv
 <a id="use-this-package"></a>
 ## Use this package
 
-The Web profile mounts the command with the command registry and durable Activity service.
+The Web and SDK profiles mount the command with the command registry, durable Activity and association services, Workspace registry, and Session persistence.
 
 ### When to choose it
 
@@ -47,9 +47,15 @@ The [command registry](../commands/README.md) owns direct human-command invocati
 |---|---|
 | `/activity create <JSON>` | Save a name, objective, and `boundaries` object with `inScope` and `outOfScope` string arrays. At least one `inScope` item is required. |
 | `/activity list` | List saved Activities newest first, with their names and stable ids. |
-| `/activity open <activity-id>` | Show the saved objective and descriptive boundaries. |
+| `/activity open <activity-id>` | Show the saved objective, descriptive boundaries, and current Workspace and Session references. Missing references remain visible as unavailable. |
+| `/activity workspaces` | List registered Workspace identities and their directory status. These identify DSH Workspaces; no Git root is inferred. |
+| `/activity sessions` | List stored DSH Session identities and header details. Sessions are selected separately from Workspaces. |
+| `/activity link <activity-id> workspace <workspace-id>` | Link one existing Workspace registry identity. Repeating the same link is idempotent. |
+| `/activity link <activity-id> session <session-id>` | Link one existing stored DSH Session identity. Repeating the same link is idempotent. |
+| `/activity unlink <activity-id> workspace <workspace-id>` | Remove the reference, including an unavailable Workspace id, without changing the Workspace record. |
+| `/activity unlink <activity-id> session <session-id>` | Remove the reference, including an unavailable Session id, without changing the Session log. |
 
-Create JSON is limited to 16,384 UTF-8 bytes. A storage error with an uncertain commit asks the user to list Activities before retrying.
+Workspace and Session links are separately user-authored; sharing an Activity does not assign a Session to a Workspace or assert repository origin. Each Activity can hold at most 256 links of either kind. At the limit, reopen the Activity, unlink an existing reference, and retry. Correct a reference by unlinking it and linking the replacement. Command input is limited to 16,384 UTF-8 bytes. An uncertain storage result asks the user to reopen the Activity before retrying.
 
 -----
 
@@ -59,11 +65,12 @@ Create JSON is limited to 16,384 UTF-8 bytes. A storage error with an uncertain 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The command is registered as a human command, not a model tool. Its handler persists through `ctx.homeActivities`; it never creates a Session turn, Goal, Workspace project, or execution request.
+The command is registered as a human command, not a model tool. It persists Activity records through `ctx.homeActivities` and references through `ctx.homeActivityAssociations`. Linking does not change Workspace records, Session logs, Goal state, permissions, or execution.
 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Command registration, input validation, and user-facing results |
+| [`src/association-command.ts`](src/association-command.ts) | Context discovery and explicit link/unlink commands |
 | [`tests/command.spec.ts`](tests/command.spec.ts) | Command behavior, safe failures, and no-execution assertions |
 
 </details>
@@ -93,7 +100,7 @@ None; the command does not create a model request or change model context.
 
 The command saves and displays intent only.
 
-- The Web composer is the only interaction surface; there is no standalone Activity browser or native Desktop command.
+- The Web composer and SDK `session.run()` are the supported interaction surfaces; there is no standalone Activity browser or native Desktop command. SDK support requires a profile that mounts the Home Activity plugins.
 - Create input is JSON text, and Activities cannot be edited or deleted through this command.
 
 <a id="dev-note"></a>

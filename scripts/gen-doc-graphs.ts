@@ -587,6 +587,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Stores named objectives and descriptive boundaries independently of Sessions; the human command creates, lists, and opens records without executing them.',
   },
   {
+    key: 'homeActivityAssociations',
+    pkg: 'home-activity',
+    title: 'Activity Workspace and Session references',
+    mode: 'service',
+    consumers: ['command-home-activity'],
+    note: 'Stores separately selected Workspace registry identities and DSH Session identities without changing either source record or inferring a relationship between them.',
+  },
+  {
     key: 'sessionQuery',
     pkg: 'session-query',
     title: 'Session reads, traces, filters, and search',

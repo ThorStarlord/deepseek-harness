@@ -6,11 +6,12 @@ import { StorageError } from '@deepseek-ai/dsh-storage'
 import { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { ActivityError, ActivityId, createActivityRequestSchema } from '@deepseek-ai/dsh-home-activity'
+import { executeAssociationCommand, renderActivityAssociations } from './association-command.ts'
 
 export const name = 'command-home-activity'
-export const inject = ['commands', 'homeActivities']
+export const inject = ['commands', 'homeActivities', 'homeActivityAssociations', 'workspaceRegistry', 'sessionPersistence']
 
-const USAGE = 'Usage: /activity create <JSON> | /activity list | /activity open <activity-id>'
+const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link <activity-id> workspace|session <context-id> | unlink <activity-id> workspace|session <context-id>'
 const MAX_INPUT_BYTES = 16_384
 
 type ActivityCommand =
@@ -38,14 +39,16 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.commands.register({
     definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-home-activity'),
     name: 'activity',
-    description: 'Create, list, or reopen a saved Home Activity without starting its work',
-    input: { hint: 'create <JSON> | list | open <activity-id>' },
+    description: 'Create, list, reopen, and link saved Activities to Workspaces or DSH Sessions without starting their work',
+    input: { hint: 'create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id>' },
     recordInput: false,
     handler: invocation => execute(ctx, invocation),
   }))
 }
 
 async function execute(ctx: Context, invocation: CommandInvocation): Promise<CommandResult> {
+  const associationResult = await executeAssociationCommand(ctx, invocation)
+  if (associationResult !== undefined) return associationResult
   const command = parseCommand(invocation.rawInput)
   if (command.kind === 'invalid') return { kind: 'error', text: command.message }
   if (command.kind === 'create') {
@@ -104,11 +107,13 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
         ...activity.boundaries.inScope.map(item => `In scope: ${item}`),
         ...activity.boundaries.outOfScope.map(item => `Out of scope: ${item}`),
         '',
+        ...await renderActivityAssociations(ctx, activity.id),
+        '',
         'Opening an Activity displays its saved intent; it does not start work or activate a Goal.',
       ].join('\n'),
     }
   } catch (error: unknown) {
     ctx.logger.warn('command-home-activity: read failed: %o', error)
-    return { kind: 'error', text: 'Activity storage could not be read; no saved details were confirmed.' }
+    return { kind: 'error', text: 'Activity or context links could not be read; no current link state was confirmed.' }
   }
 }

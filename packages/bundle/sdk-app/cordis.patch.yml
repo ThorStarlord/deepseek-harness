@@ -54,6 +54,15 @@
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 
+    - id: home-activity
+      name: '@deepseek-ai/dsh-home-activity'
+
+    - id: home-activity-associations
+      name: '@deepseek-ai/dsh-home-activity/associations'
+
+    - id: command-home-activity
+      name: '@deepseek-ai/dsh-command-home-activity'
+
     - id: schedule
       name: '@deepseek-ai/dsh-schedule'
       inject: [sdkSessionActivation]

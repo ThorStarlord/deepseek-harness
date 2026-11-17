@@ -35,11 +35,13 @@ kind: "package-reference"
 
 <a id="command-input"></a>
 
+高层 SDK `run()` 也可在挂载 Home Activity 插件的 profile 中调用已注册的 `/activity` 命令。命令通过原生注册表执行；未挂载该插件或命令身份不匹配时，输入仍按普通提示词处理。Home Activity 操作不发起模型请求，也不启动已保存的工作。
+
 下列支持范围是桌面已有、无需图形界面即可执行的原生命令。`/permission <preset>` 使用这条原生调用路径；Desktop 的 `/model` 选择器使用独立的模型选择 API。
 
-`session/query` 是高层 SDK `run()` 发送字符串和内容块数组时使用的协议入口。普通输入保留内容块，使用既有的提示词队列。完整 SDK 识别裸 `/compact`、带非空 preset 的 `/permission <preset>`、`/plan [off|message]` 和 `/goal [objective|clear|edit objective|pause|resume]`，这些命令按官方定义 ID 识别。裸 `/permission` 或 `/权限`、`/compact extra` 以及 `/model` 等其余输入仍是普通提示词。命令缺失时也保留提示词路径；选中的 handler 失败后绝不回退。未知 preset 是原生命令错误。随已识别命令提交的编码图片块经过原生附件接纳。`session/prompt` 保留为低层排队输入入口，不经过原生 slash command 路由。
+`session/query` 是高层 SDK `run()` 发送字符串和内容块数组时使用的协议入口。普通输入保留内容块，使用既有的提示词队列。SDK 识别裸 `/compact`、带非空 preset 的 `/permission <preset>`、`/plan [off|message]`、`/goal [objective|clear|edit objective|pause|resume]`，以及按官方定义 ID 注册的 `/activity` 命令。只有加载 Home Activity 插件的 profile 才能使用 `/activity`；它可创建、列出、打开 Activity 并调整上下文关联，且不发起模型请求。裸 `/permission` 或 `/权限`、`/compact extra` 以及 `/model` 等其余输入仍是普通提示词。命令缺失时也保留提示词路径；选中的 handler 失败后绝不回退。未知 preset 是原生命令错误。随已识别命令提交的编码图片块经过原生附件接纳。`session/prompt` 保留为低层排队输入入口，不经过原生 slash command 路由。
 
-Host 与桌面适配器共用 `dsh-commands/builtin` 的定义身份及中英文别名解析。`/压缩`、`/权限`、`/计划` 和 `/目标` 跟随重命名后的官方定义，执行使用当前注册名。精确名称优先，但无关的同名定义不是 SDK 内置命令，仍作为普通提示词。其他内置能力仍不属于 SDK 命令集合。
+Host 与桌面适配器共用 `dsh-commands/builtin` 的定义身份及中英文别名解析。`/压缩`、`/权限`、`/计划` 和 `/目标` 跟随重命名后的官方定义，执行使用当前注册名。精确名称优先，但无关的同名定义不是 SDK 内置命令，仍作为普通提示词。其他已注册命令不属于 SDK 命令集合，Home Activity 命令除外。
 
 第一个文本块提供完整命令行；编码图片可位于它之前或之后。该行匹配到受支持命令时，它必须是唯一的文本块，其余块必须为编码图片。额外文本块、持久图片引用及其他内容类型会在执行或入队前返回 JSON-RPC 错误，不回退为普通提示词。普通提示词保留全部内容块及其顺序。空数组和只包含空白文本的数组会被拒绝；允许仅图片输入。
 

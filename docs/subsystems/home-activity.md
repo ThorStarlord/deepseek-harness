@@ -2,13 +2,19 @@
 
 English | [中文](home-activity.zh.md)
 
-A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope statements, and creation time. It is independent of any Session and does not create a Goal, Workflow, Workspace project, or execution. The `home-activity` package stores records through the shared [StorageDomain](storage.md) form. The Web [`/activity` command](../../packages/interaction/command-home-activity/README.md) creates, lists, and opens them.
+Activity intent is durable and independent of the Session where it was written. It has a stable identity, name, objective, descriptive scope statements, and creation time; it does not create a Goal, Workflow, Workspace project, or execution. The `home-activity` package stores intent through the shared [StorageDomain](storage.md) form. The Web [`/activity` command](../../packages/interaction/command-home-activity/README.md) creates, lists, opens, and links Activities.
 
 ## Saved intent
 
-`ActivityId` is a generated UUID. `ActivityBoundaries.inScope` and `outOfScope` are user-authored descriptions. They do not change sandbox roots, tool policy, or repository access. Opening an Activity only displays the saved intent. This initial record has no status, Session association, execution, or continuation semantics.
+`ActivityId` is a generated UUID. `ActivityBoundaries.inScope` and `outOfScope` are user-authored descriptions. They do not change sandbox roots, tool policy, or repository access. Opening an Activity only displays saved intent and separately stored references; it does not start execution or activate a Goal.
 
-The `home_activities` domain uses format version 1. The schema requires a non-empty name and objective, at least one in-scope statement, at most 20 statements per list, and bounded text lengths. Invalid stored records fail domain opening. No Session format version changes are involved.
+The `home_activities` domain uses format version 1 and keeps its strict record unchanged. The schema requires a non-empty name and objective, at least one in-scope statement, at most 20 statements per list, and bounded text lengths. Invalid stored records fail domain opening. No Session format version changes are involved.
+
+## Context references
+
+The additive version-1 `home_activity_associations` domain stores Workspace and DSH Session ids separately from Activity intent, with at most 256 references of each kind per Activity. The service rejects an additional link before writing; callers can unlink a saved reference and retry. Users choose each reference explicitly; a Session reference is not assigned to a Workspace because both ids share an Activity. A Workspace id names a registered DSH Workspace directory, not an inferred Git repository root. Removing or correcting a reference changes only this association record, never the Workspace record or Session log.
+
+Opening an Activity resolves the saved ids against their owning registries. A removed Workspace or Session remains listed as unavailable until the user explicitly unlinks it. Registry read or storage failures are reported instead of being rendered as missing references.
 
 ## Cordis API
 
@@ -49,4 +55,62 @@ get(id: ActivityId): Activity | undefined
 ```
 
 Source: [`packages/home/activity/src/index.ts`](../../packages/home/activity/src/index.ts)
+
+<a id="ctxhomeactivityassociations--homeactivityassociationservice"></a>
+
+### `ctx.homeActivityAssociations` — `HomeActivityAssociationService`
+
+Context references persisted separately from the strict Activity v1 record.
+
+```ts cordis-catalog
+/**
+ * Read separately authored Workspace and Session ids for one saved Activity.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached ids; an Activity with no links returns two empty arrays.
+ * @throws {HomeActivityAssociationError} when the Activity does not exist.
+ */
+get(activityId: ActivityId): HomeActivityAssociations
+
+/**
+ * Add a selected existing Workspace reference; repeated links are idempotent.
+ * @param activityId - Saved Activity receiving the reference.
+ * @param workspaceId - Existing Workspace registry identity.
+ * @returns `true` when a new durable link was written.
+ * @throws {HomeActivityAssociationError} when the Activity or Workspace is unknown
+ *   or the Activity already has the maximum number of Workspace references.
+ */
+linkWorkspace(activityId: ActivityId, workspaceId: WorkspaceId): Promise<boolean>
+
+/**
+ * Add a selected existing DSH Session reference; repeated links are idempotent.
+ * @param activityId - Saved Activity receiving the reference.
+ * @param sessionId - Existing DSH Session identity.
+ * @returns `true` when a new durable link was written.
+ * @throws {HomeActivityAssociationError} when the Activity or Session is unknown
+ *   or the Activity already has the maximum number of Session references.
+ */
+linkSession(activityId: ActivityId, sessionId: SessionId): Promise<boolean>
+
+/**
+ * Remove a Workspace reference without mutating its Workspace record.
+ * @param activityId - Saved Activity whose reference is removed.
+ * @param workspaceId - Workspace identity, including an unavailable old identity.
+ * @returns `true` when a durable link was removed.
+ * @throws {HomeActivityAssociationError} when the Activity is unknown.
+ */
+unlinkWorkspace(activityId: ActivityId, workspaceId: WorkspaceId): Promise<boolean>
+
+/**
+ * Remove a DSH Session reference without mutating its Session log.
+ * @param activityId - Saved Activity whose reference is removed.
+ * @param sessionId - Session identity, including an unavailable old identity.
+ * @returns `true` when a durable link was removed.
+ * @throws {HomeActivityAssociationError} when the Activity is unknown.
+ */
+unlinkSession(activityId: ActivityId, sessionId: SessionId): Promise<boolean>
+```
+
+Types: [SessionId](core.md) · [WorkspaceId](workspace.md)
+
+Source: [`packages/home/activity/src/associations.ts`](../../packages/home/activity/src/associations.ts)
 <!-- END GENERATED cordis-surface -->
