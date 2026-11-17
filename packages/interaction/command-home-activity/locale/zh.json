@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "主页活动命令",
-    "description": "创建、列出并重新打开已保存的活动，将其关联到 Workspace 或 DSH Session，并从中委派任务。"
+    "description": "创建、列出并重新打开已保存的活动，关联 Workspace 或 DSH Session，记录产物指针并委派有界任务。"
   }
 }

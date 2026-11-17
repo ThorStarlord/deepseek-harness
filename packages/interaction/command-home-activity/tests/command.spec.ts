@@ -25,6 +25,7 @@ import HomeActivityDelegations from '@deepseek-ai/dsh-home-activity/delegations'
 import HomeActivityAssociationService, {
   HomeActivityAssociationStorageError,
 } from '@deepseek-ai/dsh-home-activity/associations'
+import HomeActivityArtifactService from '@deepseek-ai/dsh-home-activity/artifacts'
 import * as commandHomeActivity from '../src/index.ts'
 
 const roots: string[] = []
@@ -89,6 +90,7 @@ async function harness() {
   ctx.provide('workspaceRegistry', workspaceRegistry as never)
   ctx.provide('sessionPersistence', persistence as never)
   await ctx.plugin(HomeActivityAssociationService)
+  await ctx.plugin(HomeActivityArtifactService)
   const commandFiber = await ctx.plugin(commandHomeActivity)
   const primary = createAgent(ctx, SessionId(`home-activity-${randomUUID()}`))
   const secondary = createAgent(ctx, SessionId(`home-activity-coordinator-${randomUUID()}`))
@@ -157,7 +159,7 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   const test = await harness()
   expect(commandHomeActivity.inject).toEqual([
     'commands', 'homeActivities', 'homeActivityDelegations', 'subagents',
-    'homeActivityAssociations', 'workspaceRegistry', 'sessionPersistence',
+    'homeActivityAssociations', 'homeActivityArtifacts', 'workspaceRegistry', 'sessionPersistence',
   ])
   const descriptor = test.ctx.commands.list(test.agent).find(command =>
     command.definitionId === '@deepseek-ai/dsh-command-home-activity',
@@ -165,7 +167,7 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   if (descriptor === undefined) throw new Error('Activity command was not registered')
   expect(descriptor.name).toBe('activity')
   expect(descriptor.description).toContain('DSH-native task')
-  expect(descriptor.input?.hint).toBe('create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | delegate <activity-id> spawn <task>')
+  expect(descriptor.input?.hint).toContain('artifact add <activity-id> <delegation-id> <workspace-id> <JSON>')
 
   const create = await run(test, ' create {"name":"Release readiness","objective":"Prepare the next release for review.","boundaries":{"inScope":["Review release notes"],"outOfScope":["Do not publish"]}}')
   expect(create.kind).toBe('success')
@@ -276,6 +278,94 @@ it('reports association limits with a safe recovery command', async () => {
   expect(result.text).toContain('An Activity can have at most 256 Workspace references.')
   expect(result.text).toContain(`Run /activity open ${activity.id}`)
   expect(result.text).toContain(`/activity unlink ${activity.id} workspace <workspace-id>`)
+})
+
+it('records user-linked artifact pointers for two Workspace contexts and shows absent revisions as unknown', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Two repository review', objective: 'Inspect separately delegated outputs.',
+    boundaries: { inScope: ['Review each output in its own Workspace.'], outOfScope: ['Do not merge or release.'] },
+  })
+  const firstWorkspace = WorkspaceId('00000000-0000-4000-8000-000000000011')
+  const secondWorkspace = WorkspaceId('00000000-0000-4000-8000-000000000012')
+  await test.ctx.homeActivityAssociations.linkWorkspace(activity.id, firstWorkspace)
+  await test.ctx.homeActivityAssociations.linkWorkspace(activity.id, secondWorkspace)
+  const firstDelegation = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id, provider: 'spawn', task: 'Inspect repository one output.', parentSessionId: test.session.id,
+  })
+  const secondDelegation = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id, provider: 'spawn', task: 'Inspect repository two output.', parentSessionId: test.secondarySession.id,
+  })
+  const eventsBefore = test.session.snapshotEvents()
+  const first = await run(test, ` artifact add ${activity.id} ${firstDelegation.id} ${firstWorkspace} {"label":"Repository one report","location":"reports/review.md"}`)
+  const second = await run(test, ` artifact add ${activity.id} ${secondDelegation.id} ${secondWorkspace} {"label":"Repository two patch","location":"src/change.ts","revision":"${'b'.repeat(40)}"}`)
+  expect(first.kind).toBe('success')
+  expect(first.text).toContain('Source revision: unknown')
+  expect(first.text).toContain(`Requesting Session: ${test.session.id}`)
+  expect(first.text).toContain('This is a user-linked pointer only')
+  expect(second.kind).toBe('success')
+  expect(second.text).toContain(`User-selected Workspace context: ${secondWorkspace}`)
+  expect(second.text).toContain(`Requesting Session: ${test.secondarySession.id}`)
+  expect(second.text).toContain('does not verify execution context')
+  const eventsAfter = test.session.snapshotEvents()
+  expect(eventsAfter.filter(event => !event.type.startsWith('command/')))
+    .toEqual(eventsBefore.filter(event => !event.type.startsWith('command/')))
+
+  const opened = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+  expect(opened.kind).toBe('success')
+  expect(opened.text).toContain(`Workspace: Project one — ${firstWorkspace}`)
+  expect(opened.text).toContain(`Workspace: Project two — ${secondWorkspace}`)
+  expect(opened.text).toContain(`Delegation: ${firstDelegation.id}`)
+  expect(opened.text).toContain(`Delegation: ${secondDelegation.id}`)
+  expect(opened.text).toContain(`Requesting Session: ${test.session.id}`)
+  expect(opened.text).toContain(`Requesting Session: ${test.secondarySession.id}`)
+  expect(opened.text).toContain('execution Workspace unverified')
+  expect(opened.text).toContain('Source location: reports/review.md')
+  expect(opened.text).toContain(`Source revision: ${'b'.repeat(40)}`)
+  expect(opened.text).toContain('Source revision: unknown')
+  expect(opened.text).toContain('producer and contents are not independently verified')
+  expect(opened.text).not.toContain('user-accepted')
+})
+
+it('rejects a pointer whose Workspace is not linked to the Activity', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Workspace ownership', objective: 'Keep references attributed.',
+    boundaries: { inScope: ['Record a pointer.'], outOfScope: ['Do not change the source.'] },
+  })
+  const delegation = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id, provider: 'spawn', task: 'Review output.', parentSessionId: test.session.id,
+  })
+  const result = await run(test, ` artifact add ${activity.id} ${delegation.id} 00000000-0000-4000-8000-000000000012 {"label":"Misattributed","location":"report.md"}`)
+  expect(result).toMatchObject({ kind: 'error' })
+  expect(result.text).toContain('Workspace is not linked to this Activity')
+  expect(test.ctx.homeActivityArtifacts.list(activity.id)).toEqual([])
+})
+
+it('shows a user-selected Workspace separately when it differs from the delegation Session', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Unverified artifact context', objective: 'Keep the source context visible.',
+    boundaries: { inScope: ['Record a pointer.'], outOfScope: ['Do not treat a pointer as proof.'] },
+  })
+  const firstWorkspace = WorkspaceId('00000000-0000-4000-8000-000000000011')
+  const secondWorkspace = WorkspaceId('00000000-0000-4000-8000-000000000012')
+  await test.ctx.homeActivityAssociations.linkWorkspace(activity.id, firstWorkspace)
+  await test.ctx.homeActivityAssociations.linkWorkspace(activity.id, secondWorkspace)
+  const delegation = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id, provider: 'spawn', task: 'Inspect a result.', parentSessionId: test.session.id,
+  })
+
+  const recorded = await run(
+    test,
+    ` artifact add ${activity.id} ${delegation.id} ${secondWorkspace} {"label":"User-selected context","location":"report.md"}`,
+  )
+  expect(recorded.kind).toBe('success')
+  const opened = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+  expect(opened.text).toContain(`Delegation: ${delegation.id}`)
+  expect(opened.text).toContain(`Requesting Session: ${test.session.id}`)
+  expect(opened.text).toContain('User-selected Workspace context (execution Workspace unverified): Project two')
+  expect(opened.text).toContain('Reference recorded by user command; its producer and contents are not independently verified.')
 })
 
 it('separates unknown references from storage failures and supports unlink correction', async () => {

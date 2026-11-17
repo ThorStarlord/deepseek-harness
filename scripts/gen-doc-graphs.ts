@@ -603,6 +603,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Stores separately selected Workspace registry identities and DSH Session identities without changing either source record or inferring a relationship between them.',
   },
   {
+    key: 'homeActivityArtifacts',
+    pkg: 'home-activity',
+    title: 'User-linked Activity artifact pointers',
+    mode: 'service',
+    consumers: ['command-home-activity'],
+    note: 'Stores user-supplied output locations and optional revisions linked to one Activity delegation and one of its selected Workspaces, separately from provider-authored reports.',
+  },
+  {
     key: 'sessionQuery',
     pkg: 'session-query',
     title: 'Session reads, traces, filters, and search',
