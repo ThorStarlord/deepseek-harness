@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import { z } from 'zod'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
@@ -34,6 +35,43 @@ const request: CreateActivityRequest = {
     outOfScope: ['Do not publish or deploy.'],
   },
 }
+
+const legacySpawnRecordSchema = z.object({
+  id: z.uuid(),
+  activityId: z.uuid(),
+  request: z.object({
+    provider: z.literal('spawn'),
+    task: z.string(),
+    parentSessionId: z.string(),
+    requestedChildSessionId: z.string(),
+    requestedAt: z.iso.datetime(),
+    source: z.literal('user-command'),
+  }).strict(),
+  status: z.literal('reported'),
+  admission: z.object({
+    childSessionId: z.string(),
+    activationName: z.string(),
+    runId: z.string().optional(),
+    admittedAt: z.iso.datetime(),
+    source: z.literal('subagents.startActivation'),
+  }).strict(),
+  report: z.object({
+    stopReason: z.string(),
+    outputText: z.string(),
+    nonTextBlockTypes: z.array(z.string()),
+    outputTruncated: z.boolean(),
+    diagnostic: z.string().optional(),
+    reportedAt: z.iso.datetime(),
+    source: z.literal('subagent-activation-result'),
+  }).strict(),
+}).strict()
+const legacyDelegationDomain = StorageDomain.defineDomain({
+  name: 'home_activity_delegations',
+  version: 1,
+  tables: {
+    delegations: StorageDomain.domainTable<string, z.infer<typeof legacySpawnRecordSchema>>(legacySpawnRecordSchema),
+  },
+})
 
 async function open(root: string) {
   const ctx = new Context(); contexts.push(ctx)
@@ -93,6 +131,150 @@ it('stores request, admission, and provider report as separately attributed fact
   expect(reported.report?.source).toBe('subagent-activation-result')
 })
 
+it('persists Codex one-shot admission without inventing a DSH Session and reopens it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-codex-')); roots.push(root)
+  const first = await open(root)
+  const activity = await first.homeActivities.create(request)
+  const saved = await first.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'codex',
+    task: 'Review the release checklist once.',
+    parentSessionId: SessionId('parent-session'),
+  })
+
+  expect(saved.request).toMatchObject({ provider: 'codex', task: 'Review the release checklist once.' })
+  expect('requestedChildSessionId' in saved.request).toBe(false)
+  const admission = {
+    provider: 'codex' as const,
+    providerRunId: 'codex-provider-run-1',
+    admittedAt: '2026-11-15T12:00:00.000Z',
+    source: 'subagents.startActivation' as const,
+  }
+  await first.homeActivityDelegations.recordAdmitted(saved.id, admission)
+  await first.homeActivityDelegations.recordReported(saved.id, admission, {
+    stopReason: 'completed',
+    outputText: 'The checklist is missing a migration step.',
+    nonTextBlockTypes: [],
+    outputTruncated: false,
+    reportedAt: '2026-11-15T12:00:01.000Z',
+    source: 'subagent-activation-result',
+  })
+  await first.fiber.dispose()
+
+  const reopened = await open(root)
+  expect(reopened.homeActivityDelegations.get(activityDelegationId(saved.id))).toMatchObject({
+    status: 'reported',
+    request: { provider: 'codex' },
+    admission: { provider: 'codex', providerRunId: 'codex-provider-run-1' },
+    report: { source: 'subagent-activation-result' },
+  })
+})
+
+it('marks interrupted Codex request and admission as unconfirmed without rearming either run', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-codex-recovery-')); roots.push(root)
+  const first = await open(root)
+  const activity = await first.homeActivities.create(request)
+  const notRecorded = await first.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'codex',
+    task: 'Review the checklist once.',
+    parentSessionId: SessionId('parent-session'),
+  })
+  const admitted = await first.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'codex',
+    task: 'Review the upgrade notes once.',
+    parentSessionId: SessionId('parent-session'),
+  })
+  const admission = {
+    provider: 'codex' as const,
+    providerRunId: 'codex-provider-run-2',
+    admittedAt: '2026-11-15T12:00:00.000Z',
+    source: 'subagents.startActivation' as const,
+  }
+  await first.homeActivityDelegations.recordAdmitted(admitted.id, admission)
+  await first.fiber.dispose()
+
+  const reopened = await open(root)
+  expect(reopened.homeActivityDelegations.get(activityDelegationId(notRecorded.id))).toMatchObject({
+    status: 'unconfirmed',
+    request: { provider: 'codex' },
+    uncertainty: { reason: 'restart-before-admission-recorded' },
+  })
+  expect(reopened.homeActivityDelegations.get(activityDelegationId(notRecorded.id))?.request)
+    .not.toHaveProperty('requestedChildSessionId')
+  expect(reopened.homeActivityDelegations.get(activityDelegationId(admitted.id))).toMatchObject({
+    status: 'unconfirmed',
+    request: { provider: 'codex' },
+    admission: { provider: 'codex', providerRunId: 'codex-provider-run-2' },
+    uncertainty: { reason: 'restart-before-report-recorded' },
+  })
+})
+
+it('reads the strict v1 spawn record in v2 and refuses to open v2 data with a v1 reader', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-delegation-v2-')); roots.push(root)
+  const legacy = new Context(); contexts.push(legacy)
+  await legacy.plugin(Storage)
+  await legacy.plugin(StorageJson, { root })
+  await legacy.plugin(StorageDomain, { backend: 'json' })
+  await legacy.plugin(HomeActivityService)
+  const activity = await legacy.homeActivities.create(request)
+  const legacyId = '00000000-0000-4000-8000-000000000099'
+  const oldDomain = await legacy.storageDomain.open(legacyDelegationDomain)
+  await oldDomain.table('delegations').put(legacyId, {
+    id: legacyId,
+    activityId: activity.id,
+    request: {
+      provider: 'spawn',
+      task: 'Review the release checklist.',
+      parentSessionId: 'parent-session',
+      requestedChildSessionId: 'legacy-child-session',
+      requestedAt: '2026-11-15T12:00:00.000Z',
+      source: 'user-command',
+    },
+    status: 'reported',
+    admission: {
+      childSessionId: 'legacy-child-session',
+      activationName: 'activity-legacy-1234',
+      runId: 'legacy-run-1',
+      admittedAt: '2026-11-15T12:00:01.000Z',
+      source: 'subagents.startActivation',
+    },
+    report: {
+      stopReason: 'completed',
+      outputText: 'The checklist is complete.',
+      nonTextBlockTypes: [],
+      outputTruncated: false,
+      reportedAt: '2026-11-15T12:00:02.000Z',
+      source: 'subagent-activation-result',
+    },
+  })
+  await oldDomain.close()
+  await legacy.fiber.dispose()
+
+  const current = await open(root)
+  expect(current.homeActivityDelegations.get(activityDelegationId(legacyId))).toMatchObject({
+    status: 'reported',
+    request: { provider: 'spawn', requestedChildSessionId: 'legacy-child-session' },
+    admission: { childSessionId: 'legacy-child-session' },
+    report: { outputText: 'The checklist is complete.' },
+  })
+  await current.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'codex',
+    task: 'Check the checklist once.',
+    parentSessionId: SessionId('parent-session'),
+  })
+  await current.fiber.dispose()
+
+  const oldReader = new Context(); contexts.push(oldReader)
+  await oldReader.plugin(Storage)
+  await oldReader.plugin(StorageJson, { root })
+  await oldReader.plugin(StorageDomain, { backend: 'json' })
+  await expect(oldReader.storageDomain.open(legacyDelegationDomain))
+    .rejects.toMatchObject({ code: 'version-mismatch' })
+})
+
 it('recovers unfinished requests and admissions as unconfirmed without rearming work', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-recovery-')); roots.push(root)
   const first = await open(root)
@@ -137,11 +319,13 @@ it('recovers unfinished requests and admissions as unconfirmed without rearming 
 
   const recovered = await open(root)
   const recoveredRequest = recovered.homeActivityDelegations.get(activityDelegationId(notStarted.id))
+  if (notStarted.request.provider !== 'spawn') throw new Error('This recovery case must use a DSH spawn request.')
+  if (recoveredRequest?.request.provider !== 'spawn') throw new Error('The reopened record must preserve its DSH spawn request.')
   expect(recoveredRequest).toMatchObject({
     status: 'unconfirmed',
     uncertainty: { reason: 'restart-before-admission-recorded' },
   })
-  expect(recoveredRequest?.request.requestedChildSessionId)
+  expect(recoveredRequest.request.requestedChildSessionId)
     .toBe(notStarted.request.requestedChildSessionId)
   expect(recoveredRequest?.admission).toBeUndefined()
   expect(recovered.homeActivityDelegations.get(accepted.id)).toMatchObject({
@@ -226,6 +410,19 @@ it('validates each persisted lifecycle state and rejects mismatched facts', () =
   const failure = { message: 'The provider rejected startup.', source: 'subagents.startActivation' }
   const uncertainty = { reason: 'report-write-failed', observedAt: '2026-11-15T12:00:03.000Z' }
   const facts = { id, activityId, request: requestFact }
+  const codexRequest = {
+    provider: 'codex',
+    task: 'Inspect the release checklist.',
+    parentSessionId: 'parent-session',
+    requestedAt: '2026-11-15T12:00:00.000Z',
+    source: 'user-command',
+  }
+  const codexAdmission = {
+    provider: 'codex',
+    providerRunId: 'codex-provider-run-3',
+    admittedAt: '2026-11-15T12:00:01.000Z',
+    source: 'subagents.startActivation',
+  }
   const valid = [
     { ...facts, status: 'requested' },
     { ...facts, status: 'not-admitted', failure },
@@ -234,6 +431,14 @@ it('validates each persisted lifecycle state and rejects mismatched facts', () =
     { ...facts, status: 'unconfirmed', admission, uncertainty },
   ] as const
   for (const record of valid) expect(activityDelegationRecordSchema.safeParse(record).success).toBe(true)
+
+  for (const record of [
+    { ...facts, request: codexRequest, status: 'requested' },
+    { ...facts, request: codexRequest, status: 'not-admitted', failure },
+    { ...facts, request: codexRequest, status: 'admitted', admission: codexAdmission },
+    { ...facts, request: codexRequest, status: 'reported', admission: codexAdmission, report },
+    { ...facts, request: codexRequest, status: 'unconfirmed', admission: codexAdmission, uncertainty },
+  ]) expect(activityDelegationRecordSchema.safeParse(record).success).toBe(true)
 
   const invalid = [
     { ...facts, status: 'requested', admission },
@@ -245,6 +450,14 @@ it('validates each persisted lifecycle state and rejects mismatched facts', () =
     { ...facts, status: 'unconfirmed', admission, report, uncertainty },
   ] as const
   for (const record of invalid) expect(activityDelegationRecordSchema.safeParse(record).success).toBe(false)
+
+  expect(activityDelegationRecordSchema.safeParse({
+    ...facts,
+    request: codexRequest,
+    status: 'reported',
+    admission,
+    report,
+  }).success).toBe(false)
 
   expect(activityDelegationRecordSchema.safeParse({
     ...facts,

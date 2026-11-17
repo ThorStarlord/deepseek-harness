@@ -49,7 +49,7 @@ The service declares no configuration fields. A custom composition supplies the 
 
 The storage providers own their settings; see the [JSON backend](../../storage/storage-json/README.md) and [StorageDomain](../../storage/storage-domain/README.md) references.
 
-A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activity/delegations`, `@deepseek-ai/dsh-subagent`, and a DSH-native provider supported by the command. The Web profile includes the `spawn` provider.
+A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activity/delegations`, `@deepseek-ai/dsh-subagent`, and a provider supported by the command. The Web profile includes the `spawn` provider; `codex` is available when the optional native Codex provider is enabled.
 
 -----
 
@@ -59,7 +59,7 @@ A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activit
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-Activity records use the version-1 `home_activities` StorageDomain and remain independent of Session, Goal, and Workspace records. Delegations use a separate version-1 `home_activity_delegations` domain; each request saves the proposed child Session id before startup, followed by separate admission and report facts. The proposed id does not confirm admission. A restart changes unfinished records to `unconfirmed` and never restarts a child.
+Activity records use the version-1 `home_activities` StorageDomain and remain independent of Session, Goal, and Workspace records. Delegations use a separate version-2 `home_activity_delegations` domain that reads version-1 records. Version 2 is required because a version-1 reader cannot recognize the added Codex record and must refuse the newer stamp. Existing `spawn` rows keep their original fields; new `spawn` requests save a proposed child Session id before startup, while Codex requests do not invent a DSH Session identity. The Codex admission stores its provider's one-shot `SubagentRun.id`, not a DSH Session or native Codex thread id. Both providers save separate admission and report facts. The proposed `spawn` id does not confirm admission. A restart changes unfinished records to `unconfirmed` and never restarts execution.
 
 Selected Workspace and DSH Session references use the separate version-1 `home_activity_associations` domain. The associations are resolved against their owning registries when displayed; stale references remain explicit until removed. They do not change Workspace records, Session logs, or the Activity record.
 
@@ -108,7 +108,7 @@ Activity scope remains descriptive, and delegation does not enforce it as an aut
 - Boundaries are descriptive statements, not sandbox roots or permission grants.
 - Delegation records identify the requesting Session and the admitted child Session but do not create Activity-to-Session links or reusable knowledge.
 - Workspace and Session references are selected independently. A Workspace id names a registered DSH Workspace directory, not an inferred repository root, and sharing an Activity does not assign a Session to a Workspace.
-- Delegated execution is a separate explicit `/activity delegate` command; the Activity service itself has no edit, delete, or scheduling operation. Provider-reported output is not verified or accepted.
+- Delegated execution is a separate explicit `/activity delegate` command; the Activity service itself has no edit, delete, or scheduling operation. Provider-reported output is not verified or accepted. Native Codex delegation is one-shot and does not expose continuation, resume, transcript inspection, or rollback through Activity; it follows native Codex configuration and permission mode.
 
 <a id="dev-note"></a>
 ### Dev Note

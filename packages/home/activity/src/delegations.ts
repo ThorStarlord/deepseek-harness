@@ -1,4 +1,4 @@
-/** Durable DSH-native execution facts for saved Home Activities. @module @deepseek-ai/dsh-home-activity/delegations */
+/** Durable provider execution facts for saved Home Activities. @module @deepseek-ai/dsh-home-activity/delegations */
 
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -85,7 +85,9 @@ export class HomeActivityDelegationService extends Service {
         provider: request.provider,
         task: request.task,
         parentSessionId: request.parentSessionId,
-        requestedChildSessionId: brandString<SessionId>(randomUUID()),
+        ...(request.provider === 'spawn'
+          ? { requestedChildSessionId: brandString<SessionId>(randomUUID()) }
+          : {}),
         requestedAt: new Date().toISOString(),
         source: 'user-command',
       },
@@ -144,7 +146,7 @@ export class HomeActivityDelegationService extends Service {
 
   /** Persist the admission returned by `startActivation`.
    * @param id - Saved request identity.
-   * @param admission - Child Session and activation references.
+   * @param admission - Local Session or external execution and activation references.
    * @returns The admitted record.
   */
   async recordAdmitted(id: ActivityDelegationId, admission: ActivityDelegationAdmission): Promise<ActivityDelegation> {

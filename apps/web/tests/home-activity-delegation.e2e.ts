@@ -6,6 +6,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold, watchConsole,
   webSnapshotMode, type WebScaffold,
@@ -16,6 +17,11 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/feedback-comm
 const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
 const PENDING_EXPECTED = join(SNAPSHOT_DIR, 'activity-delegation-pending.expected.md')
 const REPORTED_EXPECTED = join(SNAPSHOT_DIR, 'activity-delegation-reported.expected.md')
+const CODEX_EXPECTED_DIR = fileURLToPath(new URL('./expected/home-activity-delegation/', import.meta.url))
+const CODEX_ADMISSION_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-admission.expected.md')
+const CODEX_PENDING_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-pending.expected.md')
+const CODEX_REPORTED_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-reported.expected.md')
+const CODEX_UNAVAILABLE_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-unavailable.expected.md')
 const SCREENSHOT_DIR = fileURLToPath(new URL('../../../.artifacts/ui-review', import.meta.url))
 const PENDING_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation-pending.png')
 const REPORTED_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation.png')
@@ -75,8 +81,10 @@ describe('web e2e: Home Activity delegation', () => {
     const submit = async (line: string, marker: RegExp) => {
       await input.fill(line)
       await input.press('Enter')
-      await page.getByText(marker).last().waitFor({ timeout: 10_000 })
+      const rendered = page.getByText(marker).last()
+      await rendered.waitFor({ timeout: 10_000 })
       await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
+      return await rendered.textContent() ?? ''
     }
     await submit(
       `/activity delegate ${activity.id} spawn Inspect the release checklist.`,
@@ -134,6 +142,110 @@ describe('web e2e: Home Activity delegation', () => {
     expect(reportedSnapshot).toContain('Status: provider reported; not verified or accepted.')
     expect(reportedSnapshot).toContain('Provider-reported output: The checklist contains two unverified migration steps.')
     expect(reportedSnapshot).not.toContain('Status: accepted.')
+
+    start.mockRestore()
+    const codexActivity = await scaffold.ctx.homeActivities.create({
+      name: 'Codex one-shot',
+      objective: 'Receive one bounded external Codex report.',
+      boundaries: { inScope: ['Review the checklist.'], outOfScope: ['Do not publish.'] },
+    })
+    const codexResult = Promise.withResolvers<SubagentResult>()
+    const codexStart = vi.spyOn(scaffold.ctx.subagents, 'startActivation').mockImplementation(async (spec) => {
+      if (spec.childId !== undefined) throw new Error('Codex must not receive a reserved DSH Session id.')
+      return {
+        childId: SessionId('codex-provider-run-1'),
+        name: 'activity-codex-one-shot',
+        result: codexResult.promise,
+        dispose: async () => {},
+      }
+    })
+    await submit(
+      `/activity delegate ${codexActivity.id} codex Review the release checklist once.`,
+      /Delegation admitted: provider codex/u,
+    )
+    const codexAdmission = await page.getByText(/Delegation admitted: provider codex/u).last().textContent() ?? ''
+    await page.getByText(/Delegation admitted: provider codex/u).last().click()
+    const codexAdmissionDetails = page.locator('pre').filter({ hasText: 'Codex provider run id' }).last()
+    await codexAdmissionDetails.waitFor({ state: 'visible', timeout: 10_000 })
+    const codexDelegation = scaffold.ctx.homeActivityDelegations.list(codexActivity.id)[0]
+    if (codexDelegation === undefined) throw new Error('The Codex command did not persist its stable delegation identity.')
+    const codexDelegationId = codexDelegation.id
+    const codexReplacements = [
+      [codexActivity.id, '{{activity-id}}'],
+      [parentSessionId, '{{parent-session-id}}'],
+      ['codex-provider-run-1', '{{provider-run-id}}'],
+      [codexDelegationId, '{{delegation-id}}'],
+      [codexActivity.createdAt, '{{activity-created-at}}'],
+    ] as const
+    expect(codexAdmission).toContain('Codex provider run id (not a DSH Session or native Codex conversation id): codex-provider-run-1')
+    expect(codexAdmission).not.toContain('Child Session: codex-provider-run-1')
+    expect(codexAdmission).toContain('Activity does not expose transcript inspection, continuation, resume, or rollback.')
+    expect(codexStart.mock.calls[0]?.[0]?.childId).toBeUndefined()
+    await mkdir(CODEX_EXPECTED_DIR, { recursive: true })
+    await compareOrRefreshGolden(
+      CODEX_ADMISSION_EXPECTED,
+      await captureStableAria(page, '[class*="centerCol"] pre:has-text("Codex provider run id")', scaffold.workspaceCwd,
+        { replacements: codexReplacements }),
+      MODE,
+    )
+
+    await submit(`/activity open ${codexActivity.id}`, /Activity: Codex one-shot/u)
+    await page.getByRole('button', { name: /Activity: Codex one-shot/u }).last().click()
+    await page.getByText(/Codex outcome is pending/u).last().waitFor({ timeout: 10_000 })
+    await compareOrRefreshGolden(
+      CODEX_PENDING_EXPECTED,
+      await captureStableAria(page, '[class*="centerCol"] pre:has-text("Codex outcome is pending")', scaffold.workspaceCwd,
+        { replacements: codexReplacements }),
+      MODE,
+    )
+    codexResult.resolve({
+      stopReason: 'completed',
+      output: [{ type: 'text', text: 'The checklist needs one migration step.' }],
+    })
+    await vi.waitFor(() => {
+      expect(scaffold.ctx.homeActivityDelegations.list(codexActivity.id)[0]?.status).toBe('reported')
+    })
+    await submit(`/activity open ${codexActivity.id}`, /Activity: Codex one-shot/u)
+    await page.getByRole('button', { name: /Activity: Codex one-shot/u }).last().click()
+    await page.getByText(/Codex-reported output: The checklist needs one migration step\./u)
+      .last().waitFor({ timeout: 10_000 })
+    const codexReport = await page.locator('pre').filter({ hasText: 'Codex-reported output:' }).last().textContent() ?? ''
+    expect(codexReport).toContain('Status: Codex reported; not verified or accepted.')
+    expect(codexReport).not.toContain('Child Session: codex-provider-run-1')
+    await compareOrRefreshGolden(
+      CODEX_REPORTED_EXPECTED,
+      await captureStableAria(page, '[class*="centerCol"] pre:has-text("Codex-reported output:")', scaffold.workspaceCwd,
+        { replacements: codexReplacements }),
+      MODE,
+    )
+
+    codexStart.mockRestore()
+    const unavailableActivity = await scaffold.ctx.homeActivities.create({
+      name: 'Unavailable Codex',
+      objective: 'Show the unavailable provider state.',
+      boundaries: { inScope: ['Report that Codex is unavailable.'], outOfScope: ['Start another provider.'] },
+    })
+    expect(scaffold.ctx.subagents.getProvider('codex')).toBeUndefined()
+    const codexUnavailable = await submit(
+      `/activity delegate ${unavailableActivity.id} codex Review the release checklist.`,
+      /The codex provider did not admit this task/u,
+    )
+    expect(scaffold.ctx.homeActivityDelegations.list(unavailableActivity.id)[0]?.status).toBe('not-admitted')
+    const unavailableRequestId = /Request ID: ([0-9a-f-]{36})/u.exec(codexUnavailable)?.[1]
+    if (unavailableRequestId === undefined) throw new Error('Rendered unavailable-provider state omitted its request identity.')
+    await compareOrRefreshGolden(
+      CODEX_UNAVAILABLE_EXPECTED,
+      await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd, {
+        replacements: [
+          ...replacements,
+          [delegationId, '{{spawn-delegation-id}}'],
+          ...codexReplacements,
+          [unavailableActivity.id, '{{unavailable-activity-id}}'],
+          [unavailableRequestId, '{{request-id}}'],
+        ],
+      }),
+      MODE,
+    )
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 60_000)

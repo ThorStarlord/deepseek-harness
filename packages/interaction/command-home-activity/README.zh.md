@@ -40,7 +40,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 
 [命令注册表](../commands/README.zh.md)负责直接调用人工命令，[`dsh-home-activity`](../../home/activity/README.zh.md)负责持久记录。
 
-启用委派的组合还需挂载 `@deepseek-ai/dsh-home-activity/delegations`、`@deepseek-ai/dsh-subagent` 和受支持的 DSH 原生提供方。当前命令支持 `spawn`。
+启用委派的组合还需挂载 `@deepseek-ai/dsh-home-activity/delegations`、`@deepseek-ai/dsh-subagent` 和受支持的提供方。命令支持 `spawn`；启用可选的原生 Codex 提供方后也支持 `codex`。
 
 ### 命令参考
 
@@ -55,9 +55,10 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 | `/activity link <activity-id> session <session-id>` | 添加 DSH Session 引用，不修改 Session 日志。 |
 | `/activity unlink <activity-id> workspace <workspace-id>` | 删除 Workspace 引用，保留源记录。 |
 | `/activity unlink <activity-id> session <session-id>` | 删除 DSH Session 引用，保留 Session 日志。 |
-| `/activity delegate <activity-id> spawn <task>` | 保存请求，明确启动一个 DSH 原生子级 activation，并单独报告提供方结果。任务最多为 4,096 个 UTF-8 字节。 |
+| `/activity delegate <activity-id> spawn <task>` | 保存请求，明确启动一个 DSH 原生子级 Session，并单独报告提供方结果。 |
+| `/activity delegate <activity-id> codex <task>` | 保存请求，明确启动一次原生 Codex 执行，并单独报告结果。它是一次性执行，不会创建 DSH Session。任务最多为 4,096 个 UTF-8 字节。 |
 
-若准入状态不确定，`/activity sessions` 会显示是否存在拟议 id 的已存储 Session 及可用摘要元数据；该命令不会查看子 Session 的对话。未找到 Session 不能证明启动失败。提供方输出仍按原样报告，不会标为已验证或已接受。
+`spawn` 请求和拟请求子级 Session id 会在提供方启动前持久化；该 id 不证明已获准入。Codex 请求不会虚构 DSH Session id。若 `spawn` 准入状态不确定，`/activity sessions` 会显示拟议 id 是否对应已存储 Session 及其可用摘要元数据；该命令不会读取对话记录。未找到 Session 不能证明启动失败。Codex 准入事实会记录其适配器的 `SubagentRun.id`，不是 DSH Session 或原生 Codex 线程 id；Activity 不提供继续、恢复、对话记录检查或回滚。Codex 使用其原生配置与权限模式，Activity 范围仍仅作描述。提供方输出仍按原样报告，不会标为已验证或已接受。
 
 -----
 
@@ -93,19 +94,19 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 <a id="model-experience"></a>
 ## 模型体验
 
-模型体验通过显式的 `/activity delegate` 命令间接产生：该命令会使用所选提供方启动一个 DSH 原生子激活，并分别记录请求、DSH 准入和提供方报告，不会暗示结果已验证或被用户接受。
+模型体验通过显式的 `/activity delegate` 命令间接产生：该命令会通过所选提供方启动一次执行，并分别记录请求、DSH 准入和提供方报告，不会暗示结果已验证或被用户接受。
 
 #### KV 缓存影响
 
-无；委派任务使用独立子级 Session，不会修改父级上下文。
+无；委派任务独立于父级上下文运行。只有 `spawn` 会创建 DSH 子级 Session。
 
 ## 已知限制与后续工作
 <a id="known-limitations-and-deferred-work"></a>
 
-Activity 范围说明描述请求的工作；它们不会限制子级工具或权限。访问由 DSH 当前运行时策略控制。
+Activity 范围说明描述请求的工作；它们不会更改提供方权限。`spawn` 由 DSH 运行时策略控制；`codex` 由 Codex 原生配置和指定权限模式控制。
 
 - Web composer 与 SDK session.run() 是受支持的交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。SDK profile 必须加载 Home Activity 插件。
-- 创建输入使用 JSON 文本，且无法通过此命令编辑或删除 Activity。委派目前只支持 spawn DSH 原生提供方。Session 列表仅提供摘要元数据；它不会读取子级对话，也不能证明提供方已准入。
+- 创建输入使用 JSON 文本，且无法通过此命令编辑或删除 Activity。Codex 委派仅执行一次；Activity 不提供继续、恢复、对话记录检查或回滚。Session 列表仅提供摘要元数据；它不会读取子级对话，也不能证明提供方已准入。
 
 <a id="dev-note"></a>
 ### 开发备注

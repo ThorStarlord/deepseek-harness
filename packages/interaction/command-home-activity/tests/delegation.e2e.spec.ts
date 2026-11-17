@@ -18,7 +18,15 @@ import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import CommandRuntime, { CommandId } from '@deepseek-ai/dsh-commands'
 import type { CommandInvocation } from '@deepseek-ai/dsh-commands'
 import Storage, { StorageError } from '@deepseek-ai/dsh-storage'
-import type { SubagentActivation, SubagentActivationSpec, SubagentResult } from '@deepseek-ai/dsh-subagent'
+import { NO_START_CAPABILITIES } from '@deepseek-ai/dsh-subagent'
+import type {
+  ResolvedSubagentStartRequest,
+  SubagentActivation,
+  SubagentActivationSpec,
+  SubagentProvider,
+  SubagentResult,
+  SubagentRun,
+} from '@deepseek-ai/dsh-subagent'
 import { SubagentRunId } from '@deepseek-ai/dsh-subagent'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
@@ -196,7 +204,7 @@ it('starts the real DSH spawn provider from `/activity`, then records success an
 
   const admitted = await run(ctx, parent, ` delegate ${activity.id} spawn Review release notes for missing migration steps.`)
 
-  expect(admitted.kind).toBe('success')
+  expect(admitted.kind, admitted.text).toBe('success')
   expect(admitted.text).toContain('Delegation admitted: provider spawn')
   expect(admitted.text).toContain('Requested task: Review release notes for missing migration steps.')
   expect(admitted.text).toContain(`Requesting Session: ${parent.session.id}`)
@@ -206,9 +214,13 @@ it('starts the real DSH spawn provider from `/activity`, then records success an
 
   const initialRecord = ctx.homeActivityDelegations.list(activity.id)[0]
   expect(initialRecord).toMatchObject({ status: 'admitted', request: { provider: 'spawn' } })
-  expect(initialRecord?.admission?.childSessionId).toBeDefined()
-  expect(initialRecord?.admission?.activationName).toMatch(/^activity-[a-f0-9]{8}$/u)
-  expect(initialRecord?.admission?.runId).toBeDefined()
+  const initialAdmission = initialRecord?.admission
+  if (initialAdmission === undefined || initialAdmission.provider === 'codex') {
+    throw new Error('The spawn activation has no DSH child Session admission.')
+  }
+  expect(initialAdmission.childSessionId).toBeDefined()
+  expect(initialAdmission.activationName).toMatch(/^activity-[a-f0-9]{8}$/u)
+  expect(initialAdmission.runId).toBeDefined()
   const pending = await run(ctx, parent, ` open ${activity.id}`)
   expect(pending.text).toContain('Status: admitted; not verified or accepted.')
   expect(pending.text).toContain('Provider outcome is pending')
@@ -219,8 +231,8 @@ it('starts the real DSH spawn provider from `/activity`, then records success an
   const reportedSuccess = await run(ctx, parent, ` open ${activity.id}`)
   expect(reportedSuccess.text).toContain('Status: provider reported; not verified or accepted.')
   expect(reportedSuccess.text).toContain('Provider-reported output: The migration section needs one upgrade command.')
-  expect(reportedSuccess.text).toContain(`Child Session: ${initialRecord!.admission!.childSessionId}`)
-  expect(reportedSuccess.text).toContain(`Activation run: ${initialRecord!.admission!.runId}`)
+  expect(reportedSuccess.text).toContain(`Child Session: ${initialAdmission.childSessionId}`)
+  expect(reportedSuccess.text).toContain(`Activation run: ${initialAdmission.runId}`)
 
   const failed = await run(ctx, parent, ` delegate ${activity.id} spawn Check the release checklist for missing verification.`)
   expect(failed.kind).toBe('success')
@@ -264,12 +276,106 @@ it('rejects malformed delegation commands before saving or starting work', async
   expect(malformed.text).toContain('Usage: /activity create <JSON>')
   expect(invalidGrammar.text).toContain('Usage: /activity delegate')
   expect(invalidId.text).toContain('Activity id must be a UUID')
-  expect(unsupportedProvider.text).toContain('Choose spawn')
+  expect(unsupportedProvider.text).toContain('Choose spawn or codex')
   expect(emptyTask.text).toContain('Delegated task is invalid')
   expect(oversizedUtf8.text).toContain('UTF-8 bytes')
   expect(missingActivity.text).toContain('No saved Activity')
   expect(start).not.toHaveBeenCalled()
   expect(ctx.homeActivityDelegations.list(activity.id)).toEqual([])
+})
+
+it('runs Codex through the external provider seam and records a one-shot report without a DSH Session', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  const result = Promise.withResolvers<SubagentResult>()
+  const providerRequests: ResolvedSubagentStartRequest[] = []
+  const provider: SubagentProvider = {
+    name: 'codex',
+    capabilities: NO_START_CAPABILITIES,
+    inheritsParentContext: false,
+    async start(request): Promise<SubagentRun> {
+      providerRequests.push(request)
+      return {
+        id: SessionId('codex-provider-run-1'),
+        result: result.promise,
+        dispose: async () => {},
+      }
+    },
+  }
+  ctx.subagents.registerProvider(provider)
+  const start = vi.spyOn(ctx.subagents, 'startActivation')
+  const warnings = vi.spyOn(ctx.logger, 'warn')
+  const activity = await ctx.homeActivities.create({
+    name: 'Codex one-shot review',
+    objective: 'Receive a bounded Codex report.',
+    boundaries: { inScope: ['Review a checklist.'], outOfScope: ['Do not publish.'] },
+  })
+
+  const admitted = await run(ctx, parent, ` delegate ${activity.id} codex Review the release checklist once.`)
+  expect(admitted.kind, JSON.stringify(warnings.mock.calls.map(call => [call[0], String(call[1])]))).toBe('success')
+  expect(admitted.text).toContain('provider codex (native Codex, external one-shot)')
+  expect(admitted.text).toContain('Codex provider run id (not a DSH Session or native Codex conversation id): codex-provider-run-1')
+  expect(admitted.text).not.toContain('Child Session:')
+  expect(admitted.text).toContain('native Codex configuration and its configured permission mode govern this execution')
+  expect(admitted.text).toContain('Activity does not expose transcript inspection, continuation, resume, or rollback.')
+
+  const spec = start.mock.calls[0]?.[0]
+  expect(spec).toMatchObject({ provider: 'codex', delivery: 'caller' })
+  expect(spec?.childId).toBeUndefined()
+  expect(spec?.name).toBeUndefined()
+  expect(spec?.agentOptions).toBeUndefined()
+  expect(spec?.prompt).toEqual([{ type: 'text', text: 'Review the release checklist once.' }])
+  expect(providerRequests).toHaveLength(1)
+  expect(providerRequests[0]?.prompt).toEqual([{ type: 'text', text: 'Review the release checklist once.' }])
+  const request = ctx.homeActivityDelegations.list(activity.id)[0]
+  expect(request?.request).toMatchObject({ provider: 'codex', task: 'Review the release checklist once.' })
+  expect(request?.request).not.toHaveProperty('requestedChildSessionId')
+  expect(request?.admission).toMatchObject({
+    provider: 'codex',
+    providerRunId: 'codex-provider-run-1',
+  })
+  expect(request?.admission).not.toHaveProperty('childSessionId')
+
+  const pending = await run(ctx, parent, ` open ${activity.id}`)
+  expect(pending.text).toContain('Status: admitted; not verified or accepted.')
+  expect(pending.text).toContain('Codex outcome is pending.')
+  expect(pending.text).not.toContain('Child Session: codex-provider-run-1')
+  result.resolve({
+    stopReason: 'completed',
+    output: [{ type: 'text', text: 'The checklist is missing a migration step.' }],
+  })
+  await waitForReported(ctx, request!.id)
+  const reported = await run(ctx, parent, ` open ${activity.id}`)
+  expect(reported.text).toContain('Status: Codex reported; not verified or accepted.')
+  expect(reported.text).toContain('Codex-reported output: The checklist is missing a migration step.')
+  expect(reported.text).toContain('Codex provider run id (not a DSH Session or native Codex conversation id): codex-provider-run-1')
+  expect(reported.text).not.toContain('Child Session: codex-provider-run-1')
+  expect(start).toHaveBeenCalledTimes(1)
+  expect(parent.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toEqual([])
+  expect(parent.session.snapshotEvents().filter(event => event.type.startsWith('goal/'))).toEqual([])
+})
+
+it('reports a missing native Codex provider without admitting or retrying work', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  const activity = await ctx.homeActivities.create({
+    name: 'Unavailable Codex route',
+    objective: 'Report a missing provider without execution.',
+    boundaries: { inScope: ['Show the provider error.'], outOfScope: ['Start another provider.'] },
+  })
+  const start = vi.spyOn(ctx.subagents, 'startActivation')
+
+  const rejected = await run(ctx, parent, ` delegate ${activity.id} codex Review the release checklist.`)
+
+  expect(rejected).toMatchObject({ kind: 'error' })
+  expect(rejected.text).toContain('codex provider did not admit this task')
+  expect(rejected.text).toContain('no DSH activation was published')
+  expect(ctx.homeActivityDelegations.list(activity.id)[0]).toMatchObject({
+    status: 'not-admitted',
+    request: { provider: 'codex' },
+  })
+  expect(start).toHaveBeenCalledTimes(1)
+  const reopened = await run(ctx, parent, ` open ${activity.id}`)
+  expect(reopened.text).toContain('Status: not admitted.')
+  expect(reopened.text).toContain('The codex provider did not admit this task; no DSH activation was published.')
 })
 
 it('stops before provider startup when a request cannot be durably saved', async () => {
@@ -330,9 +436,11 @@ it('renders every saved delegation state with the right uncertainty and fact ref
     task: 'Review the proposed release checklist.',
     parentSessionId: parent.session.id,
   })
+  if (requested.request.provider !== 'spawn') throw new Error('This rendering case must use a DSH spawn request.')
+  const requestedChildSessionId = requested.request.requestedChildSessionId
   const requestedText = renderActivityDelegation(requested).join('\n')
   expect(requestedText).toContain('request saved; provider admission has not been confirmed')
-  expect(requestedText).toContain(`Requested child Session id (not admission evidence): ${requested.request.requestedChildSessionId}`)
+  expect(requestedText).toContain(`Requested child Session id (not admission evidence): ${requestedChildSessionId}`)
 
   const notAdmitted = await ctx.homeActivityDelegations.createRequest({
     activityId: activity.id,
@@ -381,8 +489,8 @@ it('renders every saved delegation state with the right uncertainty and fact ref
   }
   const noAdmissionText = renderActivityDelegation(noAdmissionUncertainty).join('\n')
   expect(noAdmissionText).toContain('saved facts do not establish whether DSH admitted the request')
-  expect(noAdmissionText).toContain(`Requested child Session id (not admission evidence): ${requested.request.requestedChildSessionId}`)
-  expect(noAdmissionText).toContain('Check /activity sessions for this exact id and inspect that Session before deciding whether to retry.')
+  expect(noAdmissionText).toContain(`Requested child Session id (not admission evidence): ${requestedChildSessionId}`)
+  expect(noAdmissionText).toContain('Check /activity sessions for this exact id and its summary metadata before deciding whether to retry.')
   expect(noAdmissionText).toContain('A missing Session record does not confirm that admission failed.')
   const missingReason = renderActivityDelegation({ ...noAdmissionUncertainty, uncertainty: undefined }).join('\n')
   expect(missingReason).toContain('The persisted lifecycle state is incomplete.')

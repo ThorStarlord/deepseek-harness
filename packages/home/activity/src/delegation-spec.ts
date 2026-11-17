@@ -12,22 +12,38 @@ const activityIdSchema = z.uuid().transform(value => brandString<ActivityId>(val
 const delegationIdSchema = z.uuid().transform(value => brandString<ActivityDelegationId>(value))
 const sessionIdSchema = z.string().min(1).max(256).transform(value => brandString<SessionId>(value))
 const runIdSchema = z.string().min(1).max(256).transform(value => brandString<SubagentRunId>(value))
-const requestSchema = z.object({
-  provider: z.literal('spawn'),
+const requestBaseSchema = z.object({
   task: z.string().trim().min(1).max(4_096)
     .refine(value => Buffer.byteLength(value, 'utf8') <= 4_096, 'task exceeds 4096 UTF-8 bytes'),
   parentSessionId: sessionIdSchema,
-  requestedChildSessionId: sessionIdSchema,
   requestedAt: z.iso.datetime(),
   source: z.literal('user-command'),
-}).strict()
-const admissionSchema = z.object({
-  childSessionId: sessionIdSchema,
-  activationName: z.string().min(1).max(128),
+})
+const requestSchema = z.union([
+  requestBaseSchema.extend({
+    provider: z.literal('spawn'),
+    requestedChildSessionId: sessionIdSchema,
+  }).strict(),
+  requestBaseSchema.extend({
+    provider: z.literal('codex'),
+  }).strict(),
+])
+const admissionBaseSchema = z.object({
   runId: runIdSchema.optional(),
   admittedAt: z.iso.datetime(),
   source: z.literal('subagents.startActivation'),
-}).strict()
+})
+const admissionSchema = z.union([
+  admissionBaseSchema.extend({
+    childSessionId: sessionIdSchema,
+    activationName: z.string().min(1).max(128),
+    provider: z.literal('spawn').optional(),
+  }).strict(),
+  admissionBaseSchema.extend({
+    provider: z.literal('codex'),
+    providerRunId: z.string().min(1).max(256),
+  }).strict(),
+])
 const reportSchema = z.object({
   stopReason: z.string().min(1).max(128),
   outputText: z.string().max(16_384)
@@ -69,7 +85,11 @@ export const activityDelegationRecordSchema = z.object({
   const hasReport = record.report !== undefined
   const hasFailure = record.failure !== undefined
   const hasUncertainty = record.uncertainty !== undefined
-  const valid = record.status === 'requested'
+  const admissionMatchesProvider = record.admission === undefined
+    || (record.request.provider === 'codex'
+      ? record.admission.provider === 'codex'
+      : record.admission.provider !== 'codex')
+  const valid = admissionMatchesProvider && (record.status === 'requested'
     ? !hasAdmission && !hasReport && !hasFailure && !hasUncertainty
     : record.status === 'not-admitted'
       ? !hasAdmission && !hasReport && hasFailure && !hasUncertainty
@@ -77,13 +97,14 @@ export const activityDelegationRecordSchema = z.object({
         ? hasAdmission && !hasReport && !hasFailure && !hasUncertainty
         : record.status === 'reported'
           ? hasAdmission && hasReport && !hasFailure && !hasUncertainty
-          : !hasReport && !hasFailure && hasUncertainty
+          : !hasReport && !hasFailure && hasUncertainty)
   if (!valid) context.addIssue({ code: 'custom', message: 'delegation status does not match its recorded facts' })
 })
 
-/** The independently versioned sidecar for DSH-native Activity delegations. */
+/** Version-2 sidecar for local DSH and external native Codex Activity delegations. */
 export const homeActivityDelegationDomain = defineDomain({
   name: 'home_activity_delegations',
-  version: 1,
+  version: 2,
+  compatibleVersions: [1],
   tables: { delegations: domainTable<ActivityDelegation['id'], ActivityDelegation>(activityDelegationRecordSchema) },
 })
