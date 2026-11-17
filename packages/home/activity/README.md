@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Save a named Activity with an objective and descriptive boundaries that remain available after its original Session ends. The Web `/activity` command can link selected Workspace and DSH Session identities, and another Session can reopen those references. Links do not assign a Session to a Workspace, execute the objective, create a Goal, or grant runtime permissions.
+Save a named Activity with an objective and descriptive boundaries that remain available after its original Session ends. The Web and SDK `/activity` command can link selected Workspace and DSH Session identities, and another Session can reopen those references. Links do not assign a Session to a Workspace, execute the objective, create a Goal, or grant runtime permissions.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Save a named Activity with an objective and descriptive boundaries that remain a
 <a id="use-this-package"></a>
 ## Use this package
 
-The Web profile mounts this service, the `@deepseek-ai/dsh-home-activity/associations` service, the JSON StorageDomain provider, and the human `/activity` command.
+The Web and SDK profiles mount this service, the `@deepseek-ai/dsh-home-activity/associations` service, the JSON StorageDomain provider, and the human `/activity` command.
 
 ### When to choose it
 

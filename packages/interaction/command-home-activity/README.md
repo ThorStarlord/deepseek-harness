@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use `/activity` in the Web composer to create a named Activity with its objective and descriptive boundaries, list saved Activities, reopen saved details, and link selected Workspace or DSH Session identities. The command runs without a model round trip and does not start the saved objective. It requires the command registry, Activity and association services, Workspace registry, and Session persistence.
+Use `/activity` in the Web composer or SDK `session.run()` to create a named Activity with its objective and descriptive boundaries, list saved Activities, reopen saved details, and link selected Workspace or DSH Session identities. The command runs without a model round trip and does not start the saved objective. It requires the command registry, Activity and association services, Workspace registry, and Session persistence.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Use `/activity` in the Web composer to create a named Activity with its objectiv
 <a id="use-this-package"></a>
 ## Use this package
 
-The Web profile mounts the command with the command registry, durable Activity and association services, Workspace registry, and Session persistence.
+The Web and SDK profiles mount the command with the command registry, durable Activity and association services, Workspace registry, and Session persistence.
 
 ### When to choose it
 
@@ -100,7 +100,7 @@ None; the command does not create a model request or change model context.
 
 The command saves and displays intent only.
 
-- The Web composer is the only interaction surface; there is no standalone Activity browser or native Desktop command.
+- The Web composer and SDK `session.run()` are the supported interaction surfaces; there is no standalone Activity browser or native Desktop command. SDK support requires a profile that mounts the Home Activity plugins.
 - Create input is JSON text, and Activities cannot be edited or deleted through this command.
 
 <a id="dev-note"></a>

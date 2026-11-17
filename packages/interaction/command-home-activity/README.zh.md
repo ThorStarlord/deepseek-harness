@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-Web 配置会将此命令与命令注册表、持久 Activity 和关联服务、Workspace 注册表及 Session 持久化服务一同加载。
+Web 和 SDK 配置会将此命令与命令注册表、持久 Activity 和关联服务、Workspace 注册表及 Session 持久化服务一同加载。
 
 ### 何时选择
 
@@ -100,7 +100,9 @@ Workspace 和 Session 引用由用户分别选择；共用一个 Activity 不表
 
 此命令仅保存和显示意图。
 
-- Web composer 是唯一交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。
+Web composer 与 SDK `session.run()` 是受支持的交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。SDK 支持要求 profile 加载 Home Activity 插件。
+
+- Web composer 与 SDK `session.run()` 是受支持的交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。SDK 支持要求 profile 加载 Home Activity 插件。
 - 创建输入使用 JSON 文本，且无法通过此命令编辑或删除 Activity。
 
 <a id="dev-note"></a>

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-保存命名 Activity、目标和描述性边界，使其在原 Session 结束后仍可使用。Web `/activity` 命令可关联用户选择的 Workspace 与 DSH Session 身份，也可从另一个 Session 重新打开这些引用。关联不会将 Session 分配到 Workspace，不会执行目标、创建 Goal 或授予运行时权限。
+保存命名 Activity、目标和描述性边界，使其在原 Session 结束后仍可使用。Web 和 SDK `/activity` 命令可关联用户选择的 Workspace 与 DSH Session 身份，也可从另一个 Session 重新打开这些引用。关联不会将 Session 分配到 Workspace，不会执行目标、创建 Goal 或授予运行时权限。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-Web 配置会将此服务与 JSON StorageDomain 提供方及人工调用的 `/activity` 命令一同加载。
+Web 和 SDK 配置会将此服务与 JSON StorageDomain 提供方及人工调用的 `/activity` 命令一同加载。
 
 ### 何时选择
 
