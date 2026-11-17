@@ -200,15 +200,15 @@ export class HomeActivityDelegationService extends Service {
     }
   }
 
-  /** Record a result that the activation API could not return as a provider report.
+  /** Record a startup or report outcome that cannot be confirmed.
    * @param id - Saved request identity.
-   * @param admission - Accepted activation references.
+   * @param admission - Accepted activation references, or undefined when startup outcome is unknown.
    * @param reason - Why its result is unknown.
    * @returns The unconfirmed record.
   */
   async markUnconfirmed(
     id: ActivityDelegationId,
-    admission: ActivityDelegationAdmission,
+    admission: ActivityDelegationAdmission | undefined,
     reason: ActivityDelegationUncertainty['reason'],
   ): Promise<ActivityDelegation> {
     const uncertain = this.withUncertainty(id, admission, reason)
@@ -236,7 +236,7 @@ export class HomeActivityDelegationService extends Service {
 
   private withUncertainty(
     id: ActivityDelegationId,
-    admission: ActivityDelegationAdmission,
+    admission: ActivityDelegationAdmission | undefined,
     reason: ActivityDelegationUncertainty['reason'],
   ): ActivityDelegation {
     const current = this.volatileUncertainty.get(id) ?? this.requireTable().get(id)
@@ -246,7 +246,7 @@ export class HomeActivityDelegationService extends Service {
       activityId: current.activityId,
       request: current.request,
       status: 'unconfirmed',
-      admission,
+      ...(admission === undefined ? {} : { admission }),
       uncertainty: { reason, observedAt: new Date().toISOString() },
     })
   }

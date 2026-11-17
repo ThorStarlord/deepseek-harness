@@ -59,7 +59,7 @@ Web 和 SDK 配置会将此服务、关联服务、JSON StorageDomain 提供方�
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-Activity 记录使用版本 1 的 `home_activities` StorageDomain，并继续独立于 Session、Goal 和 Workspace 记录。委派记录使用可读取版本 1 记录的版本 2 `home_activity_delegations` 域。由于版本 1 读取器无法识别新增的 Codex 记录，必须拒绝较新的版本戳，因此需要升级域版本。现有 `spawn` 行保留原字段；新的 `spawn` 请求会在启动前保存拟请求的子级 Session id，而 Codex 请求不会虚构 DSH Session 身份。Codex 准入会保存其提供方适配器的 `SubagentRun.id`，不是 DSH Session 或原生 Codex 线程 id。两种提供方之后都会分别记录准入和报告事实。拟请求的 `spawn` id 不代表已获准入。应用重启会将未完成记录改为 `unconfirmed`，且不会重新启动执行。
+Activity 记录使用版本 1 的 `home_activities` StorageDomain，并继续独立于 Session、Goal 和 Workspace 记录。委派记录使用可读取版本 1 记录的版本 2 `home_activity_delegations` 域。由于版本 1 读取器无法识别新增的 Codex 记录，必须拒绝较新的版本戳，因此需要升级域版本。现有 `spawn` 行保留原字段；新的 `spawn` 请求会在启动前保存拟请求的子级 Session id，而 Codex 请求不会虚构 DSH Session 身份。Codex 准入会保存其提供方适配器的 `SubagentRun.id`，不是 DSH Session 或原生 Codex 线程 id。两种提供方之后都会分别记录准入和报告事实。拟请求的 `spawn` id 不代表已获准入。应用重启会将未完成记录改为 `unconfirmed`，且不会重新启动执行。Codex 启动调用在 dispatch 开始后拒绝时，记录会保持 `unconfirmed`，因为外部运行可能已经启动；除非独立确认 Codex 未启动，否则不要重复该任务。
 
 Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associations` 域中。显示时会通过各自的注册表解析引用；过期引用会明确显示为不可用，直到用户解除关联。关联不会修改 Workspace 记录、Session 日志或 Activity 记录。
 

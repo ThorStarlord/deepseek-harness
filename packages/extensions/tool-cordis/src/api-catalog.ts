@@ -1839,9 +1839,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The completed fact record.',
       },
       {
-        signature: 'async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAdmission, reason: ActivityDelegationUncertainty[\'reason\'], ): Promise<ActivityDelegation>',
-        description: 'Record a result that the activation API could not return as a provider report.',
-        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'admission', description: 'Accepted activation references.' }, { name: 'reason', description: 'Why its result is unknown.' }],
+        signature: 'async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAdmission | undefined, reason: ActivityDelegationUncertainty[\'reason\'], ): Promise<ActivityDelegation>',
+        description: 'Record a startup or report outcome that cannot be confirmed.',
+        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'admission', description: 'Accepted activation references, or undefined when startup outcome is unknown.' }, { name: 'reason', description: 'Why its result is unknown.' }],
         returns: 'The unconfirmed record.',
       },
     ],
@@ -5661,7 +5661,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ActivityDelegationUncertainty',
-    declaration: 'export interface ActivityDelegationUncertainty {\n    readonly reason: \'restart-before-admission-recorded\' | \'restart-before-report-recorded\' | \'admission-write-failed\' | \'report-write-failed\' | \'startup-result-rejected\';\n    readonly observedAt: string;\n}',
+    declaration: 'export interface ActivityDelegationUncertainty {\n    readonly reason: \'restart-before-admission-recorded\' | \'restart-before-report-recorded\' | \'admission-write-failed\' | \'report-write-failed\' | \'startup-result-rejected\' | \'codex-start-outcome-unknown\';\n    readonly observedAt: string;\n}',
   },
   {
     name: 'AdapterRegistrationHandle',

@@ -66,6 +66,7 @@ const uncertaintySchema = z.object({
     'admission-write-failed',
     'report-write-failed',
     'startup-result-rejected',
+    'codex-start-outcome-unknown',
   ]),
   observedAt: z.iso.datetime(),
 }).strict()

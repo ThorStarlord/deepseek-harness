@@ -96,7 +96,7 @@ export interface ActivityDelegationReport {
   readonly source: 'subagent-activation-result'
 }
 
-/** Why the start call rejected before publishing an activation. */
+/** Why DSH definitively did not publish an activation. */
 export interface ActivityDelegationFailure {
   /** Safe user-facing explanation; provider error details remain in the host log. */
   readonly message: string
@@ -113,6 +113,7 @@ export interface ActivityDelegationUncertainty {
     | 'admission-write-failed'
     | 'report-write-failed'
     | 'startup-result-rejected'
+    | 'codex-start-outcome-unknown'
   /** Time this uncertainty was recorded or recovered. */
   readonly observedAt: string
 }

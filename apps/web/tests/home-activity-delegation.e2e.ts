@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { NO_START_CAPABILITIES } from '@deepseek-ai/dsh-subagent'
 import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -22,6 +23,7 @@ const CODEX_ADMISSION_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-admission.expec
 const CODEX_PENDING_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-pending.expected.md')
 const CODEX_REPORTED_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-reported.expected.md')
 const CODEX_UNAVAILABLE_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-unavailable.expected.md')
+const CODEX_UNCONFIRMED_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-unconfirmed.expected.md')
 const SCREENSHOT_DIR = fileURLToPath(new URL('../../../.artifacts/ui-review', import.meta.url))
 const PENDING_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation-pending.png')
 const REPORTED_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation.png')
@@ -228,11 +230,12 @@ describe('web e2e: Home Activity delegation', () => {
     expect(scaffold.ctx.subagents.getProvider('codex')).toBeUndefined()
     const codexUnavailable = await submit(
       `/activity delegate ${unavailableActivity.id} codex Review the release checklist.`,
-      /The codex provider did not admit this task/u,
+      /The Codex provider is unavailable/u,
     )
-    expect(scaffold.ctx.homeActivityDelegations.list(unavailableActivity.id)[0]?.status).toBe('not-admitted')
-    const unavailableRequestId = /Request ID: ([0-9a-f-]{36})/u.exec(codexUnavailable)?.[1]
-    if (unavailableRequestId === undefined) throw new Error('Rendered unavailable-provider state omitted its request identity.')
+    expect(codexUnavailable).toContain('DSH did not attempt activation.')
+    const unavailableRecord = scaffold.ctx.homeActivityDelegations.list(unavailableActivity.id)[0]
+    expect(unavailableRecord?.status).toBe('not-admitted')
+    if (unavailableRecord === undefined) throw new Error('Unavailable-provider state omitted its saved request identity.')
     await compareOrRefreshGolden(
       CODEX_UNAVAILABLE_EXPECTED,
       await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd, {
@@ -241,11 +244,59 @@ describe('web e2e: Home Activity delegation', () => {
           [delegationId, '{{spawn-delegation-id}}'],
           ...codexReplacements,
           [unavailableActivity.id, '{{unavailable-activity-id}}'],
-          [unavailableRequestId, '{{request-id}}'],
+          [unavailableRecord.id, '{{unavailable-delegation-id}}'],
         ],
       }),
       MODE,
     )
+
+    const uncertainActivity = await scaffold.ctx.homeActivities.create({
+      name: 'Codex startup uncertainty',
+      objective: 'Keep an ambiguous external start from being retried.',
+      boundaries: { inScope: ['Record whether startup is confirmed.'], outOfScope: ['Retry external work.'] },
+    })
+    let codexProviderStarts = 0
+    scaffold.ctx.subagents.registerProvider({
+      name: 'codex',
+      capabilities: NO_START_CAPABILITIES,
+      inheritsParentContext: false,
+      async start() {
+        codexProviderStarts += 1
+        throw new Error('simulated transport loss after turn/start')
+      },
+    })
+    const uncertainResult = await submit(
+      `/activity delegate ${uncertainActivity.id} codex Review the release checklist once.`,
+      /DSH could not confirm whether Codex started/u,
+    )
+    expect(uncertainResult).toContain('It may have started; do not repeat this task unless you have independently confirmed it did not start.')
+    await page.getByText(/DSH could not confirm whether Codex started/u).last().click()
+    const uncertainRecord = scaffold.ctx.homeActivityDelegations.list(uncertainActivity.id)[0]
+    expect(uncertainRecord).toMatchObject({
+      status: 'unconfirmed',
+      request: { provider: 'codex' },
+      uncertainty: { reason: 'codex-start-outcome-unknown' },
+    })
+    expect(uncertainRecord?.admission).toBeUndefined()
+    await submit(`/activity open ${uncertainActivity.id}`, /Activity: Codex startup uncertainty/u)
+    await page.getByRole('button', { name: /Activity: Codex startup uncertainty/u }).last().click()
+    await page.getByText(/do not repeat the task unless you independently confirm it did not start/u)
+      .last().waitFor({ timeout: 10_000 })
+    expect(codexProviderStarts).toBe(1)
+    await compareOrRefreshGolden(
+      CODEX_UNCONFIRMED_EXPECTED,
+      await captureStableAria(page, '[class*="centerCol"] pre:has-text("do not repeat the task unless you independently confirm it did not start")',
+        scaffold.workspaceCwd, {
+          replacements: [
+            [uncertainActivity.id, '{{activity-id}}'],
+            [parentSessionId, '{{parent-session-id}}'],
+            [uncertainActivity.createdAt, '{{activity-created-at}}'],
+            ...(uncertainRecord === undefined ? [] : [[uncertainRecord.id, '{{delegation-id}}'] as const]),
+          ],
+        }),
+      MODE,
+    )
+    expect(codexProviderStarts).toBe(1)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 60_000)

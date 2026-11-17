@@ -211,6 +211,39 @@ it('marks interrupted Codex request and admission as unconfirmed without rearmin
   })
 })
 
+it('persists a possibly-started Codex rejection without an admission reference', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-codex-start-uncertain-')); roots.push(root)
+  const first = await open(root)
+  const activity = await first.homeActivities.create(request)
+  const saved = await first.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'codex',
+    task: 'Review the checklist once.',
+    parentSessionId: SessionId('parent-session'),
+  })
+
+  const uncertain = await first.homeActivityDelegations.markUnconfirmed(
+    saved.id,
+    undefined,
+    'codex-start-outcome-unknown',
+  )
+  expect(uncertain).toMatchObject({
+    status: 'unconfirmed',
+    request: { provider: 'codex' },
+    uncertainty: { reason: 'codex-start-outcome-unknown' },
+  })
+  expect(uncertain.admission).toBeUndefined()
+  await first.fiber.dispose()
+
+  const reopened = await open(root)
+  expect(reopened.homeActivityDelegations.get(activityDelegationId(saved.id))).toMatchObject({
+    status: 'unconfirmed',
+    request: { provider: 'codex' },
+    uncertainty: { reason: 'codex-start-outcome-unknown' },
+  })
+  expect(reopened.homeActivityDelegations.get(activityDelegationId(saved.id))?.admission).toBeUndefined()
+})
+
 it('reads the strict v1 spawn record in v2 and refuses to open v2 data with a v1 reader', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-delegation-v2-')); roots.push(root)
   const legacy = new Context(); contexts.push(legacy)
@@ -423,6 +456,10 @@ it('validates each persisted lifecycle state and rejects mismatched facts', () =
     admittedAt: '2026-11-15T12:00:01.000Z',
     source: 'subagents.startActivation',
   }
+  const codexStartUncertainty = {
+    reason: 'codex-start-outcome-unknown',
+    observedAt: '2026-11-15T12:00:02.000Z',
+  }
   const valid = [
     { ...facts, status: 'requested' },
     { ...facts, status: 'not-admitted', failure },
@@ -438,6 +475,7 @@ it('validates each persisted lifecycle state and rejects mismatched facts', () =
     { ...facts, request: codexRequest, status: 'admitted', admission: codexAdmission },
     { ...facts, request: codexRequest, status: 'reported', admission: codexAdmission, report },
     { ...facts, request: codexRequest, status: 'unconfirmed', admission: codexAdmission, uncertainty },
+    { ...facts, request: codexRequest, status: 'unconfirmed', uncertainty: codexStartUncertainty },
   ]) expect(activityDelegationRecordSchema.safeParse(record).success).toBe(true)
 
   const invalid = [

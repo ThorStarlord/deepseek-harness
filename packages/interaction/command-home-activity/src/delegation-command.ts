@@ -71,6 +71,16 @@ export async function executeActivityDelegation(
   const childSessionId = request.request.provider === 'spawn'
     ? request.request.requestedChildSessionId
     : undefined
+  if (request.request.provider === 'codex' && ctx.subagents.getProvider('codex') === undefined) {
+    const message = 'The Codex provider is unavailable; DSH did not attempt activation.'
+    try {
+      await ctx.homeActivityDelegations.markNotAdmitted(request.id, message)
+    } catch (error: unknown) {
+      ctx.logger.warn('command-home-activity: unavailable Codex state could not be saved: %o', error)
+      return { kind: 'error', text: `${message} Saving this Activity state failed; no provider call occurred.` }
+    }
+    return { kind: 'error', text: message }
+  }
   let runId: SubagentRunId | undefined
   const stopObservingStart = childSessionId === undefined
     ? () => undefined
@@ -93,6 +103,24 @@ export async function executeActivityDelegation(
     })
   } catch (error: unknown) {
     stopObservingStart()
+    if (request.request.provider === 'codex') {
+      const message = 'DSH could not confirm whether Codex started. It may have started; do not repeat this task unless you have independently confirmed it did not start. Reopening the Activity will not retry it.'
+      try {
+        await ctx.homeActivityDelegations.markUnconfirmed(
+          request.id,
+          undefined,
+          'codex-start-outcome-unknown',
+        )
+      } catch (recordError: unknown) {
+        ctx.logger.warn('command-home-activity: uncertain Codex startup could not be saved: %o', recordError)
+        return {
+          kind: 'error',
+          text: `${message} Saving the Activity status also failed; check the Activity after storage is available.`,
+        }
+      }
+      ctx.logger.warn('command-home-activity: Codex startup outcome is unknown: %o', error)
+      return { kind: 'error', text: message }
+    }
     try {
       await ctx.homeActivityDelegations.markNotAdmitted(
         request.id,
@@ -163,7 +191,7 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
     if (delegation.request.provider === 'spawn') {
       lines.push(`Requested child Session id (not admission evidence): ${delegation.request.requestedChildSessionId}`)
     } else {
-      lines.push('Opening the Activity does not start or retry this one-shot request.')
+      lines.push('The Codex start outcome may be unknown. Do not repeat this task unless you independently confirm it did not start; opening the Activity does not start it.')
     }
     return lines
   }
@@ -179,7 +207,7 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
         lines.push('Check /activity sessions for this exact id and its summary metadata before deciding whether to retry. A missing Session record does not confirm that admission failed.')
       } else {
         lines.push('Status: unconfirmed; saved facts do not establish whether the external Codex run started.')
-        lines.push('No Codex execution id was saved. Activity does not expose a Codex transcript, resume the run, or retry it; do not treat this record as proof that it did not run.')
+        lines.push('No Codex execution id was saved. Activity does not expose a Codex transcript, resume the run, or retry it; do not repeat the task unless you independently confirm it did not start.')
       }
     } else {
       lines.push(isCodex
@@ -292,6 +320,7 @@ const uncertaintyMessages: Record<ActivityDelegationUncertainty['reason'], strin
   'admission-write-failed': 'The child was accepted, but saving its admission reference failed.',
   'report-write-failed': 'Saving the provider report failed after the child Session was admitted.',
   'startup-result-rejected': 'The accepted activation did not provide a usable report through the managed result API.',
+  'codex-start-outcome-unknown': 'DSH did not confirm whether the external Codex run started.',
 }
 
 /** Explain the source of uncertainty in actionable user language. */

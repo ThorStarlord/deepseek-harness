@@ -366,16 +366,56 @@ it('reports a missing native Codex provider without admitting or retrying work',
   const rejected = await run(ctx, parent, ` delegate ${activity.id} codex Review the release checklist.`)
 
   expect(rejected).toMatchObject({ kind: 'error' })
-  expect(rejected.text).toContain('codex provider did not admit this task')
-  expect(rejected.text).toContain('no DSH activation was published')
+  expect(rejected.text).toContain('The Codex provider is unavailable; DSH did not attempt activation.')
   expect(ctx.homeActivityDelegations.list(activity.id)[0]).toMatchObject({
     status: 'not-admitted',
     request: { provider: 'codex' },
+    failure: { message: 'The Codex provider is unavailable; DSH did not attempt activation.' },
   })
-  expect(start).toHaveBeenCalledTimes(1)
+  expect(start).not.toHaveBeenCalled()
   const reopened = await run(ctx, parent, ` open ${activity.id}`)
   expect(reopened.text).toContain('Status: not admitted.')
-  expect(reopened.text).toContain('The codex provider did not admit this task; no DSH activation was published.')
+  expect(reopened.text).toContain('The Codex provider is unavailable; DSH did not attempt activation.')
+})
+
+it('keeps a possibly-started Codex rejection unconfirmed and never retries on reopen', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  const activity = await ctx.homeActivities.create({
+    name: 'Codex startup uncertainty',
+    objective: 'Keep an ambiguous external start from being retried.',
+    boundaries: { inScope: ['Record whether startup is confirmed.'], outOfScope: ['Retry external work.'] },
+  })
+  let providerStartedTask = false
+  ctx.subagents.registerProvider({
+    name: 'codex',
+    capabilities: NO_START_CAPABILITIES,
+    inheritsParentContext: false,
+    async start(): Promise<SubagentRun> {
+      providerStartedTask = true
+      throw new Error('simulated transport loss after turn/start')
+    },
+  })
+
+  const rejected = await run(ctx, parent, ` delegate ${activity.id} codex Review the checklist once.`)
+  expect(rejected.kind).toBe('error')
+  expect(providerStartedTask).toBe(true)
+  expect(rejected.text).toContain('DSH could not confirm whether Codex started.')
+  expect(rejected.text).toContain('It may have started; do not repeat this task unless you have independently confirmed it did not start.')
+  const saved = ctx.homeActivityDelegations.list(activity.id)[0]
+  expect(saved).toMatchObject({
+    status: 'unconfirmed',
+    request: { provider: 'codex' },
+    uncertainty: { reason: 'codex-start-outcome-unknown' },
+  })
+  expect(saved?.admission).toBeUndefined()
+  expect(saved?.failure).toBeUndefined()
+
+  const reopened = await run(ctx, parent, ` open ${activity.id}`)
+  expect(reopened.text).toContain('Status: unconfirmed; saved facts do not establish whether the external Codex run started.')
+  expect(reopened.text).toContain('No Codex execution id was saved.')
+  expect(reopened.text).toContain('do not repeat the task unless you independently confirm it did not start')
+  expect(reopened.text).toContain('Reason: DSH did not confirm whether the external Codex run started.')
+  expect(providerStartedTask).toBe(true)
 })
 
 it('stops before provider startup when a request cannot be durably saved', async () => {
