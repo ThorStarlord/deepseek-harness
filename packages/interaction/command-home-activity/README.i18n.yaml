@@ -3,20 +3,20 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/interaction/command-home-activity/README.md
 /:
-  en: 6e9b67f0598bbe28
-  zh: b7eae976a0abb5df
+  en: 19e6206db882297e
+  zh: 35e3747940c76dd8
 /deepseek-ai-dsh-command-home-activity:
   en: 251e2acd658c5ac6
   zh: b46ef2c005b78dfd
 /deepseek-ai-dsh-command-home-activity/summary:
-  en: 91f54e6d47445291
-  zh: 0544f71c9622e14f
+  en: 20ce448fb1653675
+  zh: 6ab88bb1d9a5e6ca
 /deepseek-ai-dsh-command-home-activity/table-of-contents:
   en: d152484eb41ac6b4
   zh: f57bb7dc06808f11
 /deepseek-ai-dsh-command-home-activity/use-this-package:
-  en: ce7ec3ff8e9dc733
-  zh: 87c577a368406618
+  en: 5da3fea8fff6ac29
+  zh: b0946bd11768314e
 /deepseek-ai-dsh-command-home-activity/use-this-package/when-to-choose-it:
   en: 4af7c2be6be83c87
   zh: f4da5a59a6fcdc87
@@ -39,8 +39,8 @@
   en: d9d4247e82010040
   zh: d924ee02bb9b7227
 /deepseek-ai-dsh-command-home-activity/known-limitations-and-deferred-work:
-  en: dc6fc1ae7b44b822
-  zh: 8e1a23f36c08a81b
+  en: 765bbe2f574cc964
+  zh: fc612afdea455c64
 /deepseek-ai-dsh-command-home-activity/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 8ec3e73528ddb1a6

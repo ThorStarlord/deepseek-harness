@@ -29,5 +29,8 @@ describe('dsh-sdk-app bundle', () => {
     const rows = patches.flatMap(patch => patch.insert ?? [])
     expect(rows.find(row => row.id === 'sdk-app-startup')?.name).toBe('@deepseek-ai/dsh-sdk-app')
     expect(rows.find(row => row.id === 'sdk-jsonrpc-server')?.inject).toEqual(['sdkAppStartup', 'loader'])
+    expect(rows.find(row => row.id === 'home-activity')?.name).toBe('@deepseek-ai/dsh-home-activity')
+    expect(rows.find(row => row.id === 'home-activity-associations')?.name).toBe('@deepseek-ai/dsh-home-activity/associations')
+    expect(rows.find(row => row.id === 'command-home-activity')?.name).toBe('@deepseek-ai/dsh-command-home-activity')
   })
 })

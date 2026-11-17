@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Save a named Activity with an objective and descriptive scope statements that remain available after its original Session ends. Separate association and delegation services record selected Workspace and DSH Session references, and explicitly requested DSH-native child activations with provider-reported results. Associations do not imply a Workspace-to-Session relationship, and delegation does not create an association. Creating or opening an Activity does not execute its objective, create a Goal, or grant runtime permissions.
+Save a named Activity with an objective and descriptive boundaries that remain available after its original Session ends. The Web and SDK /activity command can link selected Workspace and DSH Session identities, and another Session can reopen those references. A separate delegation service records explicitly requested DSH-native child activations with provider-reported results; delegation does not create an association. Creating or opening an Activity does not execute its objective, create a Goal, or grant runtime permissions.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Save a named Activity with an objective and descriptive scope statements that re
 <a id="use-this-package"></a>
 ## Use this package
 
-The Web profile mounts this service with the JSON StorageDomain provider, the association service, and the human `/activity` command.
+The Web and SDK profiles mount this service with the JSON StorageDomain provider, association service, and human /activity command. A composition that enables delegation also mounts the delegation service, subagent service, and a supported DSH-native provider.
 
 ### When to choose it
 

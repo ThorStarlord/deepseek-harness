@@ -1,5 +1,5 @@
 ---
-description: "通过 Web 命令 composer 创建、列出、重新打开、关联并明确委派已保存的 Home Activity。"
+description: "在 Web composer 或 SDK session.run() 中创建、列出、重新打开、关联并显式委派已保存的 Home Activity。"
 kind: "package-reference"
 ---
 
@@ -9,8 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 Web composer 中使用 `/activity` 创建、列出和打开已保存的 Activity，或明确地将一项任务委派给 DSH 原生 `spawn` 提供方。委派会启动单独的一次性子级 Session，并记录提供方报告的结果。Activity 目标不会自动执行。此命令需要 `ctx.commands`、`ctx.homeActivities`、`ctx.homeActivityDelegations` 和 `ctx.subagents` 服务。 命令还可通过 `ctx.homeActivityAssociations`、Workspace 注册表和 Session 持久化服务，将用户选定的 Workspace 与 DSH Session 作为独立上下文引用关联到 Activity；这不会把 Session 分配给 Workspace。
-
+在 Web composer 或 SDK session.run() 中使用 /activity 创建带有目标和描述性范围的命名 Activity，列出并重新打开已保存的 Activity，分别关联或解除用户选择的 Workspace 与 DSH Session 身份，并显式委派一个有界任务给 DSH 原生 spawn 提供方。Activity 目标不会自动执行；委派仅启动用户请求的子级任务，并单独记录 DSH 报告的结果。此命令需要命令注册表、Activity、关联与委派服务、Workspace 注册表、Session 持久化和 subagent 服务。
 ## 目录
 
 - [使用此包](#use-this-package)
@@ -25,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-Web 配置会将此命令与命令注册表及持久 Activity 服务一同加载。
+Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服务、Workspace 注册表及 Session 持久化服务加载此命令。启用委派还需要 Activity 委派与 subagent 服务，以及受支持的 DSH 原生提供方。
 
 ### 何时选择
 
@@ -105,8 +104,8 @@ Web 配置会将此命令与命令注册表及持久 Activity 服务一同加载
 
 Activity 范围说明描述请求的工作；它们不会限制子级工具或权限。访问由 DSH 当前运行时策略控制。
 
-- Web composer 是唯一交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。
-- 创建输入使用 JSON 文本，且无法通过此命令编辑或删除 Activity。委派目前只支持 `spawn` DSH 原生提供方。
+- Web composer 与 SDK session.run() 是受支持的交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。SDK profile 必须加载 Home Activity 插件。
+- 创建输入使用 JSON 文本，且无法通过此命令编辑或删除 Activity。委派目前只支持 spawn DSH 原生提供方。Session 列表仅提供摘要元数据；它不会读取子级对话，也不能证明提供方已准入。
 
 <a id="dev-note"></a>
 ### 开发备注

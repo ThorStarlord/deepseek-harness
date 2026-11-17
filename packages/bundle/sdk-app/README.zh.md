@@ -41,6 +41,8 @@ Python 运行时向本 profile 提供显式下载的创作资源和 Office sidec
 
 -----
 
+SDK profile 也会加载持久化 Home Activity 服务和原生 `/activity` 命令。SDK 客户端可以调用 `session.run('/activity workspaces')` 或 `session.run('/activity sessions')` 查看可用上下文，再使用已文档化的 create、list、open、link 和 unlink 形式。这些命令通过原生命令结果返回，不会创建模型请求；已保存的意图不会启动执行、激活 Goal 或更改权限。独立的 `sdk-minimal` profile 使用单独组合，不包含 Home Activity。
+
 <a id="model-experience"></a>
 ## 模型体验
 

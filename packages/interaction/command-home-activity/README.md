@@ -1,5 +1,5 @@
 ---
-description: "Create, list, reopen, associate, and explicitly delegate saved Home Activities through the Web command composer."
+description: "Create, list, reopen, associate, and explicitly delegate saved Home Activities through the Web composer or SDK session.run()."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use `/activity` in the Web composer to create, list, and open saved Activities, link selected Workspace and DSH Session identities, or explicitly delegate one task to the DSH-native `spawn` provider. Delegation starts a separate one-shot child Session and records its provider-reported result. Associations do not assign Sessions to Workspaces; the Activity objective is not executed automatically. The command requires the command registry, Activity, association, delegation, Workspace, Session persistence, and subagent services.
+Use /activity in the Web composer or SDK session.run() to create a named Activity with its objective and descriptive boundaries, list and reopen saved Activities, link or unlink selected Workspace and DSH Session identities, and explicitly delegate one bounded task to the DSH-native spawn provider. Activity commands do not start the saved objective automatically; delegation starts only the requested child task and records the DSH-reported outcome separately. The command requires the command registry, Activity, association and delegation services, Workspace registry, Session persistence, and subagent service.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Use `/activity` in the Web composer to create, list, and open saved Activities, 
 <a id="use-this-package"></a>
 ## Use this package
 
-The Web profile mounts the command with the command registry, Activity and association services, Workspace registry, and Session persistence.
+The Web and SDK profiles mount the command with the command registry, durable Activity and association services, Workspace registry, and Session persistence. Delegation also requires the Activity delegation and subagent services plus a supported DSH-native provider.
 
 ### When to choose it
 
@@ -105,8 +105,8 @@ None; delegated work uses a separate child Session rather than modifying the par
 
 Activity scope statements describe the requested work; they do not restrict child tools or permissions. DSH active runtime policy controls access.
 
-- The Web composer is the only interaction surface; there is no standalone Activity browser or native Desktop command.
-- Create input is JSON text, and Activities cannot be edited or deleted through this command. Only the `spawn` DSH-native provider is supported for delegation. The Session catalog shows summary metadata only; it does not inspect child conversations or prove admission.
+- The Web composer and SDK session.run() are the supported interaction surfaces; there is no standalone Activity browser or native Desktop command. SDK support requires a profile that mounts the Home Activity plugins.
+- Create input is JSON text, and Activities cannot be edited or deleted through this command. Only the spawn DSH-native provider is supported for delegation. The Session catalog shows summary metadata only; it does not inspect child conversations or prove provider admission.
 
 <a id="dev-note"></a>
 ### Dev Note

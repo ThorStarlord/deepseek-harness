@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-保存命名 Activity、目标和描述性范围说明，使其在原 Session 结束后仍可使用。单独的委派服务会记录用户明确请求的 DSH 原生子级 activation 及其提供方报告。创建或打开 Activity 不会执行其目标、创建 Goal、关联 Session，也不会授予运行时权限。 关联服务会在单独的持久化记录中保存用户选定的 Workspace 和 DSH Session id；两者不会因此互相关联。
+保存命名 Activity、目标和描述性范围说明，使其在原 Session 结束后仍可使用。Web 和 SDK 的 /activity 命令可以分别关联用户选择的 Workspace 与 DSH Session 身份，并允许其他 Session 重新打开这些引用。单独的委派服务会记录用户明确请求的 DSH 原生子级 activation 及提供方报告；委派不会创建关联。创建或打开 Activity 不会执行其目标、创建 Goal 或授予运行时权限。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-Web 配置会将此服务与 JSON StorageDomain 提供方及人工调用的 `/activity` 命令一同加载。
+Web 和 SDK 配置会将此服务、关联服务、JSON StorageDomain 提供方及人工调用的 `/activity` 命令一同加载。
 
 ### 何时选择
 
