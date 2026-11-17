@@ -1841,7 +1841,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAdmission | undefined, reason: ActivityDelegationUncertainty[\'reason\'], ): Promise<ActivityDelegation>',
         description: 'Record a startup or report outcome that cannot be confirmed.',
-        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'admission', description: 'Accepted activation references, or undefined when startup outcome is unknown.' }, { name: 'reason', description: 'Why its result is unknown.' }],
+        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'admission', description: 'New activation references, or undefined to preserve an existing reference or when startup outcome is unknown.' }, { name: 'reason', description: 'Why its result is unknown.' }],
         returns: 'The unconfirmed record.',
       },
     ],

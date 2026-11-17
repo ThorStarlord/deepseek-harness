@@ -202,7 +202,7 @@ export class HomeActivityDelegationService extends Service {
 
   /** Record a startup or report outcome that cannot be confirmed.
    * @param id - Saved request identity.
-   * @param admission - Accepted activation references, or undefined when startup outcome is unknown.
+   * @param admission - New activation references, or undefined to preserve an existing reference or when startup outcome is unknown.
    * @param reason - Why its result is unknown.
    * @returns The unconfirmed record.
   */
@@ -241,12 +241,13 @@ export class HomeActivityDelegationService extends Service {
   ): ActivityDelegation {
     const current = this.volatileUncertainty.get(id) ?? this.requireTable().get(id)
     if (current === undefined) throw new ActivityDelegationError('invalid-transition', `No delegation has id ${id}.`)
+    const savedAdmission = admission ?? current.admission
     return freezeDelegation({
       id: current.id,
       activityId: current.activityId,
       request: current.request,
       status: 'unconfirmed',
-      ...(admission === undefined ? {} : { admission }),
+      ...(savedAdmission === undefined ? {} : { admission: savedAdmission }),
       uncertainty: { reason, observedAt: new Date().toISOString() },
     })
   }

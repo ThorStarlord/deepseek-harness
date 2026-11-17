@@ -102,10 +102,10 @@ export const activityDelegationRecordSchema = z.object({
   if (!valid) context.addIssue({ code: 'custom', message: 'delegation status does not match its recorded facts' })
 })
 
-/** Version-2 sidecar for local DSH and external native Codex Activity delegations. */
+/** Version-3 sidecar preserves both admitted and ambiguous Codex start outcomes. */
 export const homeActivityDelegationDomain = defineDomain({
   name: 'home_activity_delegations',
-  version: 2,
-  compatibleVersions: [1],
+  version: 3,
+  compatibleVersions: [1, 2],
   tables: { delegations: domainTable<ActivityDelegation['id'], ActivityDelegation>(activityDelegationRecordSchema) },
 })

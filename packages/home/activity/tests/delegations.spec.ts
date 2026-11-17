@@ -72,6 +72,16 @@ const legacyDelegationDomain = StorageDomain.defineDomain({
     delegations: StorageDomain.domainTable<string, z.infer<typeof legacySpawnRecordSchema>>(legacySpawnRecordSchema),
   },
 })
+const version2DelegationDomain = StorageDomain.defineDomain({
+  name: 'home_activity_delegations',
+  version: 2,
+  compatibleVersions: [1],
+  tables: {
+    delegations: StorageDomain.domainTable<string, z.infer<typeof activityDelegationRecordSchema>>(
+      activityDelegationRecordSchema,
+    ),
+  },
+})
 
 async function open(root: string) {
   const ctx = new Context(); contexts.push(ctx)
@@ -244,7 +254,29 @@ it('persists a possibly-started Codex rejection without an admission reference',
   expect(reopened.homeActivityDelegations.get(activityDelegationId(saved.id))?.admission).toBeUndefined()
 })
 
-it('reads the strict v1 spawn record in v2 and refuses to open v2 data with a v1 reader', async () => {
+it('preserves an existing Codex admission when marking it unconfirmed without a replacement', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-codex-admission-preserved-')); roots.push(root)
+  const first = await open(root)
+  const activity = await first.homeActivities.create(request)
+  const saved = await first.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'codex',
+    task: 'Review the checklist once.',
+    parentSessionId: SessionId('parent-session'),
+  })
+  const admission = {
+    provider: 'codex' as const,
+    providerRunId: 'codex-provider-run-preserved',
+    admittedAt: '2026-11-15T12:00:00.000Z',
+    source: 'subagents.startActivation' as const,
+  }
+  await first.homeActivityDelegations.recordAdmitted(saved.id, admission)
+
+  expect(await first.homeActivityDelegations.markUnconfirmed(saved.id, undefined, 'restart-before-report-recorded'))
+    .toMatchObject({ status: 'unconfirmed', admission })
+})
+
+it('reads v1 spawn data in v3 and refuses v3 data with a v2 reader', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-delegation-v2-')); roots.push(root)
   const legacy = new Context(); contexts.push(legacy)
   await legacy.plugin(Storage)
@@ -292,20 +324,70 @@ it('reads the strict v1 spawn record in v2 and refuses to open v2 data with a v1
     admission: { childSessionId: 'legacy-child-session' },
     report: { outputText: 'The checklist is complete.' },
   })
-  await current.homeActivityDelegations.createRequest({
+  const uncertain = await current.homeActivityDelegations.createRequest({
     activityId: activity.id,
     provider: 'codex',
     task: 'Check the checklist once.',
     parentSessionId: SessionId('parent-session'),
   })
+  await current.homeActivityDelegations.markUnconfirmed(uncertain.id, undefined, 'codex-start-outcome-unknown')
   await current.fiber.dispose()
 
   const oldReader = new Context(); contexts.push(oldReader)
   await oldReader.plugin(Storage)
   await oldReader.plugin(StorageJson, { root })
   await oldReader.plugin(StorageDomain, { backend: 'json' })
-  await expect(oldReader.storageDomain.open(legacyDelegationDomain))
+  await expect(oldReader.storageDomain.open(version2DelegationDomain))
     .rejects.toMatchObject({ code: 'version-mismatch' })
+})
+
+it('reads a strict v2 Codex record in v3 without requiring a write', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-delegation-v2-read-')); roots.push(root)
+  const writer = new Context(); contexts.push(writer)
+  await writer.plugin(Storage)
+  await writer.plugin(StorageJson, { root })
+  await writer.plugin(StorageDomain, { backend: 'json' })
+  await writer.plugin(HomeActivityService)
+  const activity = await writer.homeActivities.create(request)
+  const previous = await writer.storageDomain.open(version2DelegationDomain)
+  const id = activityDelegationId('00000000-0000-4000-8000-000000000098')
+  const requestAt = '2026-11-15T12:00:00.000Z'
+  await previous.table('delegations').put(id, {
+    id,
+    activityId: activity.id,
+    request: {
+      provider: 'codex',
+      task: 'Review the release checklist.',
+      parentSessionId: SessionId('parent-session'),
+      requestedAt: requestAt,
+      source: 'user-command',
+    },
+    status: 'reported',
+    admission: {
+      provider: 'codex',
+      providerRunId: 'codex-provider-run-v2',
+      admittedAt: requestAt,
+      source: 'subagents.startActivation',
+    },
+    report: {
+      stopReason: 'completed',
+      outputText: 'The release checklist is ready.',
+      nonTextBlockTypes: [],
+      outputTruncated: false,
+      reportedAt: requestAt,
+      source: 'subagent-activation-result',
+    },
+  })
+  await previous.close()
+  await writer.fiber.dispose()
+
+  const current = await open(root)
+  expect(current.homeActivityDelegations.get(id)).toMatchObject({
+    status: 'reported',
+    request: { provider: 'codex' },
+    admission: { provider: 'codex', providerRunId: 'codex-provider-run-v2' },
+    report: { outputText: 'The release checklist is ready.' },
+  })
 })
 
 it('recovers unfinished requests and admissions as unconfirmed without rearming work', async () => {
