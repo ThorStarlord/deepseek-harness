@@ -1,5 +1,5 @@
 ---
-description: "通过 Web 命令 composer 创建、列出并重新打开已保存的 Home Activity，可将其关联到 Workspace 或 DSH Session，且不启动其目标。"
+description: "在 Web composer 或 SDK session.run() 中创建、列出、重新打开、关联并显式委派已保存的 Home Activity。"
 kind: "package-reference"
 ---
 
@@ -9,8 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 Web composer 中使用 `/activity` 创建带目标和描述性边界的命名 Activity、列出已保存 Activity、重新打开详情，并关联用户选择的 Workspace 或 DSH Session 身份。此命令无需模型往返，也不会启动已保存目标。它需要命令注册表、Activity 与关联服务、Workspace 注册表及 Session 持久化服务。
-
+在 Web composer 或 SDK session.run() 中使用 /activity 创建带有目标和描述性范围的命名 Activity，列出并重新打开已保存的 Activity，分别关联或解除用户选择的 Workspace 与 DSH Session 身份，并显式委派一个有界任务给 DSH 原生 spawn 提供方。Activity 目标不会自动执行；委派仅启动用户请求的子级任务，并单独记录 DSH 报告的结果。此命令需要命令注册表、Activity、关联与委派服务、Workspace 注册表、Session 持久化和 subagent 服务。
 ## 目录
 
 - [使用此包](#use-this-package)
@@ -25,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-Web 和 SDK 配置会将此命令与命令注册表、持久 Activity 和关联服务、Workspace 注册表及 Session 持久化服务一同加载。
+Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服务、Workspace 注册表及 Session 持久化服务加载此命令。启用委派还需要 Activity 委派与 subagent 服务，以及受支持的 DSH 原生提供方。
 
 ### 何时选择
 
@@ -33,7 +32,7 @@ Web 和 SDK 配置会将此命令与命令注册表、持久 Activity 和关联�
 
 ### 最小配置
 
-此包没有配置字段。在已经提供这两个注入服务的组合中，添加此插件：
+在已提供命令注册、Activity、上下文关联和委派所需服务的组合中，添加此插件：
 
 ```yaml
 - name: '@deepseek-ai/dsh-command-home-activity'
@@ -41,21 +40,24 @@ Web 和 SDK 配置会将此命令与命令注册表、持久 Activity 和关联�
 
 [命令注册表](../commands/README.zh.md)负责直接调用人工命令，[`dsh-home-activity`](../../home/activity/README.zh.md)负责持久记录。
 
+启用委派的组合还需挂载 `@deepseek-ai/dsh-home-activity/delegations`、`@deepseek-ai/dsh-subagent` 和受支持的 DSH 原生提供方。当前命令支持 `spawn`。
+
 ### 命令参考
 
 | 命令 | 行为 |
 |---|---|
 | `/activity create <JSON>` | 保存名称、目标，以及包含 `inScope` 和 `outOfScope` 字符串数组的 `boundaries` 对象。至少需要一项 `inScope` 内容。 |
 | `/activity list` | 按创建时间从新到旧列出已保存 Activity 的名称和稳定 id。 |
-| `/activity open <activity-id>` | 显示已保存目标、描述性边界以及当前 Workspace 和 Session 引用。缺失的引用会继续显示为不可用。 |
-| `/activity workspaces` | 列出已注册的 Workspace 身份及其目录状态。它们是 DSH Workspace，不推断 Git 根目录。 |
-| `/activity sessions` | 列出已存 DSH Session 身份和头部信息。Session 与 Workspace 分开选择。 |
-| `/activity link <activity-id> workspace <workspace-id>` | 关联一个已存在的 Workspace 注册表身份。重复关联是幂等的。 |
-| `/activity link <activity-id> session <session-id>` | 关联一个已存在的 DSH Session 身份。重复关联是幂等的。 |
-| `/activity unlink <activity-id> workspace <workspace-id>` | 移除 Workspace 引用，包括已不可用的旧 id；不修改 Workspace 记录。 |
-| `/activity unlink <activity-id> session <session-id>` | 移除 Session 引用，包括已不可用的旧 id；不修改 Session 日志。 |
+| `/activity open <activity-id>` | 显示已保存目标、描述性边界和委派记录。 |
+| `/activity workspaces` | 列出可以关联的注册 Workspace 上下文。 |
+| `/activity sessions` | 列出已存储的 DSH Session 及可用摘要元数据。 |
+| `/activity link <activity-id> workspace <workspace-id>` | 添加 Workspace 引用，不修改 Workspace 记录。 |
+| `/activity link <activity-id> session <session-id>` | 添加 DSH Session 引用，不修改 Session 日志。 |
+| `/activity unlink <activity-id> workspace <workspace-id>` | 删除 Workspace 引用，保留源记录。 |
+| `/activity unlink <activity-id> session <session-id>` | 删除 DSH Session 引用，保留 Session 日志。 |
+| `/activity delegate <activity-id> spawn <task>` | 保存请求，明确启动一个 DSH 原生子级 activation，并单独报告提供方结果。任务最多为 4,096 个 UTF-8 字节。 |
 
-Workspace 和 Session 引用由用户分别选择；共用一个 Activity 不表示 Session 属于某个 Workspace，也不表示仓库来源。每个 Activity 的每种引用最多保存 256 项。达到上限时，请重新打开 Activity，取消关联现有项后再重试。更正引用时先取消旧关联，再添加替代项。命令输入最多为 16,384 个 UTF-8 字节。如果存储结果不确定，命令会提示用户先重新打开 Activity 检查关联，再重试。
+若准入状态不确定，`/activity sessions` 会显示是否存在拟议 id 的已存储 Session 及可用摘要元数据；该命令不会查看子 Session 的对话。未找到 Session 不能证明启动失败。提供方输出仍按原样报告，不会标为已验证或已接受。
 
 -----
 
@@ -65,13 +67,15 @@ Workspace 和 Session 引用由用户分别选择；共用一个 Activity 不表
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-此命令注册为人工命令，而非模型工具。它通过 `ctx.homeActivities` 持久化 Activity 记录，通过 `ctx.homeActivityAssociations` 持久化引用。关联不会修改 Workspace 记录、Session 日志、Goal 状态、权限或执行状态。
+此命令供用户明确调用，而非模型工具。创建、列出和打开通过 `ctx.homeActivities` 执行；委派使用现有 `ctx.subagents.startActivation` 生命周期和单独的持久记录。此命令不会创建 Goal，也不会声称提供方报告已经过验证或接受。
 
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 命令注册、输入校验与用户可见结果 |
-| [`src/association-command.ts`](src/association-command.ts) | 上下文发现与明确的关联/取消关联命令 |
+| [`src/delegation-command.ts`](src/delegation-command.ts) | 委派解析、生命周期与用户可见结果 |
+| [`src/association-command.ts`](src/association-command.ts) | Workspace 和 Session 目录、引用命令与解析 |
 | [`tests/command.spec.ts`](tests/command.spec.ts) | 命令行为、安全失败与不执行断言 |
+| [`tests/delegation.e2e.spec.ts`](tests/delegation.e2e.spec.ts) | 通过宿主调用路径验证提供方委派成功与失败 |
 
 </details>
 
@@ -89,19 +93,19 @@ Workspace 和 Session 引用由用户分别选择；共用一个 Activity 不表
 <a id="model-experience"></a>
 ## 模型体验
 
-此命令由用户调用，不会增加模型可见输入或模型请求。
+模型体验通过显式的 `/activity delegate` 命令间接产生：该命令会使用所选提供方启动一个 DSH 原生子激活，并分别记录请求、DSH 准入和提供方报告，不会暗示结果已验证或被用户接受。
 
 #### KV 缓存影响
 
-无；此命令不会创建模型请求或改变模型上下文。
+无；委派任务使用独立子级 Session，不会修改父级上下文。
 
 ## 已知限制与后续工作
 <a id="known-limitations-and-deferred-work"></a>
 
-此命令仅保存和显示意图。
+Activity 范围说明描述请求的工作；它们不会限制子级工具或权限。访问由 DSH 当前运行时策略控制。
 
-- Web composer 与 SDK `session.run()` 是受支持的交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。SDK 支持要求 profile 加载 Home Activity 插件。
-- 创建输入使用 JSON 文本，且无法通过此命令编辑或删除 Activity。
+- Web composer 与 SDK session.run() 是受支持的交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。SDK profile 必须加载 Home Activity 插件。
+- 创建输入使用 JSON 文本，且无法通过此命令编辑或删除 Activity。委派目前只支持 spawn DSH 原生提供方。Session 列表仅提供摘要元数据；它不会读取子级对话，也不能证明提供方已准入。
 
 <a id="dev-note"></a>
 ### 开发备注

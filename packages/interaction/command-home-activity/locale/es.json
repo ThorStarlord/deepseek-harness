@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Comandos de actividades de Home",
-    "description": "Crea, enumera y vuelve a abrir actividades guardadas, y vincúlalas con Workspaces o sesiones de DSH."
+    "description": "Crea, enumera y vuelve a abrir actividades guardadas, vincúlalas con Workspaces o sesiones de DSH y delega tareas desde ellas."
   }
 }

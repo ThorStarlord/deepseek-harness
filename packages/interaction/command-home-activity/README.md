@@ -1,5 +1,5 @@
 ---
-description: "Create, list, reopen, and associate saved Home Activities with Workspace or DSH Session references through the Web command composer without starting their objectives."
+description: "Create, list, reopen, associate, and explicitly delegate saved Home Activities through the Web composer or SDK session.run()."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use `/activity` in the Web composer or SDK `session.run()` to create a named Activity with its objective and descriptive boundaries, list saved Activities, reopen saved details, and link selected Workspace or DSH Session identities. The command runs without a model round trip and does not start the saved objective. It requires the command registry, Activity and association services, Workspace registry, and Session persistence.
+Use /activity in the Web composer or SDK session.run() to create a named Activity with its objective and descriptive boundaries, list and reopen saved Activities, link or unlink selected Workspace and DSH Session identities, and explicitly delegate one bounded task to the DSH-native spawn provider. Activity commands do not start the saved objective automatically; delegation starts only the requested child task and records the DSH-reported outcome separately. The command requires the command registry, Activity, association and delegation services, Workspace registry, Session persistence, and subagent service.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Use `/activity` in the Web composer or SDK `session.run()` to create a named Act
 <a id="use-this-package"></a>
 ## Use this package
 
-The Web and SDK profiles mount the command with the command registry, durable Activity and association services, Workspace registry, and Session persistence.
+The Web and SDK profiles mount the command with the command registry, durable Activity and association services, Workspace registry, and Session persistence. Delegation also requires the Activity delegation and subagent services plus a supported DSH-native provider.
 
 ### When to choose it
 
@@ -41,21 +41,24 @@ This package has no configuration fields. In a composition that already provides
 
 The [command registry](../commands/README.md) owns direct human-command invocation, and [`dsh-home-activity`](../../home/activity/README.md) owns durable records.
 
+A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activity/delegations`, `@deepseek-ai/dsh-subagent`, and a supported DSH-native provider. The current command supports `spawn`.
+
 ### Command reference
 
 | Command | Behavior |
 |---|---|
 | `/activity create <JSON>` | Save a name, objective, and `boundaries` object with `inScope` and `outOfScope` string arrays. At least one `inScope` item is required. |
 | `/activity list` | List saved Activities newest first, with their names and stable ids. |
-| `/activity open <activity-id>` | Show the saved objective, descriptive boundaries, and current Workspace and Session references. Missing references remain visible as unavailable. |
-| `/activity workspaces` | List registered Workspace identities and their directory status. These identify DSH Workspaces; no Git root is inferred. |
-| `/activity sessions` | List stored DSH Session identities and header details. Sessions are selected separately from Workspaces. |
-| `/activity link <activity-id> workspace <workspace-id>` | Link one existing Workspace registry identity. Repeating the same link is idempotent. |
-| `/activity link <activity-id> session <session-id>` | Link one existing stored DSH Session identity. Repeating the same link is idempotent. |
-| `/activity unlink <activity-id> workspace <workspace-id>` | Remove the reference, including an unavailable Workspace id, without changing the Workspace record. |
-| `/activity unlink <activity-id> session <session-id>` | Remove the reference, including an unavailable Session id, without changing the Session log. |
+| `/activity open <activity-id>` | Show the saved objective, descriptive boundaries, context references, and delegation records. |
+| `/activity workspaces` | List registered Workspace contexts that can be linked. |
+| `/activity sessions` | List stored DSH Sessions and their available summary metadata. |
+| `/activity link <activity-id> workspace <workspace-id>` | Record a selected Workspace reference without changing the Workspace record. |
+| `/activity link <activity-id> session <session-id>` | Record a selected DSH Session reference without changing its Session log. |
+| `/activity unlink <activity-id> workspace <workspace-id>` | Remove a Workspace reference while preserving its source record. |
+| `/activity unlink <activity-id> session <session-id>` | Remove a DSH Session reference while preserving its log. |
+| `/activity delegate <activity-id> spawn <task>` | Save the request, explicitly start one DSH-native child activation, and report the provider outcome separately. The task is limited to 4,096 UTF-8 bytes. |
 
-Workspace and Session links are separately user-authored; sharing an Activity does not assign a Session to a Workspace or assert repository origin. Each Activity can hold at most 256 links of either kind. At the limit, reopen the Activity, unlink an existing reference, and retry. Correct a reference by unlinking it and linking the replacement. Command input is limited to 16,384 UTF-8 bytes. An uncertain storage result asks the user to reopen the Activity before retrying.
+Create JSON is limited to 16,384 UTF-8 bytes. Each Activity can reference at most 256 Workspaces and 256 DSH Sessions. A delegation request and proposed child Session id are durably saved before provider startup; the id is not proof of admission. The command returns after DSH accepts the activation, while outcome recording continues independently. A rejected startup is recorded as not admitted. If admission is uncertain, `/activity sessions` shows whether a stored Session with the proposed id is visible and any available summary metadata; it does not inspect that Session's transcript. An absent Session does not confirm startup failure. Provider output is reported as supplied and is never labeled verified or accepted.
 
 -----
 
@@ -65,13 +68,15 @@ Workspace and Session links are separately user-authored; sharing an Activity do
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The command is registered as a human command, not a model tool. It persists Activity records through `ctx.homeActivities` and references through `ctx.homeActivityAssociations`. Linking does not change Workspace records, Session logs, Goal state, permissions, or execution.
+The command is registered for explicit human invocation, not as a model tool. Save/list/open use `ctx.homeActivities`; context references use `ctx.homeActivityAssociations`; delegation uses the existing `ctx.subagents.startActivation` lifecycle and a separate persisted record. It does not create a Goal or claim that a provider report was verified or accepted.
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Command registration, input validation, and user-facing results |
-| [`src/association-command.ts`](src/association-command.ts) | Context discovery and explicit link/unlink commands |
+| [`src/index.ts`](src/index.ts) | Command registration and dispatch |
+| [`src/delegation-command.ts`](src/delegation-command.ts) | Delegation parsing, lifecycle, and user-facing results |
+| [`src/association-command.ts`](src/association-command.ts) | Workspace and Session catalogs, reference commands, and resolution |
 | [`tests/command.spec.ts`](tests/command.spec.ts) | Command behavior, safe failures, and no-execution assertions |
+| [`tests/delegation.e2e.spec.ts`](tests/delegation.e2e.spec.ts) | Provider-backed command success and failure through the host seam |
 
 </details>
 
@@ -89,19 +94,19 @@ The command is registered as a human command, not a model tool. It persists Acti
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as the command is user-invoked and adds no model-visible input or request.
+Indirectly, through the explicit `/activity delegate` command, which starts one DSH-native child activation with the selected provider and records the request, DSH admission, and provider report separately without implying verification or user acceptance.
 
 #### KV Cache effect
 
-None; the command does not create a model request or change model context.
+None; delegated work uses a separate child Session rather than modifying the parent context.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>
 
-The command saves and displays intent only.
+Activity scope statements describe the requested work; they do not restrict child tools or permissions. DSH active runtime policy controls access.
 
-- The Web composer and SDK `session.run()` are the supported interaction surfaces; there is no standalone Activity browser or native Desktop command. SDK support requires a profile that mounts the Home Activity plugins.
-- Create input is JSON text, and Activities cannot be edited or deleted through this command.
+- The Web composer and SDK session.run() are the supported interaction surfaces; there is no standalone Activity browser or native Desktop command. SDK support requires a profile that mounts the Home Activity plugins.
+- Create input is JSON text, and Activities cannot be edited or deleted through this command. Only the spawn DSH-native provider is supported for delegation. The Session catalog shows summary metadata only; it does not inspect child conversations or prove provider admission.
 
 <a id="dev-note"></a>
 ### Dev Note

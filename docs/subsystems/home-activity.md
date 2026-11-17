@@ -2,19 +2,19 @@
 
 English | [中文](home-activity.zh.md)
 
-Activity intent is durable and independent of the Session where it was written. It has a stable identity, name, objective, descriptive scope statements, and creation time; it does not create a Goal, Workflow, Workspace project, or execution. The `home-activity` package stores intent through the shared [StorageDomain](storage.md) form. The Web [`/activity` command](../../packages/interaction/command-home-activity/README.md) creates, lists, opens, and links Activities.
+A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope statements, and creation time. It is independent of any Session; creating or opening one does not start its objective. The `home-activity` package stores Activity records, context references, and explicitly requested delegation facts in separate [StorageDomain](storage.md) records. The Web [`/activity` command](../../packages/interaction/command-home-activity/README.md) creates, lists, opens, associates contexts, and explicitly delegates a bounded task.
 
 ## Saved intent
 
-`ActivityId` is a generated UUID. `ActivityBoundaries.inScope` and `outOfScope` are user-authored descriptions. They do not change sandbox roots, tool policy, or repository access. Opening an Activity only displays saved intent and separately stored references; it does not start execution or activate a Goal.
+`ActivityId` is a generated UUID. `ActivityBoundaries.inScope` and `outOfScope` are user-authored descriptions. They do not change sandbox roots, tool policy, or repository access. Opening an Activity displays saved intent and separately recorded delegations. The Activity record itself has no status, Session association, execution, or continuation semantics.
 
-The `home_activities` domain uses format version 1 and keeps its strict record unchanged. The schema requires a non-empty name and objective, at least one in-scope statement, at most 20 statements per list, and bounded text lengths. Invalid stored records fail domain opening. No Session format version changes are involved.
+The `home_activities` domain uses format version 1. The separate `home_activity_delegations` version-1 domain stores the request and proposed child Session id before startup, then stores accepted DSH admission and provider report as distinct facts. The proposed id does not establish admission. On restart, a request or admission without its later fact becomes `unconfirmed`; no activation is rearmed. If admission is uncertain, `/activity sessions` can be checked for the proposed id; a missing Session record does not confirm startup failure. Provider output remains a report, not verification or user acceptance. DSH runtime policy controls child permissions; Activity scope is not an authorization constraint. No Session format version changes are involved.
 
 ## Context references
 
-The additive version-1 `home_activity_associations` domain stores Workspace and DSH Session ids separately from Activity intent, with at most 256 references of each kind per Activity. The service rejects an additional link before writing; callers can unlink a saved reference and retry. Users choose each reference explicitly; a Session reference is not assigned to a Workspace because both ids share an Activity. A Workspace id names a registered DSH Workspace directory, not an inferred Git repository root. Removing or correcting a reference changes only this association record, never the Workspace record or Session log.
+The separate version-1 `home_activity_associations` domain stores selected Workspace and DSH Session ids apart from the Activity record. It permits up to 256 references of each kind. The ids are selected independently: sharing an Activity does not assign a Session to a Workspace or infer a Git repository root from a Workspace directory. Removing a reference changes only the association record; it never rewrites a Workspace record or Session log.
 
-Opening an Activity resolves the saved ids against their owning registries. A removed Workspace or Session remains listed as unavailable until the user explicitly unlinks it. Registry read or storage failures are reported instead of being rendered as missing references.
+Opening an Activity resolves each id against its owning registry. Removed contexts remain visible as unavailable until the user unlinks them. Catalog, registry, and persistence failures are reported as unknown state instead of being treated as a missing reference.
 
 ## Cordis API
 
@@ -113,4 +113,62 @@ unlinkSession(activityId: ActivityId, sessionId: SessionId): Promise<boolean>
 Types: [SessionId](core.md) · [WorkspaceId](workspace.md)
 
 Source: [`packages/home/activity/src/associations.ts`](../../packages/home/activity/src/associations.ts)
+
+<a id="ctxhomeactivitydelegations--homeactivitydelegationservice"></a>
+
+### `ctx.homeActivityDelegations` — `HomeActivityDelegationService`
+
+Durable request, DSH admission, and provider-report records mounted as `ctx.homeActivityDelegations`.
+
+```ts cordis-catalog
+/** Persist a user request before starting any provider work.
+ * @param request - Activity, task, provider, and owning Session.
+ * @returns The saved request record.
+*/
+async createRequest(request: CreateActivityDelegationRequest): Promise<ActivityDelegation>
+
+/** List this Activity's delegation facts newest first.
+ * @param activityId - Owning Activity identity.
+ * @returns Detached records sorted by request time.
+*/
+list(activityId: ActivityDelegation['activityId']): readonly ActivityDelegation[]
+
+/** Read one delegation by stable identity.
+ * @param id - Stable delegation identity.
+ * @returns Its latest saved or in-process uncertainty record, or `undefined`.
+*/
+get(id: ActivityDelegationId): ActivityDelegation | undefined
+
+/** Record a startup rejection that occurred before DSH published an activation.
+ * @param id - Saved request identity.
+ * @param message - Safe user-facing startup explanation.
+ * @returns The rejected request record.
+*/
+async markNotAdmitted(id: ActivityDelegationId, message: string): Promise<ActivityDelegation>
+
+/** Persist the admission returned by `startActivation`.
+ * @param id - Saved request identity.
+ * @param admission - Child Session and activation references.
+ * @returns The admitted record.
+*/
+async recordAdmitted(id: ActivityDelegationId, admission: ActivityDelegationAdmission): Promise<ActivityDelegation>
+
+/** Persist the managed activation's result separately from its admission.
+ * @param id - Saved request identity.
+ * @param admission - Accepted activation references.
+ * @param report - Provider-reported result.
+ * @returns The completed fact record.
+*/
+async recordReported( id: ActivityDelegationId, admission: ActivityDelegationAdmission, report: ActivityDelegationReport, ): Promise<ActivityDelegation>
+
+/** Record a result that the activation API could not return as a provider report.
+ * @param id - Saved request identity.
+ * @param admission - Accepted activation references.
+ * @param reason - Why its result is unknown.
+ * @returns The unconfirmed record.
+*/
+async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAdmission, reason: ActivityDelegationUncertainty['reason'], ): Promise<ActivityDelegation>
+```
+
+Source: [`packages/home/activity/src/delegations.ts`](../../packages/home/activity/src/delegations.ts)
 <!-- END GENERATED cordis-surface -->

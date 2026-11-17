@@ -25,6 +25,7 @@
     "apps/web/katex-fonts.ts",
     "apps/web/tests/connection-recovery.e2e.ts",
     "apps/web/tests/server-restart.e2e.ts",
+    "apps/web/tests/home-activity-delegation.e2e.ts",
     "apps/web/tests/shortcuts.e2e.ts",
     "apps/web/tests/shortcuts-desktop.e2e.ts",
     "apps/web/tests/shortcuts-workspace.e2e.ts",

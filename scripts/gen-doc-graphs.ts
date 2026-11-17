@@ -587,6 +587,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Stores named objectives and descriptive boundaries independently of Sessions; the human command creates, lists, and opens records without executing them.',
   },
   {
+    key: 'homeActivityDelegations',
+    pkg: 'home-activity',
+    title: 'Recorded Home Activity delegations',
+    mode: 'service',
+    consumers: ['command-home-activity'],
+    note: 'Persists explicit requests, accepted DSH activation references, and provider reports as separate facts; the human command uses the existing subagent runtime and does not claim verification or acceptance.',
+  },
+  {
     key: 'homeActivityAssociations',
     pkg: 'home-activity',
     title: 'Activity Workspace and Session references',

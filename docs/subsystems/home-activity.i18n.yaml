@@ -3,14 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/home-activity.md
 /home-activities:
-  en: 27e5be8688ffc2c5
-  zh: 994fca66f91731b2
+  en: 54c39db983c36afd
+  zh: e2b18c352ec438c2
 /home-activities/saved-intent:
-  en: 118858fe463ba353
-  zh: 4d095414726c15ed
+  en: 6f3eadf37e016e91
+  zh: 253a405cfd95d41b
 /home-activities/context-references:
-  en: 4f93d249402396a0
-  zh: d83fcca1d6e058a6
+  en: fdd7ef73097205c5
+  zh: 7ccdcefa5a18b14e
 /home-activities/cordis-api:
   en: fada7691badd06af
   zh: fada7691badd06af

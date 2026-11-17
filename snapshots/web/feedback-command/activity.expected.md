@@ -18,7 +18,7 @@
 - button "Branch into a new conversation"
 - text: {{clock}}
 - 'button "feedback Feedback recorded for session session-{{uuid}} Anonymous user: {{uuid}}."'
-- text: "activity No saved Activities. Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link <activity-id> workspace|session <context-id> | unlink <activity-id> workspace|session <context-id>"
+- text: "activity No saved Activities. Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | delegate <activity-id> spawn <task>"
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"
 - 'button "Access mode, current: Workspace Write"': Workspace Write

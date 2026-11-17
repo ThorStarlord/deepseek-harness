@@ -1798,6 +1798,55 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'homeActivityDelegations',
+    summary: 'Durable request, DSH admission, and provider-report records mounted as `ctx.homeActivityDelegations`.',
+    description: 'Durable request, DSH admission, and provider-report records mounted as `ctx.homeActivityDelegations`.',
+    methods: [
+      {
+        signature: 'async createRequest(request: CreateActivityDelegationRequest): Promise<ActivityDelegation>',
+        description: 'Persist a user request before starting any provider work.',
+        parameters: [{ name: 'request', description: 'Activity, task, provider, and owning Session.' }],
+        returns: 'The saved request record.',
+      },
+      {
+        signature: 'list(activityId: ActivityDelegation[\'activityId\']): readonly ActivityDelegation[]',
+        description: 'List this Activity\'s delegation facts newest first.',
+        parameters: [{ name: 'activityId', description: 'Owning Activity identity.' }],
+        returns: 'Detached records sorted by request time.',
+      },
+      {
+        signature: 'get(id: ActivityDelegationId): ActivityDelegation | undefined',
+        description: 'Read one delegation by stable identity.',
+        parameters: [{ name: 'id', description: 'Stable delegation identity.' }],
+        returns: 'Its latest saved or in-process uncertainty record, or `undefined`.',
+      },
+      {
+        signature: 'async markNotAdmitted(id: ActivityDelegationId, message: string): Promise<ActivityDelegation>',
+        description: 'Record a startup rejection that occurred before DSH published an activation.',
+        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'message', description: 'Safe user-facing startup explanation.' }],
+        returns: 'The rejected request record.',
+      },
+      {
+        signature: 'async recordAdmitted(id: ActivityDelegationId, admission: ActivityDelegationAdmission): Promise<ActivityDelegation>',
+        description: 'Persist the admission returned by `startActivation`.',
+        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'admission', description: 'Child Session and activation references.' }],
+        returns: 'The admitted record.',
+      },
+      {
+        signature: 'async recordReported( id: ActivityDelegationId, admission: ActivityDelegationAdmission, report: ActivityDelegationReport, ): Promise<ActivityDelegation>',
+        description: 'Persist the managed activation\'s result separately from its admission.',
+        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'admission', description: 'Accepted activation references.' }, { name: 'report', description: 'Provider-reported result.' }],
+        returns: 'The completed fact record.',
+      },
+      {
+        signature: 'async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAdmission, reason: ActivityDelegationUncertainty[\'reason\'], ): Promise<ActivityDelegation>',
+        description: 'Record a result that the activation API could not return as a provider report.',
+        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'admission', description: 'Accepted activation references.' }, { name: 'reason', description: 'Why its result is unknown.' }],
+        returns: 'The unconfirmed record.',
+      },
+    ],
+  },
+  {
     key: 'inspector',
     summary: 'Shared Host/Client service façade over the realm\'s source publisher.',
     description: 'Shared Host/Client service façade over the realm\'s source publisher.',
@@ -5583,6 +5632,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ActivityBoundaries {\n    readonly inScope: readonly string[];\n    readonly outOfScope: readonly string[];\n}',
   },
   {
+    name: 'ActivityDelegation',
+    declaration: 'export interface ActivityDelegation {\n    readonly id: ActivityDelegationId;\n    readonly activityId: ActivityId;\n    readonly request: ActivityDelegationRequest;\n    readonly status: ActivityDelegationStatus;\n    readonly admission?: ActivityDelegationAdmission | undefined;\n    readonly report?: ActivityDelegationReport | undefined;\n    readonly failure?: ActivityDelegationFailure | undefined;\n    readonly uncertainty?: ActivityDelegationUncertainty | undefined;\n}',
+  },
+  {
+    name: 'ActivityDelegationAdmission',
+    declaration: 'export interface ActivityDelegationAdmission {\n    readonly childSessionId: SessionId;\n    readonly activationName: string;\n    readonly runId?: SubagentRunId | undefined;\n    readonly admittedAt: string;\n    readonly source: \'subagents.startActivation\';\n}',
+  },
+  {
+    name: 'ActivityDelegationFailure',
+    declaration: 'export interface ActivityDelegationFailure {\n    readonly message: string;\n    readonly source: \'subagents.startActivation\';\n}',
+  },
+  {
+    name: 'ActivityDelegationId',
+    declaration: 'export type ActivityDelegationId = Branded<\'ActivityDelegationId\'>;',
+  },
+  {
+    name: 'ActivityDelegationReport',
+    declaration: 'export interface ActivityDelegationReport {\n    readonly stopReason: string;\n    readonly outputText: string;\n    readonly nonTextBlockTypes: readonly string[];\n    readonly outputTruncated: boolean;\n    readonly diagnostic?: string | undefined;\n    readonly reportedAt: string;\n    readonly source: \'subagent-activation-result\';\n}',
+  },
+  {
+    name: 'ActivityDelegationRequest',
+    declaration: 'export interface ActivityDelegationRequest {\n    readonly provider: \'spawn\';\n    readonly task: string;\n    readonly parentSessionId: SessionId;\n    readonly requestedChildSessionId: SessionId;\n    readonly requestedAt: string;\n    readonly source: \'user-command\';\n}',
+  },
+  {
+    name: 'ActivityDelegationStatus',
+    declaration: 'export type ActivityDelegationStatus = \'requested\' | \'not-admitted\' | \'admitted\' | \'reported\' | \'unconfirmed\';',
+  },
+  {
+    name: 'ActivityDelegationUncertainty',
+    declaration: 'export interface ActivityDelegationUncertainty {\n    readonly reason: \'restart-before-admission-recorded\' | \'restart-before-report-recorded\' | \'admission-write-failed\' | \'report-write-failed\' | \'startup-result-rejected\';\n    readonly observedAt: string;\n}',
+  },
+  {
     name: 'AdapterRegistrationHandle',
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
@@ -6185,6 +6266,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CotTranslationSnapshot',
     declaration: 'export interface CotTranslationSnapshot {\n    maxTextChars: number;\n    preferences: CotTranslationPreferences;\n    availableProviders: readonly TranslationProvider[];\n}',
+  },
+  {
+    name: 'CreateActivityDelegationRequest',
+    declaration: 'export interface CreateActivityDelegationRequest {\n    readonly activityId: ActivityId;\n    readonly provider: \'spawn\';\n    readonly task: string;\n    readonly parentSessionId: SessionId;\n}',
   },
   {
     name: 'CreateActivityRequest',

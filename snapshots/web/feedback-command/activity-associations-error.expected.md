@@ -18,10 +18,10 @@
 - button "Branch into a new conversation"
 - text: {{clock}}
 - 'button "activity Activity created: Release readiness ID: {{uuid}} Saved only; its objective has not been started. Use /activity open {{uuid}} to view its objective and scope."'
-- text: "Failed activity Activity details must be valid JSON. Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link <activity-id> workspace|session <context-id> | unlink <activity-id> workspace|session <context-id>"
+- text: "Failed activity Activity details must be valid JSON. Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | delegate <activity-id> spawn <task>"
 - 'button "activity Available Workspaces (Workspace ids identify registered directories; no Git root is inferred): Workspace: activity-workspace-two — {{uuid}} Directory: {{linked-workspace-directory}} Directory status: available. Workspace: workspace — {{uuid}} Directory: {{coordinating-workspace-directory}} Directory status: available. Select an id with /activity link <activity-id> workspace <workspace-id>."'
 - 'button "activity Available DSH Sessions (select each Session independently of any Workspace): DSH Session: session-{{uuid}} — created {{timestamp}} Session working directory: {{linked-workspace-directory}} DSH Session: session-{{uuid}} — created {{timestamp}} Session working directory: {{coordinating-workspace-directory}} Select an id with /activity link <activity-id> session <session-id>."'
-- text: "Failed activity No Workspace has id {{uuid}}. Run /activity workspaces to choose a registered Workspace id. Failed activity Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link <activity-id> workspace|session <context-id> | unlink <activity-id> workspace|session <context-id>"
+- text: "Failed activity No Workspace has id {{uuid}}. Run /activity workspaces to choose a registered Workspace id. Failed activity Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | delegate <activity-id> spawn <task>"
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"
 - 'button "Access mode, current: Workspace Write"': Workspace Write

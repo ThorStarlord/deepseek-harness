@@ -18,7 +18,7 @@
 - button "Branch into a new conversation"
 - text: {{clock}}
 - 'button "activity Activity created: Release readiness ID: {{uuid}} Saved only; its objective has not been started. Use /activity open {{uuid}} to view its objective and scope."'
-- text: "Failed activity Activity details must be valid JSON. Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link <activity-id> workspace|session <context-id> | unlink <activity-id> workspace|session <context-id>"
+- text: "Failed activity Activity details must be valid JSON. Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | delegate <activity-id> spawn <task>"
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Add files or run commands"
 - 'button "Access mode, current: Workspace Write"': Workspace Write

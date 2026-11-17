@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Save a named Activity with an objective and descriptive boundaries that remain available after its original Session ends. The Web and SDK `/activity` command can link selected Workspace and DSH Session identities, and another Session can reopen those references. Links do not assign a Session to a Workspace, execute the objective, create a Goal, or grant runtime permissions.
+Save a named Activity with an objective and descriptive boundaries that remain available after its original Session ends. The Web and SDK /activity command can link selected Workspace and DSH Session identities, and another Session can reopen those references. A separate delegation service records explicitly requested DSH-native child activations with provider-reported results; delegation does not create an association. Creating or opening an Activity does not execute its objective, create a Goal, or grant runtime permissions.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Save a named Activity with an objective and descriptive boundaries that remain a
 <a id="use-this-package"></a>
 ## Use this package
 
-The Web and SDK profiles mount this service, the `@deepseek-ai/dsh-home-activity/associations` service, the JSON StorageDomain provider, and the human `/activity` command.
+The Web and SDK profiles mount this service with the JSON StorageDomain provider, association service, and human /activity command. A composition that enables delegation also mounts the delegation service, subagent service, and a supported DSH-native provider.
 
 ### When to choose it
 
@@ -49,6 +49,8 @@ The service declares no configuration fields. A custom composition supplies the 
 
 The storage providers own their settings; see the [JSON backend](../../storage/storage-json/README.md) and [StorageDomain](../../storage/storage-domain/README.md) references.
 
+A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activity/delegations`, `@deepseek-ai/dsh-subagent`, and a DSH-native provider supported by the command. The Web profile includes the `spawn` provider.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -57,18 +59,24 @@ The storage providers own their settings; see the [JSON backend](../../storage/s
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-Activity records remain in the strict version-1 `home_activities` StorageDomain. Separately authored Workspace and Session references use the additive `home_activity_associations` version-1 domain, with at most 256 references of each kind per Activity. A Workspace link names a registered Workspace directory, not an inferred Git root; a Session link is a distinct identity and does not imply Workspace membership. Neither link rewrites a Session log or starts execution.
+Activity records use the version-1 `home_activities` StorageDomain and remain independent of Session, Goal, and Workspace records. Delegations use a separate version-1 `home_activity_delegations` domain; each request saves the proposed child Session id before startup, followed by separate admission and report facts. The proposed id does not confirm admission. A restart changes unfinished records to `unconfirmed` and never restarts a child.
+
+Selected Workspace and DSH Session references use the separate version-1 `home_activity_associations` domain. The associations are resolved against their owning registries when displayed; stale references remain explicit until removed. They do not change Workspace records, Session logs, or the Activity record.
 
 | File | Role |
 |---|---|
 | [`src/types.ts`](src/types.ts) | Activity identity and request types |
 | [`src/spec.ts`](src/spec.ts) | Versioned persisted record schema |
-| [`src/index.ts`](src/index.ts) | StorageDomain service |
-| [`src/association-types.ts`](src/association-types.ts) | Separate Workspace and Session references |
+| [`src/index.ts`](src/index.ts) | Activity catalog service |
+| [`src/delegation-types.ts`](src/delegation-types.ts) | Delegation lifecycle fact types |
+| [`src/delegation-spec.ts`](src/delegation-spec.ts) | Versioned delegation record schema |
+| [`src/delegations.ts`](src/delegations.ts) | Separate delegation StorageDomain service |
+| [`src/association-types.ts`](src/association-types.ts) | Workspace and Session reference types |
 | [`src/association-spec.ts`](src/association-spec.ts) | Versioned association record schema |
-| [`src/associations.ts`](src/associations.ts) | Association validation and StorageDomain service |
-| [`tests/activity.spec.ts`](tests/activity.spec.ts) | Activity persistence and validation behavior |
-| [`tests/associations.spec.ts`](tests/associations.spec.ts) | Association validation, restart, idempotence, and write rollback |
+| [`src/associations.ts`](src/associations.ts) | Separate association StorageDomain service |
+| [`tests/activity.spec.ts`](tests/activity.spec.ts) | Storage close, reopen, and validation behavior |
+| [`tests/delegations.spec.ts`](tests/delegations.spec.ts) | Delegation fact persistence, restart recovery, and validation |
+| [`tests/associations.spec.ts`](tests/associations.spec.ts) | Association validation, restart recovery, idempotence, and write rollback |
 
 </details>
 
@@ -90,17 +98,17 @@ None, as the service persists Activity records without adding model context or t
 
 #### KV Cache effect
 
-None; Activity reads and writes do not change model requests.
+None; creating or opening an Activity does not add model input. A delegated child Session makes its own provider requests.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>
 
-The current record and its separate references preserve user intent without coordinating execution.
+Activity scope remains descriptive, and delegation does not enforce it as an authorization rule.
 
 - Boundaries are descriptive statements, not sandbox roots or permission grants.
-- Workspace references identify DSH Workspace directory records and do not attest to Git repository roots. Workspace and Session references are authored independently and do not provide repository attribution or Session membership.
-- Activities are not linked to delegated work, reusable knowledge, or execution evidence.
-- The service has no edit, delete, scheduling, or execution operation.
+- Delegation records identify the requesting Session and the admitted child Session but do not create Activity-to-Session links or reusable knowledge.
+- Workspace and Session references are selected independently. A Workspace id names a registered DSH Workspace directory, not an inferred repository root, and sharing an Activity does not assign a Session to a Workspace.
+- Delegated execution is a separate explicit `/activity delegate` command; the Activity service itself has no edit, delete, or scheduling operation. Provider-reported output is not verified or accepted.
 
 <a id="dev-note"></a>
 ### Dev Note

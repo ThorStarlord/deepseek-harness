@@ -57,6 +57,9 @@
     - id: home-activity
       name: '@deepseek-ai/dsh-home-activity'
 
+    - id: home-activity-delegations
+      name: '@deepseek-ai/dsh-home-activity/delegations'
+
     - id: home-activity-associations
       name: '@deepseek-ai/dsh-home-activity/associations'
 
