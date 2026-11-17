@@ -83,10 +83,10 @@ describe('web e2e: Home Activity delegation', () => {
       /Delegation admitted: provider spawn/u,
     )
     expect(start).toHaveBeenCalledTimes(1)
-    expect(start.mock.calls[0]?.[0]).toMatchObject({
-      provider: 'spawn',
-      parent: expect.objectContaining({ id: parentSessionId }),
-    })
+    const startSpec = start.mock.calls[0]?.[0]
+    if (startSpec === undefined) throw new Error('The DSH subagent provider was not invoked.')
+    expect(startSpec.provider).toBe('spawn')
+    expect(startSpec.parent.id).toBe(parentSessionId)
     if (requestedChildSessionId === undefined) throw new Error('The accepted activation has no child Session identity.')
 
     const admissionText = await page.getByText(/Delegation admitted: provider spawn/u).last().textContent() ?? ''

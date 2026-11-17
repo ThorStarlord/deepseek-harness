@@ -162,13 +162,15 @@ function fakeActivation(
 ): SubagentActivation {
   const childId = spec.childId ?? SessionId(`child-${randomUUID()}`)
   if (emitRunId) {
-    const run = (id: string, parentSessionId: string, provider: string, runId: string) => ctx.emit('subagent/start', {
-      id: SessionId(id),
-      parentSessionId: SessionId(parentSessionId),
-      provider,
-      runId: SubagentRunId(runId),
-      local: true,
-    })
+    const run = (id: string, parentSessionId: string, provider: string, runId: string) => {
+      ctx.emit('subagent/start', {
+        id: SessionId(id),
+        parentSessionId: SessionId(parentSessionId),
+        provider,
+        runId: SubagentRunId(runId),
+        local: true,
+      })
+    }
     run('different-child', spec.parent.session.id, 'spawn', 'ignored-child')
     run(childId, 'different-parent', 'spawn', 'ignored-parent')
     run(childId, spec.parent.session.id, 'other-provider', 'ignored-provider')
@@ -180,9 +182,9 @@ function fakeActivation(
 it('starts the real DSH spawn provider from `/activity`, then records success and failure as provider reports', async () => {
   const started = Promise.withResolvers<undefined>()
   const release = Promise.withResolvers<undefined>()
-  releaseChildren.push(() => release.resolve(undefined))
+  releaseChildren.push(() => { release.resolve(undefined) })
   const adapter = new DelegationAdapter([
-    { chunks: textResponse('The migration section needs one upgrade command.'), gate: release.promise, started: () => started.resolve(undefined) },
+    { chunks: textResponse('The migration section needs one upgrade command.'), gate: release.promise, started: () => { started.resolve(undefined) } },
     { chunks: [], error: new Error('deterministic provider failure') },
   ])
   const { ctx, parent } = await harness(adapter)
@@ -490,8 +492,12 @@ it('records an unknown settled result and contains persistence and observer fail
   const admitted = await run(ctx, parent, ` delegate ${activity.id} spawn inspect one checklist`)
   expect(admitted.kind).toBe('success')
   rejectedResult.reject(new Error('private activation fault'))
-  await vi.waitFor(() => expect(ctx.homeActivityDelegations.list(activity.id)[0]?.status).toBe('unconfirmed'))
-  await vi.waitFor(() => expect(warnings.mock.calls.some(call => String(call[0]).includes('admitted activation result was rejected'))).toBe(true))
+  await vi.waitFor(() => {
+    expect(ctx.homeActivityDelegations.list(activity.id)[0]?.status).toBe('unconfirmed')
+  })
+  await vi.waitFor(() => {
+    expect(warnings.mock.calls.some(call => String(call[0]).includes('admitted activation result was rejected'))).toBe(true)
+  })
   let opened = await run(ctx, parent, ` open ${activity.id}`)
   expect(opened.text).toContain('accepted activation did not provide a usable report')
   expect(opened.text).toContain('The provider report is not verified or accepted.')
@@ -504,7 +510,9 @@ it('records an unknown settled result and contains persistence and observer fail
   vi.spyOn(ctx.homeActivityDelegations, 'markUnconfirmed').mockRejectedValueOnce(new Error('private persistence detail'))
   failingResult.reject(new Error('private activation fault'))
   const secondId = ctx.homeActivityDelegations.list(activity.id)[0]!.id
-  await vi.waitFor(() => expect(warnings.mock.calls.some(call => String(call[0]).includes('unknown activation result could not be saved'))).toBe(true))
+  await vi.waitFor(() => {
+    expect(warnings.mock.calls.some(call => String(call[0]).includes('unknown activation result could not be saved'))).toBe(true)
+  })
   expect(ctx.homeActivityDelegations.get(secondId)?.status).toBe('admitted')
 
   const reported = Promise.withResolvers<SubagentResult>()
@@ -515,7 +523,9 @@ it('records an unknown settled result and contains persistence and observer fail
   const thirdId = ctx.homeActivityDelegations.list(activity.id)[0]!.id
   vi.spyOn(ctx.homeActivityDelegations, 'recordReported').mockRejectedValueOnce(new Error('private persistence detail'))
   reported.resolve({ stopReason: 'completed', output: [] })
-  await vi.waitFor(() => expect(warnings.mock.calls.some(call => String(call[0]).includes('provider report could not be persisted'))).toBe(true))
+  await vi.waitFor(() => {
+    expect(warnings.mock.calls.some(call => String(call[0]).includes('provider report could not be persisted'))).toBe(true)
+  })
   expect(ctx.homeActivityDelegations.get(thirdId)?.status).toBe('admitted')
 
   const malformed = Promise.withResolvers<SubagentResult>()
@@ -529,10 +539,14 @@ it('records an unknown settled result and contains persistence and observer fail
     stopReason: 'completed',
   }
   malformed.resolve(invalidResult)
-  await vi.waitFor(() => expect(ctx.homeActivityDelegations.get(fourthId)?.status).toBe('unconfirmed'))
-  await vi.waitFor(() => expect(warnings.mock.calls.some(
-    call => String(call[0]).includes('settled activation result could not be read'),
-  )).toBe(true))
+  await vi.waitFor(() => {
+    expect(ctx.homeActivityDelegations.get(fourthId)?.status).toBe('unconfirmed')
+  })
+  await vi.waitFor(() => {
+    expect(warnings.mock.calls.some(call =>
+      String(call[0]).includes('settled activation result could not be read'),
+    )).toBe(true)
+  })
   opened = await run(ctx, parent, ` open ${activity.id}`)
   const openedText = opened.text
   if (openedText === undefined) throw new Error('Reopened Activity did not return its detail text.')
@@ -549,8 +563,10 @@ it('records an unknown settled result and contains persistence and observer fail
   expect(fifth.kind).toBe('success')
   const fifthId = ctx.homeActivityDelegations.list(activity.id)[0]!.id
   malformedObserver.resolve(invalidResult)
-  await vi.waitFor(() => expect(warnings.mock.calls.some(
-    call => String(call[0]).includes('result observer failed'),
-  )).toBe(true))
+  await vi.waitFor(() => {
+    expect(warnings.mock.calls.some(call =>
+      String(call[0]).includes('result observer failed'),
+    )).toBe(true)
+  })
   expect(ctx.homeActivityDelegations.get(fifthId)?.status).toBe('admitted')
 })

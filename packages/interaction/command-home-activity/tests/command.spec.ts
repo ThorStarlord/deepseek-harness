@@ -159,12 +159,13 @@ it('registers a discoverable command and creates, lists, and reopens without sta
     'commands', 'homeActivities', 'homeActivityDelegations', 'subagents',
     'homeActivityAssociations', 'workspaceRegistry', 'sessionPersistence',
   ])
-  expect(test.ctx.commands.list(test.agent)).toContainEqual(expect.objectContaining({
-    definitionId: '@deepseek-ai/dsh-command-home-activity',
-    name: 'activity',
-    description: expect.stringContaining('DSH-native task'),
-    input: { hint: 'create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | delegate <activity-id> spawn <task>' },
-  }))
+  const descriptor = test.ctx.commands.list(test.agent).find(command =>
+    command.definitionId === '@deepseek-ai/dsh-command-home-activity',
+  )
+  if (descriptor === undefined) throw new Error('Activity command was not registered')
+  expect(descriptor.name).toBe('activity')
+  expect(descriptor.description).toContain('DSH-native task')
+  expect(descriptor.input?.hint).toBe('create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | delegate <activity-id> spawn <task>')
 
   const create = await run(test, ' create {"name":"Release readiness","objective":"Prepare the next release for review.","boundaries":{"inScope":["Review release notes"],"outOfScope":["Do not publish"]}}')
   expect(create.kind).toBe('success')
@@ -224,13 +225,15 @@ it('links selected Workspaces and Sessions independently and reopens them from a
   expect(sessions.text).toContain(`DSH Session: ${test.session.id}`)
   expect(sessions.text).toContain(`DSH Session: ${otherSession}`)
 
-  await expect(run(test, ` link ${activityId} workspace ${firstWorkspace}`, test.secondaryAgent))
-    .resolves.toMatchObject({ kind: 'success', text: expect.stringContaining('records a reference only') })
+  const firstLink = await run(test, ` link ${activityId} workspace ${firstWorkspace}`, test.secondaryAgent)
+  expect(firstLink.kind).toBe('success')
+  expect(firstLink.text).toContain('records a reference only')
   await run(test, ` link ${activityId} workspace ${secondWorkspace}`, test.secondaryAgent)
   await run(test, ` link ${activityId} session ${test.session.id}`, test.secondaryAgent)
   await run(test, ` link ${activityId} session ${otherSession}`, test.secondaryAgent)
-  await expect(run(test, ` link ${activityId} session ${otherSession}`, test.secondaryAgent))
-    .resolves.toMatchObject({ kind: 'success', text: expect.stringContaining('already linked') })
+  const duplicateLink = await run(test, ` link ${activityId} session ${otherSession}`, test.secondaryAgent)
+  expect(duplicateLink.kind).toBe('success')
+  expect(duplicateLink.text).toContain('already linked')
 
   const opened = await run(test, ` open ${activityId}`, test.secondaryAgent)
   expect(opened.kind).toBe('success')
@@ -282,18 +285,22 @@ it('separates unknown references from storage failures and supports unlink corre
     boundaries: { inScope: ['Inspect the patch.'], outOfScope: ['Do not merge.'] },
   })
   const unknownWorkspace = '00000000-0000-4000-8000-000000000099'
-  await expect(run(test, ' link 00000000-0000-4000-8000-000000000098 workspace ' + unknownWorkspace))
-    .resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('Run /activity list') })
+  const missingActivity = await run(test, ' link 00000000-0000-4000-8000-000000000098 workspace ' + unknownWorkspace)
+  expect(missingActivity.kind).toBe('error')
+  expect(missingActivity.text).toContain('Run /activity list')
   const unknownSession = SessionId('unknown-session')
-  await expect(run(test, ` link ${activity.id} workspace ${unknownWorkspace}`))
-    .resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('Run /activity workspaces') })
-  await expect(run(test, ` link ${activity.id} session ${unknownSession}`))
-    .resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('Run /activity sessions') })
+  const missingWorkspace = await run(test, ` link ${activity.id} workspace ${unknownWorkspace}`)
+  expect(missingWorkspace.kind).toBe('error')
+  expect(missingWorkspace.text).toContain('Run /activity workspaces')
+  const missingSession = await run(test, ` link ${activity.id} session ${unknownSession}`)
+  expect(missingSession.kind).toBe('error')
+  expect(missingSession.text).toContain('Run /activity sessions')
   const firstWorkspace = '00000000-0000-4000-8000-000000000011'
   const replacementWorkspace = '00000000-0000-4000-8000-000000000012'
   await run(test, ` link ${activity.id} workspace ${firstWorkspace}`)
-  await expect(run(test, ` unlink ${activity.id} workspace ${firstWorkspace}`))
-    .resolves.toMatchObject({ kind: 'success', text: expect.stringContaining('Workspace record remain unchanged') })
+  const unlinked = await run(test, ` unlink ${activity.id} workspace ${firstWorkspace}`)
+  expect(unlinked.kind).toBe('success')
+  expect(unlinked.text).toContain('Workspace record remain unchanged')
   await run(test, ` link ${activity.id} workspace ${replacementWorkspace}`)
   expect(test.ctx.homeActivities.get(activity.id)).toEqual(activity)
   expect(test.ctx.homeActivityAssociations.get(activity.id)).toEqual({
@@ -301,8 +308,9 @@ it('separates unknown references from storage failures and supports unlink corre
   })
 
   vi.spyOn(test.ctx.homeActivityAssociations, 'linkWorkspace').mockRejectedValueOnce(new StorageError('unknown-state', 'private path'))
-  await expect(run(test, ` link ${activity.id} workspace ${replacementWorkspace}`))
-    .resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('Activity association storage failed') })
+  const storageFailure = await run(test, ` link ${activity.id} workspace ${replacementWorkspace}`)
+  expect(storageFailure.kind).toBe('error')
+  expect(storageFailure.text).toContain('Activity association storage failed')
 })
 
 it('handles empty catalogs and rejects oversized command input', async () => {

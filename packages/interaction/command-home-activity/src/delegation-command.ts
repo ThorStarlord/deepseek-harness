@@ -172,7 +172,7 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
     if (delegation.report.nonTextBlockTypes.length > 0) {
       lines.push(`Additional provider output blocks: ${delegation.report.nonTextBlockTypes.join(', ')}`)
     }
-    if (delegation.report.outputTruncated) lines.push(`Provider-reported text was clipped at ${16_384} UTF-8 bytes.`)
+    if (delegation.report.outputTruncated) lines.push('Provider-reported text was clipped at 16384 UTF-8 bytes.')
     if (delegation.report.diagnostic !== undefined) lines.push(`Provider diagnostic: ${delegation.report.diagnostic}`)
   } else {
     lines.push('Provider outcome is pending; opening the Activity does not wait for the child Session.')
