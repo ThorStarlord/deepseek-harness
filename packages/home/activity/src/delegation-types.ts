@@ -118,7 +118,7 @@ export interface ActivityDelegationUncertainty {
   readonly observedAt: string
 }
 
-/** Version-2 delegation sidecar entry; Activity v1 remains unchanged. */
+/** Version-3 delegation sidecar entry; Activity v1 remains unchanged. */
 export interface ActivityDelegation {
   /** Stable delegation identity. */
   readonly id: ActivityDelegationId
