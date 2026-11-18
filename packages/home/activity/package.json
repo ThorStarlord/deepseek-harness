@@ -30,6 +30,10 @@
       "types": "./lib/types/artifacts.d.ts",
       "default": "./lib/types/artifacts.js"
     },
+    "./reviews": {
+      "types": "./lib/types/reviews.d.ts",
+      "default": "./lib/types/reviews.js"
+    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"

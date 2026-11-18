@@ -2,13 +2,17 @@
 
 English | [中文](home-activity.zh.md)
 
-A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope statements, and creation time. It is independent of any Session; creating or opening one does not start its objective. The `home-activity` package stores Activity records, context references, explicitly requested delegation facts, and user-linked artifact pointers in separate [StorageDomain](storage.md) records. The Web [`/activity` command](../../packages/interaction/command-home-activity/README.md) creates, lists, opens, associates contexts, records artifact pointers, and explicitly delegates a bounded task.
+A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope statements, and creation time. It is independent of any Session; creating or opening one does not start its objective. The `home-activity` package stores Activity records, context references, explicitly requested delegation facts, user-linked artifact pointers, and separate user dispositions with attributed verification evidence in [StorageDomain](storage.md) records. The Web [`/activity` command](../../packages/interaction/command-home-activity/README.md) creates, lists, opens, associates contexts, records pointers and reviews, and explicitly delegates a bounded task.
 
 ## Saved intent
 
 `ActivityId` is a generated UUID. `ActivityBoundaries.inScope` and `outOfScope` are user-authored descriptions. They do not change sandbox roots, tool policy, or repository access. Opening an Activity displays saved intent and separately recorded delegations. The Activity record itself has no status, Session association, execution, or continuation semantics.
 
 The `home_activities` domain uses format version 1. The separate `home_activity_delegations` domain uses version 5 and reads version-1 through version-4 records. Version 3 first added the Codex start outcome that the strict version-2 reader cannot decode; version 4 records the selected profile and preset at launch; version 5 adds native Claude Code one-shot delegation facts. New DSH `spawn` requests snapshot the launcher profile name and ordered bundle list plus the active Agent preset id and module names before startup. Profile bundle classification is stable only for an exact shipped template list and experimental only when a selected bundle has explicit experimental metadata; preset stability remains unavailable without explicit product classification. Custom profile patches and runtime overlays are not classified. Native Codex and Claude Code record the DSH profile and preset as unavailable because DSH does not own those external compositions. These labels do not establish sandbox isolation, permission enforcement, or Skill qualification, and later configuration changes do not rewrite the saved profile and preset snapshot. Existing records without a profile and preset snapshot remain readable and show those facts as unavailable. Existing `spawn` rows remain readable with their original fields. A `spawn` request stores a proposed child Session id before startup; Codex and Claude Code requests do not invent a DSH Session identity. The proposed `spawn` id does not establish admission. On restart, a request or admission without its later fact becomes `unconfirmed`; no activation is rearmed. A Codex or Claude Code start rejection after dispatch is also `unconfirmed`, because the external run may already have started; do not repeat the task unless you independently confirm it did not start. If `spawn` admission is uncertain, `/activity sessions` can be checked for the proposed id; a missing Session record does not confirm startup failure. An external admission stores its adapter's `SubagentRun.id`, not a DSH Session or native provider conversation id. Activity provides no continuation, resume, transcript inspection, or rollback for external providers. Codex and Claude Code follow their native configuration and permission handling. Provider output remains a report, not verification or user acceptance. DSH runtime policy controls `spawn` permissions; Activity scope is not an authorization constraint. No Session format version changes are involved.
+
+## Delegation outcomes
+
+Provider reports preserve the provider stop reason. Activity views classify only known subagent reasons: `completed`, `error`, `aborted`, `max-tokens`, and `refusal`; unknown reasons remain unknown. They show the report source and observation time, and the uncertainty source category and observation time when available. DSH has no freshness check or later provider-status query for a saved report, so its freshness is unknown and it may be stale. Missing reports remain pending or unconfirmed according to the saved lifecycle facts; opening an Activity never retries work.
 
 ## Context references
 
@@ -21,6 +25,12 @@ Opening an Activity resolves each id against its owning registry. Removed contex
 The separate version-1 `home_activity_artifacts` domain stores user-linked pointers to outputs associated with a specific Activity delegation and a Workspace already linked to that Activity. Each pointer records a label, user-supplied source location, optional source revision, and recording time; missing revisions are displayed as unknown. The service rejects pointers whose delegation belongs to another Activity or whose Workspace is not linked to the Activity.
 
 Artifact pointers do not alter delegation requests, admissions, or reports. Opening an Activity displays the delegation's requesting Session and user-selected Workspace separately, and states that their relationship to the reported output is unverified. Workspace and Session links remain independent; the pointer does not imply one shared checkout, a Git root, or automatic cross-Workspace writes, merges, or releases.
+
+## Outcome reviews
+
+The separate version-1 `home_activity_reviews` domain stores one user review per delegation, linked to its owning Activity. No review row means the user disposition is pending. The service accepts a review only after the delegation has a saved provider report. A user can set the current disposition to pending, accepted, declined, or requires investigation, and append separately attributed evidence that records a user-entered source and reported result. Opening an Activity shows the disposition and each evidence entry separately from its provider report.
+
+Evidence and its result are user-supplied and are not checked by DSH. Conflicting entries remain visible rather than being collapsed into a verification status. Updating a disposition retains the evidence and does not modify delegation requests, admissions, or reports. Reviewing an Activity never starts or retries delegation.
 
 ## Cordis API
 
@@ -205,4 +215,42 @@ async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAd
 ```
 
 Source: [`packages/home/activity/src/delegations.ts`](../../packages/home/activity/src/delegations.ts)
+
+<a id="ctxhomeactivityreviews--homeactivityreviewservice"></a>
+
+### `ctx.homeActivityReviews` — `HomeActivityReviewService`
+
+User dispositions and verification evidence stored independently from delegation reports.
+
+```ts cordis-catalog
+/**
+ * Record a user disposition and optionally append one user-supplied evidence entry.
+ * @param request - Activity, owned delegation, disposition, and optional evidence.
+ * @returns The durable review, without changing the delegation report.
+ * @throws {ActivityReviewError} when an identity is invalid, no report is saved, or the evidence limit is reached.
+ * @throws {ActivityReviewStorageError} when review persistence fails.
+ */
+record(request: RecordActivityReviewRequest): Promise<ActivityReview>
+
+/**
+ * Read a review for one delegation, returning no row when its disposition is still pending.
+ * @param activityId - Saved Activity that owns the delegation.
+ * @param delegationId - Delegation identity selected for review.
+ * @returns The saved review, or `undefined` when the user has not recorded one.
+ * @throws {ActivityReviewError} when either identity is unavailable or mismatched.
+ * @throws {ActivityReviewStorageError} when review storage cannot be read.
+ */
+get(activityId: ActivityId, delegationId: ActivityDelegationId): ActivityReview | undefined
+
+/**
+ * List user reviews belonging to one saved Activity.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached reviews, newest update first.
+ * @throws {ActivityReviewError} when the Activity does not exist.
+ * @throws {ActivityReviewStorageError} when review storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityReview[]
+```
+
+Source: [`packages/home/activity/src/reviews.ts`](../../packages/home/activity/src/reviews.ts)
 <!-- END GENERATED cordis-surface -->
