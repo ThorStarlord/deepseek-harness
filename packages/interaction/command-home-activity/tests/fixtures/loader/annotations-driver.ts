@@ -5,8 +5,8 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
 import { createInboxStub, unsupportedModel } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
+import { bootProductionProfile } from '@deepseek-ai/dsh-loader-smoke'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { bootProductionProfile } from '../../../../../test-support/loader-smoke/tests/fixtures/production-profile.ts'
 
 const configPath = process.argv[2]
 if (configPath === undefined) throw new Error('Home Activity annotation Loader driver requires a config path')
