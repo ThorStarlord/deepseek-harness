@@ -8,7 +8,7 @@ A Home Activity is a durable, user-directed undertaking with a stable identity, 
 
 `ActivityId` is a generated UUID. `ActivityBoundaries.inScope` and `outOfScope` are user-authored descriptions. They do not change sandbox roots, tool policy, or repository access. Opening an Activity displays saved intent and separately recorded delegations. The Activity record itself has no status, Session association, execution, or continuation semantics.
 
-The `home_activities` domain uses format version 1. The separate `home_activity_delegations` version-1 domain stores the request and proposed child Session id before startup, then stores accepted DSH admission and provider report as distinct facts. The proposed id does not establish admission. On restart, a request or admission without its later fact becomes `unconfirmed`; no activation is rearmed. If admission is uncertain, `/activity sessions` can be checked for the proposed id; a missing Session record does not confirm startup failure. Provider output remains a report, not verification or user acceptance. DSH runtime policy controls child permissions; Activity scope is not an authorization constraint. No Session format version changes are involved.
+The `home_activities` domain uses format version 1. The separate `home_activity_delegations` domain uses version 3 and reads version-1 and version-2 records. Version 3 is necessary because the strict version-2 reader cannot decode the new Codex start outcome and must reject its newer stamp. Existing `spawn` rows remain readable with their original fields. A `spawn` request stores a proposed child Session id before startup; a Codex request does not invent a DSH Session identity. The proposed `spawn` id does not establish admission. On restart, a request or admission without its later fact becomes `unconfirmed`; no activation is rearmed. A Codex start rejection after dispatch is also `unconfirmed`, because the external run may already have started; do not repeat the task unless you independently confirm it did not start. If `spawn` admission is uncertain, `/activity sessions` can be checked for the proposed id; a missing Session record does not confirm startup failure. A Codex admission stores its adapter's `SubagentRun.id`, not a DSH Session or native Codex thread id. Activity provides no continuation, resume, transcript inspection, or rollback. Codex follows its native configuration and permission mode. Provider output remains a report, not verification or user acceptance. DSH runtime policy controls `spawn` permissions; Activity scope is not an authorization constraint. No Session format version changes are involved.
 
 ## Context references
 
@@ -182,7 +182,7 @@ async markNotAdmitted(id: ActivityDelegationId, message: string): Promise<Activi
 
 /** Persist the admission returned by `startActivation`.
  * @param id - Saved request identity.
- * @param admission - Child Session and activation references.
+ * @param admission - Local Session or external execution and activation references.
  * @returns The admitted record.
 */
 async recordAdmitted(id: ActivityDelegationId, admission: ActivityDelegationAdmission): Promise<ActivityDelegation>
@@ -195,13 +195,13 @@ async recordAdmitted(id: ActivityDelegationId, admission: ActivityDelegationAdmi
 */
 async recordReported( id: ActivityDelegationId, admission: ActivityDelegationAdmission, report: ActivityDelegationReport, ): Promise<ActivityDelegation>
 
-/** Record a result that the activation API could not return as a provider report.
+/** Record a startup or report outcome that cannot be confirmed.
  * @param id - Saved request identity.
- * @param admission - Accepted activation references.
+ * @param admission - New activation references, or undefined to preserve an existing reference or when startup outcome is unknown.
  * @param reason - Why its result is unknown.
  * @returns The unconfirmed record.
 */
-async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAdmission, reason: ActivityDelegationUncertainty['reason'], ): Promise<ActivityDelegation>
+async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAdmission | undefined, reason: ActivityDelegationUncertainty['reason'], ): Promise<ActivityDelegation>
 ```
 
 Source: [`packages/home/activity/src/delegations.ts`](../../packages/home/activity/src/delegations.ts)

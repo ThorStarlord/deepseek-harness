@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-command-home-activity",
-  "description": "Human slash commands for saved Home Activities, context associations, and explicit DSH-native delegation",
+  "description": "Human slash commands for saved Home Activities, context associations, and explicit provider delegation",
   "version": "0.2.2-rc.1",
   "publishConfig": {
     "access": "public"

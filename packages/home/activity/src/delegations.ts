@@ -1,4 +1,4 @@
-/** Durable DSH-native execution facts for saved Home Activities. @module @deepseek-ai/dsh-home-activity/delegations */
+/** Durable provider execution facts for saved Home Activities. @module @deepseek-ai/dsh-home-activity/delegations */
 
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -85,7 +85,9 @@ export class HomeActivityDelegationService extends Service {
         provider: request.provider,
         task: request.task,
         parentSessionId: request.parentSessionId,
-        requestedChildSessionId: brandString<SessionId>(randomUUID()),
+        ...(request.provider === 'spawn'
+          ? { requestedChildSessionId: brandString<SessionId>(randomUUID()) }
+          : {}),
         requestedAt: new Date().toISOString(),
         source: 'user-command',
       },
@@ -144,7 +146,7 @@ export class HomeActivityDelegationService extends Service {
 
   /** Persist the admission returned by `startActivation`.
    * @param id - Saved request identity.
-   * @param admission - Child Session and activation references.
+   * @param admission - Local Session or external execution and activation references.
    * @returns The admitted record.
   */
   async recordAdmitted(id: ActivityDelegationId, admission: ActivityDelegationAdmission): Promise<ActivityDelegation> {
@@ -198,15 +200,15 @@ export class HomeActivityDelegationService extends Service {
     }
   }
 
-  /** Record a result that the activation API could not return as a provider report.
+  /** Record a startup or report outcome that cannot be confirmed.
    * @param id - Saved request identity.
-   * @param admission - Accepted activation references.
+   * @param admission - New activation references, or undefined to preserve an existing reference or when startup outcome is unknown.
    * @param reason - Why its result is unknown.
    * @returns The unconfirmed record.
   */
   async markUnconfirmed(
     id: ActivityDelegationId,
-    admission: ActivityDelegationAdmission,
+    admission: ActivityDelegationAdmission | undefined,
     reason: ActivityDelegationUncertainty['reason'],
   ): Promise<ActivityDelegation> {
     const uncertain = this.withUncertainty(id, admission, reason)
@@ -234,17 +236,18 @@ export class HomeActivityDelegationService extends Service {
 
   private withUncertainty(
     id: ActivityDelegationId,
-    admission: ActivityDelegationAdmission,
+    admission: ActivityDelegationAdmission | undefined,
     reason: ActivityDelegationUncertainty['reason'],
   ): ActivityDelegation {
     const current = this.volatileUncertainty.get(id) ?? this.requireTable().get(id)
     if (current === undefined) throw new ActivityDelegationError('invalid-transition', `No delegation has id ${id}.`)
+    const savedAdmission = admission ?? current.admission
     return freezeDelegation({
       id: current.id,
       activityId: current.activityId,
       request: current.request,
       status: 'unconfirmed',
-      admission,
+      ...(savedAdmission === undefined ? {} : { admission: savedAdmission }),
       uncertainty: { reason, observedAt: new Date().toISOString() },
     })
   }
