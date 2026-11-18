@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Save a named Activity with an objective and descriptive boundaries that remain available after its original Session ends. The Web and SDK /activity command can link selected Workspace and DSH Session identities, and another Session can reopen those references. Separate services store explicitly requested DSH-native delegation facts and user-linked artifact pointers. Artifact pointers identify a selected Workspace and delegation but do not verify who produced the output. Creating or opening an Activity does not execute its objective, create a Goal, or grant runtime permissions.
+Save a named Activity with an objective and descriptive boundaries that remain available after its original Session ends. The Web and SDK /activity command can link selected Workspace and DSH Session identities, record user-supplied external handoffs, and reopen those records from another Session. Separate services store explicitly requested DSH-native delegation facts, DSH-linked artifact pointers, and external handoffs. External handoffs preserve user-supplied source and artifact references without importing an external transcript or claiming native execution. Creating or opening an Activity does not execute its objective, create a Goal, or grant runtime permissions.
 
 ## Table of Contents
 
@@ -46,6 +46,7 @@ The service declares no configuration fields. A custom composition supplies the 
 - name: '@deepseek-ai/dsh-home-activity'
 - name: '@deepseek-ai/dsh-home-activity/associations'
 - name: '@deepseek-ai/dsh-home-activity/artifacts'
+- name: '@deepseek-ai/dsh-home-activity/handoffs'
 ```
 
 The storage providers own their settings; see the [JSON backend](../../storage/storage-json/README.md) and [StorageDomain](../../storage/storage-domain/README.md) references.
@@ -66,6 +67,8 @@ Selected Workspace and DSH Session references use the separate version-1 `home_a
 
 User-linked artifact pointers use the separate version-1 `home_activity_artifacts` domain. Each pointer names one Activity, one of its delegations, and one Workspace already linked to that Activity; the user supplies its label, location, and optional revision. A missing revision is shown as unknown. Opening the Activity displays the delegation's requesting Session separately from the user-selected Workspace and states that their relationship to the reported output is unverified. The pointer remains separate from the provider-authored delegation report and establishes neither artifact origin, verification, nor acceptance. Workspace directories are displayed as selected contexts; a shared checkout or Git root is not inferred.
 
+User-supplied external handoffs use the separate version-1 `home_activity_handoffs` domain. Each record belongs to an existing Activity and stores a source label, optional user summary or source reference, user-supplied artifact references, and the DSH Session in which the record was added. Opening the Activity from another Session shows these references as external user input, not imported native execution history. The service does not import transcripts, synchronize external sessions, establish who performed the work, or claim verification or acceptance.
+
 | File | Role |
 |---|---|
 | [`src/types.ts`](src/types.ts) | Activity identity and request types |
@@ -80,10 +83,14 @@ User-linked artifact pointers use the separate version-1 `home_activity_artifact
 | [`src/artifact-types.ts`](src/artifact-types.ts) | User-linked artifact pointer types |
 | [`src/artifact-spec.ts`](src/artifact-spec.ts) | Versioned artifact pointer schema |
 | [`src/artifacts.ts`](src/artifacts.ts) | Separate artifact pointer StorageDomain service |
+| [`src/handoff-types.ts`](src/handoff-types.ts) | External handoff record types |
+| [`src/handoff-spec.ts`](src/handoff-spec.ts) | Versioned external handoff schema |
+| [`src/handoffs.ts`](src/handoffs.ts) | Separate external handoff StorageDomain service |
 | [`tests/activity.spec.ts`](tests/activity.spec.ts) | Storage close, reopen, and validation behavior |
 | [`tests/delegations.spec.ts`](tests/delegations.spec.ts) | Delegation fact persistence, restart recovery, and validation |
 | [`tests/associations.spec.ts`](tests/associations.spec.ts) | Association validation, restart recovery, idempotence, and write rollback |
 | [`tests/artifacts.spec.ts`](tests/artifacts.spec.ts) | Pointer restart recovery, Workspace attribution, and cross-Activity rejection |
+| [`tests/handoffs.spec.ts`](tests/handoffs.spec.ts) | External handoff validation and persistence after storage context recreation |
 
 </details>
 
@@ -117,6 +124,7 @@ Activity scope remains descriptive, and delegation does not enforce it as an aut
 - Workspace and Session references are selected independently. A Workspace id names a registered DSH Workspace directory, not an inferred repository root, and sharing an Activity does not assign a Session to a Workspace.
 - Delegated execution is a separate explicit `/activity delegate` command; the Activity service itself has no edit, delete, or scheduling operation. Provider-reported output is not verified or accepted.
 - Artifact references are user-linked pointers. They do not copy or inspect output, prove its producer, verify contents, or trigger cross-Workspace writes, merges, or releases. A missing source revision remains unknown.
+- External handoffs are entered by a user through `/activity handoff add`; they do not import transcripts or synchronize an external agent. Source labels, summaries, and artifact references are user supplied and are not independently verified or accepted.
 
 <a id="dev-note"></a>
 ### Dev Note

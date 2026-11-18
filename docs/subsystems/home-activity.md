@@ -2,7 +2,7 @@
 
 English | [中文](home-activity.zh.md)
 
-A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope statements, and creation time. It is independent of any Session; creating or opening one does not start its objective. The `home-activity` package stores Activity records, context references, explicitly requested delegation facts, and user-linked artifact pointers in separate [StorageDomain](storage.md) records. The Web [`/activity` command](../../packages/interaction/command-home-activity/README.md) creates, lists, opens, associates contexts, records artifact pointers, and explicitly delegates a bounded task.
+A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope statements, and creation time. It is independent of any Session; creating or opening one does not start its objective. The `home-activity` package stores Activity records, context references, explicitly requested delegation facts, user-linked artifact pointers, and user-supplied external handoffs in separate [StorageDomain](storage.md) records. The Web [`/activity` command](../../packages/interaction/command-home-activity/README.md) creates, lists, opens, associates contexts, records artifact pointers and external handoffs, and explicitly delegates a bounded task.
 
 ## Saved intent
 
@@ -21,6 +21,10 @@ Opening an Activity resolves each id against its owning registry. Removed contex
 The separate version-1 `home_activity_artifacts` domain stores user-linked pointers to outputs associated with a specific Activity delegation and a Workspace already linked to that Activity. Each pointer records a label, user-supplied source location, optional source revision, and recording time; missing revisions are displayed as unknown. The service rejects pointers whose delegation belongs to another Activity or whose Workspace is not linked to the Activity.
 
 Artifact pointers do not alter delegation requests, admissions, or reports. Opening an Activity displays the delegation's requesting Session and user-selected Workspace separately, and states that their relationship to the reported output is unverified. Workspace and Session links remain independent; the pointer does not imply one shared checkout, a Git root, or automatic cross-Workspace writes, merges, or releases.
+
+## External handoffs
+
+The separate version-1 `home_activity_handoffs` domain stores a user-supplied source label, optional summary or source reference, optional artifact references, and the DSH Session in which the handoff was recorded. A handoff must contain a summary, source reference, or artifact reference. Opening the Activity from another DSH Session displays it as external user input, not native execution history. The service does not import transcripts, synchronize an external Session, or claim that the reported work was executed, verified, or accepted.
 
 ## Cordis API
 
@@ -205,4 +209,32 @@ async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAd
 ```
 
 Source: [`packages/home/activity/src/delegations.ts`](../../packages/home/activity/src/delegations.ts)
+
+<a id="ctxhomeactivityhandoffs--homeactivityhandoffservice"></a>
+
+### `ctx.homeActivityHandoffs` — `HomeActivityHandoffService`
+
+Stores user-supplied external handoffs independently from execution records.
+
+```ts cordis-catalog
+/**
+ * Record the user-supplied summary and references for work performed outside DSH.
+ * @param request - Existing Activity, source, summary or references, and recording Session.
+ * @returns The durable handoff explicitly attributed to user input.
+ * @throws {ActivityHandoffError} when the Activity is missing or the handoff is invalid.
+ * @throws {ActivityHandoffStorageError} when persistence cannot confirm the new record.
+ */
+create(request: CreateActivityHandoffRequest): Promise<ActivityHandoff>
+
+/**
+ * List user-supplied external handoffs for one Activity, newest first.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached handoff records.
+ * @throws {ActivityHandoffError} when the Activity does not exist.
+ * @throws {ActivityHandoffStorageError} when handoff storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityHandoff[]
+```
+
+Source: [`packages/home/activity/src/handoffs.ts`](../../packages/home/activity/src/handoffs.ts)
 <!-- END GENERATED cordis-surface -->

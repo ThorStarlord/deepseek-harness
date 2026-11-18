@@ -30,6 +30,10 @@
       "types": "./lib/types/artifacts.d.ts",
       "default": "./lib/types/artifacts.js"
     },
+    "./handoffs": {
+      "types": "./lib/types/handoffs.d.ts",
+      "default": "./lib/types/handoffs.js"
+    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"

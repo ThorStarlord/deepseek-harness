@@ -58,6 +58,7 @@
     "tests/home-activity-create.e2e.ts",
     "tests/home-activity-delegation.e2e.ts",
     "tests/home-activity-artifacts.e2e.ts",
+    "tests/home-activity-handoff.e2e.ts",
     "tests/voice-input.e2e.ts",
     "tests/cot-translation.e2e.ts",
     "tests/cot-translation-paid.e2e.ts",

@@ -26,6 +26,7 @@ import HomeActivityAssociationService, {
   HomeActivityAssociationStorageError,
 } from '@deepseek-ai/dsh-home-activity/associations'
 import HomeActivityArtifactService from '@deepseek-ai/dsh-home-activity/artifacts'
+import HomeActivityHandoffService from '@deepseek-ai/dsh-home-activity/handoffs'
 import * as commandHomeActivity from '../src/index.ts'
 
 const roots: string[] = []
@@ -91,6 +92,7 @@ async function harness() {
   ctx.provide('sessionPersistence', persistence as never)
   await ctx.plugin(HomeActivityAssociationService)
   await ctx.plugin(HomeActivityArtifactService)
+  await ctx.plugin(HomeActivityHandoffService)
   const commandFiber = await ctx.plugin(commandHomeActivity)
   const primary = createAgent(ctx, SessionId(`home-activity-${randomUUID()}`))
   const secondary = createAgent(ctx, SessionId(`home-activity-coordinator-${randomUUID()}`))
@@ -159,7 +161,7 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   const test = await harness()
   expect(commandHomeActivity.inject).toEqual([
     'commands', 'homeActivities', 'homeActivityDelegations', 'subagents',
-    'homeActivityAssociations', 'homeActivityArtifacts', 'workspaceRegistry', 'sessionPersistence',
+    'homeActivityAssociations', 'homeActivityArtifacts', 'homeActivityHandoffs', 'workspaceRegistry', 'sessionPersistence',
   ])
   const descriptor = test.ctx.commands.list(test.agent).find(command =>
     command.definitionId === '@deepseek-ai/dsh-command-home-activity',
@@ -168,6 +170,7 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   expect(descriptor.name).toBe('activity')
   expect(descriptor.description).toContain('DSH-native task')
   expect(descriptor.input?.hint).toContain('artifact add <activity-id> <delegation-id> <workspace-id> <JSON>')
+  expect(descriptor.input?.hint).toContain('handoff add <activity-id> <JSON>')
 
   const create = await run(test, ' create {"name":"Release readiness","objective":"Prepare the next release for review.","boundaries":{"inScope":["Review release notes"],"outOfScope":["Do not publish"]}}')
   expect(create.kind).toBe('success')
@@ -207,6 +210,37 @@ it('rejects invalid JSON, missing scope, malformed ids, and unknown Activities c
   expect(unsupported.kind).toBe('error')
   expect(unsupported.text).toContain('Usage: /activity')
   expect(unsupported.text).toContain('link <activity-id> workspace|session <context-id>')
+})
+
+it('records user-supplied external handoffs for discovery from another Session without starting native work', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'External review', objective: 'Keep the separately obtained review attached.',
+    boundaries: { inScope: ['Save the source reference.'], outOfScope: ['Do not import an external transcript.'] },
+  })
+  const startActivation = vi.spyOn(test.ctx.subagents, 'startActivation')
+  const raw = JSON.stringify({
+    source: 'Claude Code interface',
+    summary: 'The external report recommends reviewing two tests.',
+    sourceReference: 'https://example.invalid/review/42',
+    artifacts: [{ label: 'Review notes', location: 'reports/review.md', revision: 'a'.repeat(40) }],
+  })
+  const recorded = await run(test, ` handoff add ${activity.id} ${raw}`)
+  expect(recorded.kind).toBe('success')
+  expect(recorded.text).toContain('Origin: user-supplied external report')
+  expect(recorded.text).toContain(`Recorded in DSH Session: ${test.session.id}`)
+  expect(recorded.text).toContain('does not import a native Session or confirm external execution')
+  const handoff = test.ctx.homeActivityHandoffs.list(activity.id)[0]
+  if (handoff === undefined) throw new Error('The user-supplied handoff was not saved')
+
+  const reopened = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+  expect(reopened.kind).toBe('success')
+  expect(reopened.text).toContain(`External handoff: Claude Code interface — ${handoff.id}`)
+  expect(reopened.text).toContain(`Recorded in DSH Session: ${test.session.id}`)
+  expect(reopened.text).toContain('User-supplied source reference: https://example.invalid/review/42')
+  expect(reopened.text).toContain('User-supplied artifact reference: Review notes — reports/review.md')
+  expect(reopened.text).toContain('not been independently verified or accepted')
+  expect(startActivation).not.toHaveBeenCalled()
 })
 
 it('links selected Workspaces and Sessions independently and reopens them from another Session', async () => {

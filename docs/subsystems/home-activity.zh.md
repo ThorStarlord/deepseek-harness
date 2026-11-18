@@ -2,7 +2,7 @@
 
 [English](home-activity.md) | 中文
 
-Home Activity 是由用户发起并持久保存的事务，包含稳定身份、名称、目标、描述性范围说明和创建时间。它独立于任何 Session；创建或打开 Activity 不会启动其目标。`home-activity` 包会通过独立的 [StorageDomain](storage.zh.md) 记录保存 Activity、上下文引用、明确请求的委派事实和用户关联的产物指针。Web [`/activity` 命令](../../packages/interaction/command-home-activity/README.zh.md) 可创建、列出、打开、关联上下文、记录产物指针并明确委派有界任务。
+Home Activity 是由用户发起并持久保存的事务，包含稳定身份、名称、目标、描述性范围说明和创建时间。它独立于任何 Session；创建或打开 Activity 不会启动其目标。`home-activity` 包会通过独立的 [StorageDomain](storage.zh.md) 记录保存 Activity、上下文引用、明确请求的委派事实、用户关联的产物指针和用户提供的外部交接。Web [`/activity` 命令](../../packages/interaction/command-home-activity/README.zh.md) 可创建、列出、打开、关联上下文、记录产物指针和外部交接，并明确委派有界任务。
 
 ## 已保存意图
 
@@ -21,6 +21,10 @@ Home Activity 是由用户发起并持久保存的事务，包含稳定身份、
 独立的版本 1 `home_activity_artifacts` 域会保存用户关联的输出指针。每个指针关联到特定 Activity 委派和已关联到该 Activity 的 Workspace，并记录标签、用户提供的来源位置、可选来源修订版和记录时间。缺少修订版时会显示为未知。若委派属于其他 Activity，或 Workspace 尚未关联到该 Activity，服务会拒绝该指针。
 
 产物指针不会修改委派请求、准入或报告。打开 Activity 时会分别显示委派发起 Session 与用户选择的 Workspace，并说明两者与报告输出的关系未经验证；Workspace 与 Session 关联始终相互独立。指针不会暗示共享 checkout、Git 根目录，也不会自动触发跨 Workspace 写入、合并或发布。
+
+## 外部交接
+
+独立的版本 1 `home_activity_handoffs` 域会保存用户提供的来源标签、可选摘要或来源引用、可选产物引用，以及记录交接时所在的 DSH Session。交接至少需要摘要、来源引用或产物引用之一。其他 DSH Session 打开 Activity 时，会将其显示为外部用户输入，而非原生执行历史。此服务不会导入 transcript、同步外部 Session，也不会声称所报告的工作已执行、验证或接受。
 
 ## Cordis API
 
@@ -205,4 +209,32 @@ async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAd
 ```
 
 Source: [`packages/home/activity/src/delegations.ts`](../../packages/home/activity/src/delegations.ts)
+
+<a id="ctxhomeactivityhandoffs--homeactivityhandoffservice"></a>
+
+### `ctx.homeActivityHandoffs` — `HomeActivityHandoffService`
+
+Stores user-supplied external handoffs independently from execution records.
+
+```ts cordis-catalog
+/**
+ * Record the user-supplied summary and references for work performed outside DSH.
+ * @param request - Existing Activity, source, summary or references, and recording Session.
+ * @returns The durable handoff explicitly attributed to user input.
+ * @throws {ActivityHandoffError} when the Activity is missing or the handoff is invalid.
+ * @throws {ActivityHandoffStorageError} when persistence cannot confirm the new record.
+ */
+create(request: CreateActivityHandoffRequest): Promise<ActivityHandoff>
+
+/**
+ * List user-supplied external handoffs for one Activity, newest first.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached handoff records.
+ * @throws {ActivityHandoffError} when the Activity does not exist.
+ * @throws {ActivityHandoffStorageError} when handoff storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityHandoff[]
+```
+
+Source: [`packages/home/activity/src/handoffs.ts`](../../packages/home/activity/src/handoffs.ts)
 <!-- END GENERATED cordis-surface -->
