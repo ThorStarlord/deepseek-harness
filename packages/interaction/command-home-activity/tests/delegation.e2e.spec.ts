@@ -313,7 +313,7 @@ it('runs Codex through the external provider seam and records a one-shot report 
   })
 
   const admitted = await run(ctx, parent, ` delegate ${activity.id} codex Review the release checklist once.`)
-  expect(admitted.kind, JSON.stringify(warnings.mock.calls.map(call => [call[0], String(call[1])]))).toBe('success')
+  expect(admitted.kind, warnings.mock.calls.map(call => String(call[0])).join('\n')).toBe('success')
   expect(admitted.text).toContain('provider codex (native Codex, external one-shot)')
   expect(admitted.text).toContain('Codex provider run id (not a DSH Session or native Codex conversation id): codex-provider-run-1')
   expect(admitted.text).not.toContain('Child Session:')
@@ -378,6 +378,68 @@ it('reports a missing native Codex provider without admitting or retrying work',
   const reopened = await run(ctx, parent, ` open ${activity.id}`)
   expect(reopened.text).toContain('Status: not admitted.')
   expect(reopened.text).toContain('The Codex provider is unavailable; DSH did not attempt activation.')
+})
+
+it('records a Codex provider replacement before dispatch as not admitted', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  let originalStarts = 0
+  let replacementStarts = 0
+  const unregister = ctx.subagents.registerProvider({
+    name: 'codex',
+    capabilities: NO_START_CAPABILITIES,
+    inheritsParentContext: false,
+    async start(): Promise<SubagentRun> {
+      originalStarts += 1
+      throw new Error('provider start must not be called after replacement')
+    },
+  })
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const ensure = ctx.workingDirectory.ensure.bind(ctx.workingDirectory)
+  const directory = vi.spyOn(ctx.workingDirectory, 'ensure').mockImplementation(async (...args) => {
+    entered.resolve(undefined)
+    await release.promise
+    return ensure(...args)
+  })
+  const start = vi.spyOn(ctx.subagents, 'startActivation')
+  const activity = await ctx.homeActivities.create({
+    name: 'Codex provider replacement',
+    objective: 'Report that no task was dispatched when the provider changes.',
+    boundaries: { inScope: ['Record the pre-dispatch failure.'], outOfScope: ['Retry automatically.'] },
+  })
+  const pending = run(ctx, parent, ` delegate ${activity.id} codex Review the release checklist once.`)
+
+  try {
+    await entered.promise
+    unregister()
+    ctx.subagents.registerProvider({
+      name: 'codex',
+      capabilities: NO_START_CAPABILITIES,
+      inheritsParentContext: false,
+      async start(): Promise<SubagentRun> {
+        replacementStarts += 1
+        throw new Error('replacement provider start must not be called')
+      },
+    })
+    release.resolve(undefined)
+    const rejected = await pending
+    expect(rejected.kind).toBe('error')
+    expect(rejected.text).toContain('The Codex provider changed before dispatch, so DSH did not start this task.')
+    expect(rejected.text).not.toContain('do not repeat this task')
+    const saved = ctx.homeActivityDelegations.list(activity.id)[0]
+    expect(saved).toMatchObject({ status: 'not-admitted', request: { provider: 'codex' } })
+    expect(saved?.failure?.message).toContain('DSH did not start this task.')
+    const reopened = await run(ctx, parent, ` open ${activity.id}`)
+    expect(reopened.text).toContain('Status: not admitted.')
+    expect(reopened.text).not.toContain('do not repeat this task')
+    expect(originalStarts).toBe(0)
+    expect(replacementStarts).toBe(0)
+    expect(start).toHaveBeenCalledTimes(1)
+  } finally {
+    release.resolve(undefined)
+    await Promise.allSettled([pending])
+    directory.mockRestore()
+  }
 })
 
 it('keeps a possibly-started Codex rejection unconfirmed and never retries on reopen', async () => {
