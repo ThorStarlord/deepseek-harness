@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import { StorageError } from '@deepseek-ai/dsh-storage'
+import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { SubagentError, type SubagentRunId } from '@deepseek-ai/dsh-subagent'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { ActivityId } from '@deepseek-ai/dsh-home-activity'
@@ -317,6 +318,7 @@ function uncertaintySource(reason: ActivityDelegationUncertainty['reason'] | und
     case 'report-write-failed': return 'Activity persistence'
     case 'startup-result-rejected': return 'activation result observer'
     case 'codex-start-outcome-unknown': return 'native Codex start response'
+    default: return assertNever(reason, 'Unknown Activity delegation uncertainty reason')
   }
 }
 
