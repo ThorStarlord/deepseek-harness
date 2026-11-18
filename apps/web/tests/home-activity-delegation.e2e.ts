@@ -8,6 +8,8 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vit
 import { NO_START_CAPABILITIES } from '@deepseek-ai/dsh-subagent'
 import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
+import { captureActivityDelegationExecutionSelection } from '../../../packages/interaction/command-home-activity/src/execution-selection.ts'
 import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold, watchConsole,
   webSnapshotMode, type WebScaffold,
@@ -24,9 +26,13 @@ const CODEX_PENDING_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-pending.expected.
 const CODEX_REPORTED_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-reported.expected.md')
 const CODEX_UNAVAILABLE_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-unavailable.expected.md')
 const CODEX_UNCONFIRMED_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-unconfirmed.expected.md')
+const SELECTION_CLASSIFICATION_EXPECTED = join(CODEX_EXPECTED_DIR, 'selection-classification.expected.md')
 const SCREENSHOT_DIR = fileURLToPath(new URL('../../../.artifacts/ui-review', import.meta.url))
 const PENDING_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation-pending.png')
+const PENDING_SCROLLED_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation-pending-scrolled.png')
 const REPORTED_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation.png')
+const SELECTION_CLASSIFICATION_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-selection-classification.png')
+const SELECTION_CLASSIFICATION_SCROLLED_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-selection-classification-scrolled.png')
 const MODE = webSnapshotMode()
 const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 
@@ -101,6 +107,9 @@ describe('web e2e: Home Activity delegation', () => {
 
     const admissionText = await page.getByText(/Delegation admitted: provider spawn/u).last().textContent() ?? ''
     expect(admissionText).toContain(`Child Session: ${requestedChildSessionId}`)
+    expect(admissionText).toContain('DSH profile: scaffold; bundle-set classification: unavailable')
+    expect(admissionText).toMatch(/Active Agent preset: standard; composition classification: (?:experimental|unavailable)/u)
+    expect(admissionText).toContain('These classifications do not establish sandbox isolation, permission enforcement, or Skill qualification.')
     expect(admissionText).toContain('The child Session is a separate one-shot DSH activation. Its result is not yet available, verified, or accepted.')
     await submit(`/activity open ${activity.id}`, /Activity: Release readiness/u)
     await page.getByRole('button', { name: /Activity: Release readiness/u }).last().click()
@@ -118,8 +127,23 @@ describe('web e2e: Home Activity delegation', () => {
     await compareOrRefreshGolden(PENDING_EXPECTED, pendingSnapshot, MODE)
     expect(pendingSnapshot).toContain('Delegation state: admitted.')
     expect(pendingSnapshot).toContain('Provider report: not recorded; opening the Activity does not wait for the child Session.')
+    expect(pendingSnapshot).toContain('User disposition: pending; no review has been recorded.')
+    expect(pendingSnapshot).toContain('Verification evidence: none recorded.')
+    expect(pendingSnapshot).toContain('DSH profile: scaffold; bundle-set classification: unavailable')
+    expect(pendingSnapshot).toContain('Active Agent preset: standard; composition classification:')
+    expect(pendingSnapshot).toContain('These classifications do not establish sandbox isolation, permission enforcement, or Skill qualification.')
+    await page.setViewportSize({ width: 1024, height: 700 })
     await mkdir(SCREENSHOT_DIR, { recursive: true })
     await page.screenshot({ path: PENDING_SCREENSHOT, fullPage: true })
+    const pendingDetails = page.locator('pre').filter({ hasText: 'Activity: Release readiness' }).last()
+    const maxScroll = await pendingDetails.evaluate(element => element.scrollHeight - element.clientHeight)
+    expect(maxScroll).toBeGreaterThan(0)
+    await pendingDetails.hover()
+    await page.mouse.wheel(0, maxScroll + 100)
+    await expect.poll(() => pendingDetails.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+    await expect.poll(() => pendingDetails.evaluate(element => element.scrollTop)).toBeGreaterThanOrEqual(maxScroll - 1)
+    expect(await pendingDetails.textContent()).toContain('These classifications do not establish sandbox isolation, permission enforcement, or Skill qualification.')
+    await page.screenshot({ path: PENDING_SCROLLED_SCREENSHOT, fullPage: true })
 
     childResult.resolve({
       stopReason: 'completed',
@@ -144,6 +168,7 @@ describe('web e2e: Home Activity delegation', () => {
     expect(reportedSnapshot).toContain('Delegation state: reported.')
     expect(reportedSnapshot).toContain('Provider report: received; DSH has not independently verified it.')
     expect(reportedSnapshot).toContain('Provider-reported output: The checklist contains two unverified migration steps.')
+    expect(reportedSnapshot).toContain('DSH profile: scaffold; bundle-set classification: unavailable')
     expect(reportedSnapshot).not.toContain('Status: accepted.')
 
     start.mockRestore()
@@ -181,6 +206,7 @@ describe('web e2e: Home Activity delegation', () => {
     await page.getByText(/Delegation admitted: provider codex/u).last().click()
     const codexAdmissionDetails = page.locator('pre').filter({ hasText: 'Codex adapter run id' }).last()
     await codexAdmissionDetails.waitFor({ state: 'visible', timeout: 10_000 })
+    expect(codexAdmission).toContain('Runtime profile and preset: unavailable (the native Codex provider does not expose DSH composition).')
     const codexDelegation = scaffold.ctx.homeActivityDelegations.list(codexActivity.id)[0]
     if (codexDelegation === undefined) throw new Error('The Codex command did not persist its stable delegation identity.')
     const codexDelegationId = codexDelegation.id
@@ -224,6 +250,8 @@ describe('web e2e: Home Activity delegation', () => {
     await page.getByText(/Codex-reported output: The checklist needs one migration step\./u)
       .last().waitFor({ timeout: 10_000 })
     const codexReport = await page.locator('pre').filter({ hasText: 'Codex-reported output:' }).last().textContent() ?? ''
+    expect(codexReport).toContain('Runtime profile and preset: unavailable (the native Codex provider does not expose DSH composition).')
+    expect(codexReport).toContain('Delegation state: reported.')
     expect(codexReport).toContain('Provider report: received; DSH has not independently verified it.')
     expect(codexReport).toContain('User disposition: pending; no review has been recorded.')
     expect(codexReport).toContain('Verification evidence: none recorded.')
@@ -303,6 +331,96 @@ describe('web e2e: Home Activity delegation', () => {
       MODE,
     )
     expect(codexProviderStarts).toBe(1)
+
+    // This keyless renderer fixture records classification metadata without admitting or starting a provider.
+    const classificationActivity = await scaffold.ctx.homeActivities.create({
+      name: 'Selection classification review',
+      objective: 'Show the recorded DSH profile and preset maturity labels.',
+      boundaries: { inScope: ['Inspect the displayed configuration facts.'], outOfScope: ['Start delegated work.'] },
+    })
+    const presets: NonNullable<Parameters<typeof captureActivityDelegationExecutionSelection>[1]> = {
+      composedPreset: () => 'session-query-review',
+      inspectCompositions: () => [{
+        id: 'session-query-review',
+        modules: [{ moduleName: '@deepseek-ai/dsh-tool-session-query', useHostBase: true }],
+        leakedServices: [],
+      }],
+    }
+    const executionSelection = captureActivityDelegationExecutionSelection({
+      name: 'web', startedBundles: PROFILE_TEMPLATES.web!.bundles,
+    }, presets, scaffold.ctx)
+    expect(executionSelection).toMatchObject({
+      profile: { name: 'web', classification: 'stable', classificationSource: 'shipped-profile-template' },
+      preset: {
+        id: 'session-query-review', activeModules: ['@deepseek-ai/dsh-tool-session-query'],
+        classification: 'experimental', classificationSource: 'experimental-package-metadata',
+      },
+    })
+    const classificationRequest = await scaffold.ctx.homeActivityDelegations.createRequest({
+      activityId: classificationActivity.id,
+      provider: 'spawn',
+      task: 'Inspect the displayed configuration facts without starting work.',
+      parentSessionId,
+      executionSelection,
+    })
+    expect(classificationRequest.status).toBe('requested')
+    expect(classificationRequest.admission).toBeUndefined()
+    const activation = vi.spyOn(scaffold.ctx.subagents, 'startActivation')
+    await submit(`/activity open ${classificationActivity.id}`, /Activity: Selection classification review/u)
+    await page.getByRole('button', { name: /Activity: Selection classification review/u }).last().click()
+    const classificationDetails = page.locator('pre').filter({
+      hasText: 'DSH profile: web; bundle-set classification: stable',
+    }).last()
+    await classificationDetails.waitFor({ state: 'visible', timeout: 10_000 })
+    const classificationText = await classificationDetails.textContent() ?? ''
+    expect(classificationText).toContain('Profile bundles used at launch: @deepseek-ai/dsh-base, @deepseek-ai/dsh-web-app')
+    expect(classificationText).toContain('The stable classification matches the exact ordered bundle list of a shipped profile template; profile patches and overlays are not classified.')
+    expect(classificationText).toContain('Active Agent preset: session-query-review; composition classification: experimental')
+    expect(classificationText).toContain('Active preset modules: @deepseek-ai/dsh-tool-session-query')
+    expect(classificationText).toContain('The experimental classification comes from an explicitly experimental active module.')
+    expect(classificationText).toContain('These classifications do not establish sandbox isolation, permission enforcement, or Skill qualification.')
+    expect(classificationText).toContain('Status: request saved; provider admission has not been confirmed.')
+    expect(activation).not.toHaveBeenCalled()
+    await page.setViewportSize({ width: 1024, height: 700 })
+    await mkdir(SCREENSHOT_DIR, { recursive: true })
+    await page.screenshot({ path: SELECTION_CLASSIFICATION_SCREENSHOT, fullPage: true })
+    const classificationMaxScroll = await classificationDetails.evaluate(element => element.scrollHeight - element.clientHeight)
+    expect(classificationMaxScroll).toBeGreaterThan(0)
+    await classificationDetails.hover()
+    await page.mouse.wheel(0, classificationMaxScroll + 100)
+    await expect.poll(() => classificationDetails.evaluate(element => element.scrollTop))
+      .toBeGreaterThanOrEqual(classificationMaxScroll - 1)
+    const caveatInViewport = await classificationDetails.evaluate((element) => {
+      const text = 'These classifications do not establish sandbox isolation, permission enforcement, or Skill qualification.'
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+      let node = walker.nextNode()
+      while (node !== null) {
+        const start = node.textContent?.indexOf(text) ?? -1
+        if (start >= 0) {
+          const range = document.createRange()
+          range.setStart(node, start)
+          range.setEnd(node, start + text.length)
+          const rect = range.getBoundingClientRect()
+          return rect.top >= 0 && rect.bottom <= window.innerHeight
+        }
+        node = walker.nextNode()
+      }
+      return false
+    })
+    expect(caveatInViewport).toBe(true)
+    await mkdir(CODEX_EXPECTED_DIR, { recursive: true })
+    await page.screenshot({ path: SELECTION_CLASSIFICATION_SCROLLED_SCREENSHOT, fullPage: true })
+    const classificationSnapshot = await captureStableAria(
+      page, '[class*="centerCol"] pre:has-text("DSH profile: web; bundle-set classification: stable")',
+      scaffold.workspaceCwd, { replacements: [
+        [classificationActivity.id, '{{activity-id}}'],
+        [parentSessionId, '{{parent-session-id}}'],
+        [classificationRequest.id, '{{delegation-id}}'],
+        [classificationActivity.createdAt, '{{activity-created-at}}'],
+      ] },
+    )
+    await compareOrRefreshGolden(SELECTION_CLASSIFICATION_EXPECTED, classificationSnapshot, MODE)
+    activation.mockRestore()
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 60_000)

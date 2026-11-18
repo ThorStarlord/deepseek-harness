@@ -1,5 +1,5 @@
 ---
-description: "由安装方持有的官方 dsh 组合包列表（随附 profile 模板、默认列表，以及可选、按需和已退役的组合包），以及插件管理器保护和展示的包。"
+description: "由安装方持有的 dsh 组合包列表、明确标记为实验性的包名，以及插件管理器保护和展示的包。"
 kind: "package-library"
 ---
 
@@ -39,6 +39,8 @@ kind: "package-library"
 
 `PROTECTED_PLUGINS` 列出[插件管理器](../../boot/plugin-manager/README.zh.md)因管理功能依赖而保持只读的插件包；包含其中任一插件的组合包是管理组合包。移除其中一项只解除这一条 `management-required` 拒绝；管理器自身的入口、随安装提供的组合包和不可寻址的行仍由各自的规则保护。[Web 插件页](../../client/ui-plugin-manager/README.zh.md)隐藏 `HIDDEN_BUNDLES`，把 `EXTENSION_BUNDLES` 按顺序排在最前，在 profile 启用 `MORE_BUNDLES` 之前不把它们放上主列表，并为 `EXPERIMENTAL_BUNDLES` 显示实验性标记。
 
+`EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS` 列出未使用旧实验性前缀的精确实验性包名。Home Activity 执行选择会用此列表将捕获的 profile 组合包集合和活动 Agent preset 组合分类为实验性。仓库策略测试会确保这些名称与 `scripts/experimental-package-policy.ts` 保持一致；此元数据不表示沙箱隔离或权限。
+
 ### 按需组合包
 
 `ON_DEMAND_BUNDLES` 列出只在请求时安装的官方公开包。`OFFICIAL_ON_DEMAND_CATALOG` 内嵌这些包自己持有的本地化元信息、图标和可选的 `dsh.bundle.platforms` 声明，用于离线发现与安装前的 Host 平台检查；`pnpm gen-official-bundle-catalog` 显式更新生成内容，`verify-official-bundle-catalog` 检查资源完整性与时效；构建使用已提交的目录，不导入提供方代码。目录不包含安装目标：插件管理器根据运行中的版本和安装推导目标，并使用普通的组合包安装器。[产品使用检查](../../../scripts/verify-product-use.ts)针对 Web 组合随附选择和按需选择，不执行提供方。
@@ -59,6 +61,7 @@ kind: "package-library"
 |---|---|
 | [`src/bundles.ts`](src/bundles.ts) | Profile 模板，以及默认、安装持有、已退役、可选和按需组合包列表 |
 | [`src/plugin-manager.ts`](src/plugin-manager.ts) | 受保护的插件包，以及 Web 插件页的隐藏、排序和实验性组合包列表 |
+| [`src/experimental-packages.ts`](src/experimental-packages.ts) | 用于 Activity 选择分类的无前缀实验性包名 |
 | [`src/catalog.generated.ts`](src/catalog.generated.ts) | 按需组合包的生成离线元信息 |
 | [`src/index.ts`](src/index.ts) | 公开导出与目录条目类型 |
 

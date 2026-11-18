@@ -17,9 +17,15 @@ import type {
   ActivityDelegationReport,
   ActivityDelegationUncertainty,
 } from '@deepseek-ai/dsh-home-activity/delegations'
+import { captureActivityDelegationExecutionSelection } from './execution-selection.ts'
 
 const MAX_TASK_BYTES = 4_096
+const MAX_RENDERED_SELECTION_NAMES = 12
 const DELEGATE_USAGE = 'Usage: /activity delegate <activity-id> spawn|codex <one bounded task>'
+type SpawnExecutionSelectionSnapshot = Extract<
+  NonNullable<ActivityDelegation['request']['executionSelection']>,
+  { readonly provider: 'spawn' }
+>
 const taskSchema = z.string().trim().min(1).max(MAX_TASK_BYTES)
   .refine(value => Buffer.byteLength(value, 'utf8') <= MAX_TASK_BYTES, `task must not exceed ${MAX_TASK_BYTES} UTF-8 bytes`)
 
@@ -57,6 +63,13 @@ export async function executeActivityDelegation(
       provider: match[2],
       task: parsedTask.data,
       parentSessionId: invocation.agent.session.id,
+      ...(match[2] === 'spawn' ? {
+        executionSelection: captureActivityDelegationExecutionSelection(
+          ctx.get('profileContext'),
+          ctx.get('agentPresets'),
+          invocation.agent.ctx,
+        ),
+      } : {}),
     })
   } catch (error: unknown) {
     if (error instanceof ActivityDelegationError) return { kind: 'error', text: error.message }
@@ -199,6 +212,7 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
     `Delegation ${delegation.id}: provider ${delegation.request.provider}${isCodex ? ' (native Codex, external one-shot)' : ''}`,
     `Requested task: ${delegation.request.task}`,
     `Requesting Session: ${delegation.request.parentSessionId}`,
+    ...renderExecutionSelection(delegation.request.provider, delegation.request.executionSelection),
     isCodex
       ? 'Activity scope is descriptive; native Codex configuration and its configured permission mode govern this execution.'
       : 'Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.',
@@ -259,6 +273,80 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
       : 'Provider report: not recorded; opening the Activity does not wait for the child Session.')
   }
   return lines
+}
+
+/** Render saved DSH profile and preset facts without implying permission or capability guarantees.
+ * @param provider - Provider that owns the delegation request.
+ * @param selection - Captured runtime selection; absent on a legacy DSH record or a Codex request.
+ * @returns Profile and preset lines displayed with the delegation lifecycle facts.
+ */
+function renderExecutionSelection(
+  provider: ActivityDelegation['request']['provider'],
+  selection: ActivityDelegation['request']['executionSelection'],
+): readonly string[] {
+  if (provider === 'codex' || selection?.provider === 'codex') {
+    return ['Runtime profile and preset: unavailable (the native Codex provider does not expose DSH composition).']
+  }
+  if (selection === undefined) return ['Runtime profile and preset: unavailable (record predates profile and preset capture).']
+  const lines = [...renderProfileSelection(selection.profile), ...renderPresetSelection(selection.preset)]
+  lines.push('These classifications do not establish sandbox isolation, permission enforcement, or Skill qualification.')
+  return lines
+}
+
+function renderProfileSelection(
+  profile: SpawnExecutionSelectionSnapshot['profile'],
+): string[] {
+  if (profile.status === 'unavailable') return [`DSH profile: unavailable (${profileUnavailableReason(profile.reason)}).`]
+  const lines = [
+    `DSH profile: ${profile.name}; bundle-set classification: ${profile.classification}`,
+    profile.startedBundles === null
+      ? 'Profile bundles used at launch: unavailable (the bundle list exceeded the persistence limit).'
+      : `Profile bundles used at launch: ${renderSelectionNames(profile.startedBundles)}`,
+  ]
+  lines.push(profile.classificationSource === 'shipped-profile-template'
+    ? 'The stable classification matches the exact ordered bundle list of a shipped profile template; profile patches and overlays are not classified.'
+    : profile.classificationSource === 'experimental-package-metadata'
+      ? 'The experimental classification comes from an explicitly experimental bundle in the launch list.'
+      : 'The product has no reliable stable or experimental classification for this profile bundle list.')
+  return lines
+}
+
+function renderPresetSelection(
+  preset: SpawnExecutionSelectionSnapshot['preset'],
+): string[] {
+  if (preset.status === 'none') return ['Active Agent preset: none.']
+  if (preset.status === 'unavailable') return [`Active Agent preset: unavailable (${presetUnavailableReason(preset.reason)}).`]
+  const lines = [`Active Agent preset: ${preset.id}; composition classification: ${preset.classification}`]
+  lines.push(preset.activeModules === null
+    ? 'Active preset modules: unavailable.'
+    : `Active preset modules: ${renderSelectionNames(preset.activeModules)}`)
+  lines.push(preset.classificationSource === 'experimental-package-metadata'
+    ? 'The experimental classification comes from an explicitly experimental active module.'
+    : 'The product supplied no stable classification for this preset composition.')
+  return lines
+}
+
+function renderSelectionNames(names: readonly string[]): string {
+  if (names.length === 0) return '(none)'
+  const visible = names.slice(0, MAX_RENDERED_SELECTION_NAMES).join(', ')
+  const omitted = names.length - MAX_RENDERED_SELECTION_NAMES
+  return omitted > 0 ? `${visible} (${omitted} more recorded)` : visible
+}
+
+function profileUnavailableReason(reason: 'runtime-profile-unavailable' | 'profile-identity-exceeds-persistence-limit'): string {
+  return reason === 'runtime-profile-unavailable'
+    ? 'the runtime did not provide profile metadata'
+    : 'the profile identity exceeded the persistence limit'
+}
+
+function presetUnavailableReason(
+  reason: 'agent-preset-registry-unavailable' | 'preset-identity-exceeds-persistence-limit' | 'preset-module-list-exceeds-persistence-limit',
+): string {
+  switch (reason) {
+    case 'agent-preset-registry-unavailable': return 'the Agent preset registry is unavailable'
+    case 'preset-identity-exceeds-persistence-limit': return 'the preset identity exceeded the persistence limit'
+    case 'preset-module-list-exceeds-persistence-limit': return 'the module list exceeded the persistence limit'
+  }
 }
 
 /**
@@ -356,6 +444,7 @@ function renderAdmission(
     `Delegation ${unconfirmed ? 'admitted but not durably confirmed' : 'admitted'}: provider ${request.request.provider}${admission.provider === 'codex' ? ' (native Codex, external one-shot)' : ''}`,
     `Requested task: ${request.request.task}`,
     `Requesting Session: ${request.request.parentSessionId}`,
+    ...renderExecutionSelection(request.request.provider, request.request.executionSelection),
     admission.provider === 'codex'
       ? 'Activity scope is descriptive; native Codex configuration and its configured permission mode govern this execution.'
       : 'Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.',

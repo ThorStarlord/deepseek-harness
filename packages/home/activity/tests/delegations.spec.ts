@@ -16,7 +16,7 @@ import Delegations, {
   activityDelegationId,
 } from '../src/delegations.ts'
 import type { ActivityDelegation } from '../src/delegations.ts'
-import { activityDelegationRecordSchema } from '../src/delegation-spec.ts'
+import { activityDelegationRecordSchema, homeActivityDelegationDomain } from '../src/delegation-spec.ts'
 import type { CreateActivityRequest } from '../src/index.ts'
 
 const roots: string[] = []
@@ -82,6 +82,16 @@ const version2DelegationDomain = StorageDomain.defineDomain({
     ),
   },
 })
+const version3DelegationDomain = StorageDomain.defineDomain({
+  name: 'home_activity_delegations',
+  version: 3,
+  compatibleVersions: [1, 2],
+  tables: {
+    delegations: StorageDomain.domainTable<string, z.infer<typeof activityDelegationRecordSchema>>(
+      activityDelegationRecordSchema,
+    ),
+  },
+})
 
 async function open(root: string) {
   const ctx = new Context(); contexts.push(ctx)
@@ -139,6 +149,68 @@ it('stores request, admission, and provider report as separately attributed fact
   expect(ctx.homeActivityDelegations.list(activity.id)).toEqual([reported])
   expect(reported.status).not.toBe('accepted')
   expect(reported.report?.source).toBe('subagent-activation-result')
+})
+
+it('snapshots spawn profile and preset selection before provider startup and retains it after reopening', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-selection-')); roots.push(root)
+  const first = await open(root)
+  const activity = await first.homeActivities.create(request)
+  const startedBundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']
+  const activeModules = ['@deepseek-ai/dsh-experimental-terminal-bundle']
+  const saved = await first.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'spawn',
+    task: 'Inspect one test output.',
+    parentSessionId: SessionId('parent-session'),
+    executionSelection: {
+      provider: 'spawn',
+      profile: {
+        status: 'available', name: 'web', startedBundles,
+        classification: 'stable', classificationSource: 'shipped-profile-template',
+      },
+      preset: {
+        status: 'selected', id: 'review', activeModules,
+        classification: 'experimental', classificationSource: 'experimental-package-metadata',
+      },
+    },
+  })
+
+  startedBundles.push('@deepseek-ai/dsh-experimental-terminal-bundle')
+  activeModules.splice(0, 1, '@deepseek-ai/dsh-agent')
+  expect(saved.request.executionSelection).toMatchObject({
+    profile: { startedBundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] },
+    preset: { activeModules: ['@deepseek-ai/dsh-experimental-terminal-bundle'] },
+  })
+  await first.fiber.dispose()
+
+  const reopened = await open(root)
+  expect(reopened.homeActivityDelegations.get(saved.id)?.request.executionSelection).toMatchObject({
+    provider: 'spawn',
+    profile: {
+      status: 'available', name: 'web', startedBundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+      classification: 'stable', classificationSource: 'shipped-profile-template',
+    },
+    preset: {
+      status: 'selected', id: 'review', activeModules: ['@deepseek-ai/dsh-experimental-terminal-bundle'],
+      classification: 'experimental', classificationSource: 'experimental-package-metadata',
+    },
+  })
+})
+
+it('records Codex profile and preset selection as unavailable because the provider owns its composition', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-codex-selection-')); roots.push(root)
+  const ctx = await open(root)
+  const activity = await ctx.homeActivities.create(request)
+  const saved = await ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'codex',
+    task: 'Inspect one test output.',
+    parentSessionId: SessionId('parent-session'),
+  })
+
+  expect(saved.request.executionSelection).toEqual({
+    provider: 'codex', unavailableReason: 'external-provider-does-not-expose-dsh-composition',
+  })
 })
 
 it('persists Codex one-shot admission without inventing a DSH Session and reopens it', async () => {
@@ -276,7 +348,8 @@ it('preserves an existing Codex admission when marking it unconfirmed without a 
     .toMatchObject({ status: 'unconfirmed', admission })
 })
 
-it('reads v1 spawn data in v3 and refuses v3 data with a v2 reader', async () => {
+it('reads v1 spawn data in v4 and refuses v4 data with a v2 reader', async () => {
+  expect(homeActivityDelegationDomain).toMatchObject({ version: 4, compatibleVersions: [1, 2, 3] })
   const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-delegation-v2-')); roots.push(root)
   const legacy = new Context(); contexts.push(legacy)
   await legacy.plugin(Storage)
@@ -341,7 +414,43 @@ it('reads v1 spawn data in v3 and refuses v3 data with a v2 reader', async () =>
     .rejects.toMatchObject({ code: 'version-mismatch' })
 })
 
-it('reads a strict v2 Codex record in v3 without requiring a write', async () => {
+it('reads a version-3 row and leaves its profile and preset snapshot absent', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-delegation-v3-read-')); roots.push(root)
+  const writer = new Context(); contexts.push(writer)
+  await writer.plugin(Storage)
+  await writer.plugin(StorageJson, { root })
+  await writer.plugin(StorageDomain, { backend: 'json' })
+  await writer.plugin(HomeActivityService)
+  const activity = await writer.homeActivities.create(request)
+  const previous = await writer.storageDomain.open(version3DelegationDomain)
+  const id = activityDelegationId('00000000-0000-4000-8000-000000000097')
+  await previous.table('delegations').put(id, {
+    id,
+    activityId: activity.id,
+    request: {
+      provider: 'spawn',
+      task: 'Review the existing checklist.',
+      parentSessionId: SessionId('parent-session'),
+      requestedChildSessionId: SessionId('child-session'),
+      requestedAt: '2026-11-15T12:00:00.000Z',
+      source: 'user-command',
+    },
+    status: 'requested',
+  })
+  await previous.close()
+  await writer.fiber.dispose()
+
+  const current = await open(root)
+  const recovered = current.homeActivityDelegations.get(id)
+  expect(recovered).toMatchObject({
+    status: 'unconfirmed',
+    request: { provider: 'spawn', requestedChildSessionId: 'child-session' },
+    uncertainty: { reason: 'restart-before-admission-recorded' },
+  })
+  expect(recovered?.request.executionSelection).toBeUndefined()
+})
+
+it('reads a strict v2 Codex record in v4 without requiring a write', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-delegation-v2-read-')); roots.push(root)
   const writer = new Context(); contexts.push(writer)
   await writer.plugin(Storage)
@@ -596,6 +705,44 @@ it('validates each persisted lifecycle state and rejects mismatched facts', () =
     status: 'reported',
     admission,
     report: { ...report, diagnostic: '€'.repeat(1_400) },
+  }).success).toBe(false)
+})
+
+it('rejects selection whose provider or classification source does not match its facts', () => {
+  const facts = {
+    id: '00000000-0000-4000-8000-000000000001',
+    activityId: '00000000-0000-4000-8000-000000000002',
+    status: 'requested',
+  } as const
+  const spawnRequest = {
+    provider: 'spawn',
+    task: 'Inspect the release checklist.',
+    parentSessionId: 'parent-session',
+    requestedChildSessionId: 'child-session',
+    requestedAt: '2026-11-15T12:00:00.000Z',
+    source: 'user-command',
+  } as const
+  const profile = {
+    status: 'available',
+    name: 'web',
+    startedBundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+    classification: 'stable',
+    classificationSource: 'experimental-package-metadata',
+  } as const
+  const preset = { status: 'none' } as const
+
+  expect(activityDelegationRecordSchema.safeParse({
+    ...facts,
+    request: { ...spawnRequest, executionSelection: { provider: 'spawn', profile, preset } },
+  }).success).toBe(false)
+  expect(activityDelegationRecordSchema.safeParse({
+    ...facts,
+    request: {
+      ...spawnRequest,
+      executionSelection: {
+        provider: 'codex', unavailableReason: 'external-provider-does-not-expose-dsh-composition',
+      },
+    },
   }).success).toBe(false)
 })
 

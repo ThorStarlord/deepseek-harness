@@ -8,8 +8,10 @@ import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { ActivityDelegationAdmission, ActivityDelegationReport } from './delegation-types.ts'
 import type {
   ActivityDelegation,
+  ActivityDelegationExecutionSelectionSnapshot,
   ActivityDelegationId,
   ActivityDelegationUncertainty,
+  DshActivityDelegationExecutionSelectionSnapshot,
   CreateActivityDelegationRequest,
 } from './delegation-types.ts'
 import { activityDelegationRecordSchema, homeActivityDelegationDomain } from './delegation-spec.ts'
@@ -17,12 +19,14 @@ import { activityDelegationRecordSchema, homeActivityDelegationDomain } from './
 export type {
   ActivityDelegation,
   ActivityDelegationAdmission,
+  ActivityDelegationExecutionSelectionSnapshot,
   ActivityDelegationFailure,
   ActivityDelegationId,
   ActivityDelegationReport,
   ActivityDelegationRequest,
   ActivityDelegationStatus,
   ActivityDelegationUncertainty,
+  DshActivityDelegationExecutionSelectionSnapshot,
   CreateActivityDelegationRequest,
 } from './delegation-types.ts'
 export { activityDelegationRecordSchema, homeActivityDelegationDomain } from './delegation-spec.ts'
@@ -90,6 +94,9 @@ export class HomeActivityDelegationService extends Service {
           : {}),
         requestedAt: new Date().toISOString(),
         source: 'user-command',
+        executionSelection: request.provider === 'codex'
+          ? unavailableCodexSelectionSnapshot()
+          : request.executionSelection ?? unavailableDshSelectionSnapshot(),
       },
       status: 'requested',
     })
@@ -270,7 +277,12 @@ export function activityDelegationId(value: string): ActivityDelegationId {
 function freezeDelegation(record: ActivityDelegation): ActivityDelegation {
   return Object.freeze({
     ...record,
-    request: Object.freeze({ ...record.request }),
+    request: Object.freeze({
+      ...record.request,
+      ...(record.request.executionSelection === undefined ? {} : {
+        executionSelection: freezeExecutionSelectionSnapshot(record.request.executionSelection),
+      }),
+    }),
     ...(record.admission === undefined ? {} : { admission: Object.freeze({ ...record.admission }) }),
     ...(record.report === undefined ? {} : {
       report: Object.freeze({ ...record.report, nonTextBlockTypes: Object.freeze([...record.report.nonTextBlockTypes]) }),
@@ -278,6 +290,42 @@ function freezeDelegation(record: ActivityDelegation): ActivityDelegation {
     ...(record.failure === undefined ? {} : { failure: Object.freeze({ ...record.failure }) }),
     ...(record.uncertainty === undefined ? {} : { uncertainty: Object.freeze({ ...record.uncertainty }) }),
   })
+}
+
+/** Copy a provider-specific launch snapshot so callers cannot mutate persisted selection. */
+function freezeExecutionSelectionSnapshot(
+  selection: ActivityDelegationExecutionSelectionSnapshot,
+): ActivityDelegationExecutionSelectionSnapshot {
+  if (selection.provider === 'codex') return Object.freeze({ ...selection })
+  return Object.freeze({
+    ...selection,
+    profile: Object.freeze({
+      ...selection.profile,
+      ...(selection.profile.status === 'available' && selection.profile.startedBundles !== null
+        ? { startedBundles: Object.freeze([...selection.profile.startedBundles]) }
+        : {}),
+    }),
+    preset: Object.freeze({
+      ...selection.preset,
+      ...(selection.preset.status === 'selected' && selection.preset.activeModules !== null
+        ? { activeModules: Object.freeze([...selection.preset.activeModules]) }
+        : {}),
+    }),
+  })
+}
+
+/** Record unavailable DSH configuration when a direct caller has no launcher context. */
+function unavailableDshSelectionSnapshot(): DshActivityDelegationExecutionSelectionSnapshot {
+  return {
+    provider: 'spawn',
+    profile: { status: 'unavailable', reason: 'runtime-profile-unavailable' },
+    preset: { status: 'unavailable', reason: 'agent-preset-registry-unavailable' },
+  }
+}
+
+/** Record that the external Codex provider does not expose its composition to DSH. */
+function unavailableCodexSelectionSnapshot(): ActivityDelegationExecutionSelectionSnapshot {
+  return { provider: 'codex', unavailableReason: 'external-provider-does-not-expose-dsh-composition' }
 }
 
 /** Describe a rejected lifecycle transition without exposing persistence internals. */
