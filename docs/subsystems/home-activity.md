@@ -2,7 +2,7 @@
 
 English | [中文](home-activity.zh.md)
 
-A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope statements, and creation time. It is independent of any Session; creating or opening one does not start its objective. The `home-activity` package stores Activity records, context references, explicitly requested delegation facts, and user-linked artifact pointers in separate [StorageDomain](storage.md) records. The Web [`/activity` command](../../packages/interaction/command-home-activity/README.md) creates, lists, opens, associates contexts, records artifact pointers, and explicitly delegates a bounded task.
+A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope statements, and creation time. It is independent of any Session; creating or opening one does not start its objective. The `home-activity` package stores Activity records, context references, explicitly requested delegation facts, user-linked artifact pointers, and separate user dispositions with attributed verification evidence in [StorageDomain](storage.md) records. The Web [`/activity` command](../../packages/interaction/command-home-activity/README.md) creates, lists, opens, associates contexts, records pointers and reviews, and explicitly delegates a bounded task.
 
 ## Saved intent
 
@@ -21,6 +21,12 @@ Opening an Activity resolves each id against its owning registry. Removed contex
 The separate version-1 `home_activity_artifacts` domain stores user-linked pointers to outputs associated with a specific Activity delegation and a Workspace already linked to that Activity. Each pointer records a label, user-supplied source location, optional source revision, and recording time; missing revisions are displayed as unknown. The service rejects pointers whose delegation belongs to another Activity or whose Workspace is not linked to the Activity.
 
 Artifact pointers do not alter delegation requests, admissions, or reports. Opening an Activity displays the delegation's requesting Session and user-selected Workspace separately, and states that their relationship to the reported output is unverified. Workspace and Session links remain independent; the pointer does not imply one shared checkout, a Git root, or automatic cross-Workspace writes, merges, or releases.
+
+## Outcome reviews
+
+The separate version-1 `home_activity_reviews` domain stores one user review per delegation, linked to its owning Activity. No review row means the user disposition is pending. The service accepts a review only after the delegation has a saved provider report. A user can set the current disposition to pending, accepted, declined, or requires investigation, and append separately attributed evidence that records a user-entered source and reported result. Opening an Activity shows the disposition and each evidence entry separately from its provider report.
+
+Evidence and its result are user-supplied and are not checked by DSH. Conflicting entries remain visible rather than being collapsed into a verification status. Updating a disposition retains the evidence and does not modify delegation requests, admissions, or reports. Reviewing an Activity never starts or retries delegation.
 
 ## Cordis API
 
@@ -205,4 +211,42 @@ async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAd
 ```
 
 Source: [`packages/home/activity/src/delegations.ts`](../../packages/home/activity/src/delegations.ts)
+
+<a id="ctxhomeactivityreviews--homeactivityreviewservice"></a>
+
+### `ctx.homeActivityReviews` — `HomeActivityReviewService`
+
+User dispositions and verification evidence stored independently from delegation reports.
+
+```ts cordis-catalog
+/**
+ * Record a user disposition and optionally append one user-supplied evidence entry.
+ * @param request - Activity, owned delegation, disposition, and optional evidence.
+ * @returns The durable review, without changing the delegation report.
+ * @throws {ActivityReviewError} when an identity is invalid, no report is saved, or the evidence limit is reached.
+ * @throws {ActivityReviewStorageError} when review persistence fails.
+ */
+record(request: RecordActivityReviewRequest): Promise<ActivityReview>
+
+/**
+ * Read a review for one delegation, returning no row when its disposition is still pending.
+ * @param activityId - Saved Activity that owns the delegation.
+ * @param delegationId - Delegation identity selected for review.
+ * @returns The saved review, or `undefined` when the user has not recorded one.
+ * @throws {ActivityReviewError} when either identity is unavailable or mismatched.
+ * @throws {ActivityReviewStorageError} when review storage cannot be read.
+ */
+get(activityId: ActivityId, delegationId: ActivityDelegationId): ActivityReview | undefined
+
+/**
+ * List user reviews belonging to one saved Activity.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached reviews, newest update first.
+ * @throws {ActivityReviewError} when the Activity does not exist.
+ * @throws {ActivityReviewStorageError} when review storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityReview[]
+```
+
+Source: [`packages/home/activity/src/reviews.ts`](../../packages/home/activity/src/reviews.ts)
 <!-- END GENERATED cordis-surface -->

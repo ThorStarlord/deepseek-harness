@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import { StorageError } from '@deepseek-ai/dsh-storage'
-import type { SubagentRunId } from '@deepseek-ai/dsh-subagent'
+import { SubagentError, type SubagentRunId } from '@deepseek-ai/dsh-subagent'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { ActivityId } from '@deepseek-ai/dsh-home-activity'
 import { ActivityDelegationError } from '@deepseek-ai/dsh-home-activity/delegations'
@@ -116,6 +116,25 @@ export async function executeActivityDelegation(
     })
   } catch (error: unknown) {
     stopObservingStart()
+    if (error instanceof SubagentError && (error.code === 'PROVIDER_CHANGED' || error.code === 'NOT_DISPATCHED')) {
+      const providerLabel = request.request.provider === 'spawn'
+        ? 'DSH spawn'
+        : 'Codex'
+      const message = error.code === 'PROVIDER_CHANGED'
+        ? `The ${providerLabel} provider changed before dispatch, so DSH did not start this task. Check the provider, then explicitly submit a new request if you still want it run. Opening the Activity will not retry it.`
+        : `DSH could not complete startup preparation and did not call the ${providerLabel} provider. Check the DSH runtime, current Session, Activity, and provider, then explicitly submit a new request if you still want it run. Opening the Activity will not retry it.`
+      try {
+        await ctx.homeActivityDelegations.markNotAdmitted(request.id, message)
+      } catch (recordError: unknown) {
+        ctx.logger.warn('command-home-activity: pre-dispatch outcome could not be saved: %o', recordError)
+        return {
+          kind: 'error',
+          text: `${message} Saving this Activity status failed; check the Activity before submitting another request.`,
+        }
+      }
+      ctx.logger.warn('command-home-activity: activation was not dispatched: %o', error)
+      return { kind: 'error', text: `${message} Request ID: ${request.id}` }
+    }
     if (request.request.provider === 'codex') {
       const message = 'DSH could not confirm whether Codex started. It may have started; do not repeat this task unless you have independently confirmed it did not start. Reopening the Activity will not retry it.'
       try {
@@ -137,9 +156,7 @@ export async function executeActivityDelegation(
     try {
       await ctx.homeActivityDelegations.markNotAdmitted(
         request.id,
-        request.request.provider === 'spawn'
-          ? 'The DSH provider did not admit this task; no activation was published.'
-          : 'The codex provider did not admit this task; no DSH activation was published.',
+        'The DSH provider did not admit this task; no activation was published.',
       )
     } catch (recordError: unknown) {
       ctx.logger.warn('command-home-activity: rejected delegation state could not be saved: %o', recordError)
@@ -151,7 +168,7 @@ export async function executeActivityDelegation(
     ctx.logger.warn('command-home-activity: subagent activation was not admitted: %o', error)
     return {
       kind: 'error',
-      text: `${request.request.provider === 'spawn' ? 'The DSH provider did not admit this task; no activation was published.' : 'The codex provider did not admit this task; no DSH activation was published.'} Request ID: ${request.id}`,
+      text: `The DSH provider did not admit this task; no activation was published. Request ID: ${request.id}`,
     }
   }
   stopObservingStart()
@@ -229,19 +246,20 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
         : 'Status: DSH admitted this child; its provider report is unconfirmed.')
       lines.push(...renderAdmissionReferences(delegation.admission))
       lines.push(isCodex
-        ? 'This Codex run is one-shot. Activity does not inspect its transcript, resume it, or roll back its effects; its report is not verified or accepted.'
-        : 'Inspect the child Session summary before retrying. The provider report is not verified or accepted.')
+        ? 'This Codex run is one-shot. Activity does not inspect its transcript, resume it, or roll back its effects; its report is unconfirmed, and user disposition is shown separately.'
+        : 'Inspect the child Session summary before retrying. The provider report is unconfirmed; DSH has not independently verified it, and user disposition is shown separately.')
     }
     lines.push(`Reason: ${uncertaintyMessage(delegation.uncertainty?.reason)}`)
     return lines
   }
-  lines.push(`Status: ${delegation.status === 'reported' ? `${isCodex ? 'Codex' : 'provider'} reported` : 'admitted'}; not verified or accepted.`)
+  lines.push(`Delegation state: ${delegation.status}.`)
   if (delegation.admission === undefined) {
     lines.push('Activation reference is unavailable.')
   } else {
     lines.push(...renderAdmissionReferences(delegation.admission))
   }
   if (delegation.report !== undefined) {
+    lines.push('Provider report: received; DSH has not independently verified it.')
     lines.push(`Provider stop reason: ${delegation.report.stopReason}`)
     lines.push(`${isCodex ? 'Codex-reported' : 'Provider-reported'} output: ${delegation.report.outputText || '(no text output)'}`)
     if (delegation.report.nonTextBlockTypes.length > 0) {
@@ -252,7 +270,7 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
   } else {
     lines.push(isCodex
       ? 'Codex outcome is pending. This one-shot execution has no Activity continuation, resume, transcript inspection, or rollback; opening the Activity does not wait or start another run.'
-      : 'Provider outcome is pending; opening the Activity does not wait for the child Session.')
+      : 'Provider report: not recorded; opening the Activity does not wait for the child Session.')
   }
   return lines
 }
@@ -393,7 +411,7 @@ function observeActivation(
 /** Format accepted child Session and activation references. */
 function renderAdmissionReferences(admission: ActivityDelegationAdmission): string[] {
   if (admission.provider === 'codex') {
-    return [`Codex provider run id (not a DSH Session or native Codex conversation id): ${admission.providerRunId}`]
+    return [`Codex adapter run id (not a DSH Session or native Codex conversation id): ${admission.providerRunId}`]
   }
   return [
     `Child Session: ${admission.childSessionId}`,
