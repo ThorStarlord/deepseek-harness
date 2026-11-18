@@ -195,7 +195,7 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
     `Delegation ${delegation.id}: provider ${delegation.request.provider}${isCodex ? ' (native Codex, external one-shot)' : ''}`,
     `Requested task: ${delegation.request.task}`,
     `Requesting Session: ${delegation.request.parentSessionId}`,
-    ...renderExecutionSelection(delegation.request.executionSelection),
+    ...renderExecutionSelection(delegation.request.provider, delegation.request.executionSelection),
     isCodex
       ? 'Activity scope is descriptive; native Codex configuration and its configured permission mode govern this execution.'
       : 'Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.',
@@ -258,16 +258,18 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
 }
 
 /** Render saved DSH profile and preset facts without implying permission or capability guarantees.
- * @param selection - Captured runtime selection, or absent on a legacy record.
+ * @param provider - Provider that owns the delegation request.
+ * @param selection - Captured runtime selection; absent on a legacy DSH record or a Codex request.
  * @returns Profile and preset lines displayed with the delegation lifecycle facts.
  */
 function renderExecutionSelection(
+  provider: ActivityDelegation['request']['provider'],
   selection: ActivityDelegation['request']['executionSelection'],
 ): readonly string[] {
-  if (selection === undefined) return ['Runtime profile and preset: unavailable (record predates profile and preset capture).']
-  if (selection.provider === 'codex') {
+  if (provider === 'codex' || selection?.provider === 'codex') {
     return ['Runtime profile and preset: unavailable (the native Codex provider does not expose DSH composition).']
   }
+  if (selection === undefined) return ['Runtime profile and preset: unavailable (record predates profile and preset capture).']
   const lines = [...renderProfileSelection(selection.profile), ...renderPresetSelection(selection.preset)]
   lines.push('These classifications do not establish sandbox isolation, permission enforcement, or Skill qualification.')
   return lines
@@ -424,7 +426,7 @@ function renderAdmission(
     `Delegation ${unconfirmed ? 'admitted but not durably confirmed' : 'admitted'}: provider ${request.request.provider}${admission.provider === 'codex' ? ' (native Codex, external one-shot)' : ''}`,
     `Requested task: ${request.request.task}`,
     `Requesting Session: ${request.request.parentSessionId}`,
-    ...renderExecutionSelection(request.request.executionSelection),
+    ...renderExecutionSelection(request.request.provider, request.request.executionSelection),
     admission.provider === 'codex'
       ? 'Activity scope is descriptive; native Codex configuration and its configured permission mode govern this execution.'
       : 'Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.',
