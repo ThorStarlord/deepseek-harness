@@ -65,6 +65,8 @@ export function apply(ctx: Context): void {
 }
 
 async function execute(ctx: Context, invocation: CommandInvocation): Promise<CommandResult> {
+  const annotationResult = await executeActivityAnnotationCommand(ctx, invocation)
+  if (annotationResult !== undefined) return annotationResult
   const associationResult = await executeAssociationCommand(ctx, invocation)
   if (associationResult !== undefined) return associationResult
   const reviewResult = await executeActivityReviewCommand(ctx, invocation)
@@ -128,6 +130,8 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
         'Boundaries (descriptive only; runtime permissions are unchanged):',
         ...activity.boundaries.inScope.map(item => `In scope: ${item}`),
         ...activity.boundaries.outOfScope.map(item => `Out of scope: ${item}`),
+        '',
+        ...renderActivityAnnotations(ctx, activity.id),
         '',
         'Delegations:',
         ...(delegations.length === 0

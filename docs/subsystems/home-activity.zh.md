@@ -72,6 +72,34 @@ get(id: ActivityId): Activity | undefined
 
 Source: [`packages/home/activity/src/index.ts`](../../packages/home/activity/src/index.ts)
 
+<a id="ctxhomeactivityannotations--homeactivityannotationservice"></a>
+
+### `ctx.homeActivityAnnotations` — `HomeActivityAnnotationService`
+
+Stores append-only user corrections independently from Activity and execution records.
+
+```ts cordis-catalog
+/**
+ * Append a new current-note revision while retaining each earlier user annotation.
+ * @param request - Saved Activity identity and replacement note text.
+ * @returns The saved revision with its predecessor and source attribution.
+ * @throws {ActivityAnnotationError} when the Activity is unknown, the note is invalid, or history is full.
+ * @throws {ActivityAnnotationStorageError} when annotation persistence fails.
+ */
+correct(request: CorrectActivityAnnotationRequest): Promise<ActivityAnnotation>
+
+/**
+ * List user-authored annotation revisions in original order.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached revisions for the Activity, oldest first.
+ * @throws {ActivityAnnotationError} when the Activity does not exist.
+ * @throws {ActivityAnnotationStorageError} when annotation storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityAnnotation[]
+```
+
+Source: [`packages/home/activity/src/annotations.ts`](../../packages/home/activity/src/annotations.ts)
+
 <a id="ctxhomeactivityartifacts--homeactivityartifactservice"></a>
 
 ### `ctx.homeActivityArtifacts` — `HomeActivityArtifactService`

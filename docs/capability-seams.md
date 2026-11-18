@@ -395,6 +395,7 @@ flowchart LR
   pkg_headless --> svc_headlessStartup
   pkg_hmr --> svc_hmr
   pkg_home_activity --> svc_homeActivities
+  pkg_home_activity --> svc_homeActivityAnnotations
   pkg_home_activity --> svc_homeActivityArtifacts
   pkg_home_activity --> svc_homeActivityAssociations
   pkg_home_activity --> svc_homeActivityDelegations
@@ -541,6 +542,7 @@ flowchart LR
   svc_headlessStartup --> pkg_headless
   svc_hmr --> pkg_app_boot
   svc_homeActivities --> pkg_command_home_activity
+  svc_homeActivityAnnotations --> pkg_command_home_activity
   svc_homeActivityArtifacts --> pkg_command_home_activity
   svc_homeActivityAssociations --> pkg_command_home_activity
   svc_homeActivityDelegations --> pkg_command_home_activity

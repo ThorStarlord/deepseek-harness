@@ -25,7 +25,7 @@ Use /activity in the Web composer or SDK session.run() to create, list, and reop
 <a id="use-this-package"></a>
 ## Use this package
 
-The Web and SDK profiles mount the command with the command registry, durable Activity and association services, Workspace registry, and Session persistence. Delegation also requires the Activity delegation and subagent services plus a supported DSH-native provider.
+The Web and SDK profiles mount the command with the command registry, durable Activity, association, and annotation services, Workspace registry, and Session persistence. Delegation also requires the Activity delegation and subagent services plus a supported DSH-native provider.
 
 ### When to choose it
 

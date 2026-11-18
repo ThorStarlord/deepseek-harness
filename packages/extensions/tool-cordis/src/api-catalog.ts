@@ -1756,6 +1756,27 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'homeActivityAnnotations',
+    summary: 'Stores append-only user corrections independently from Activity and execution records.',
+    description: 'Stores append-only user corrections independently from Activity and execution records.',
+    methods: [
+      {
+        signature: 'correct(request: CorrectActivityAnnotationRequest): Promise<ActivityAnnotation>',
+        description: 'Append a new current-note revision while retaining each earlier user annotation.',
+        parameters: [{ name: 'request', description: 'Saved Activity identity and replacement note text.' }],
+        returns: 'The saved revision with its predecessor and source attribution.',
+        throws: ['{ActivityAnnotationError} when the Activity is unknown, the note is invalid, or history is full.', '{ActivityAnnotationStorageError} when annotation persistence fails.'],
+      },
+      {
+        signature: 'list(activityId: ActivityId): readonly ActivityAnnotation[]',
+        description: 'List user-authored annotation revisions in original order.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Detached revisions for the Activity, oldest first.',
+        throws: ['{ActivityAnnotationError} when the Activity does not exist.', '{ActivityAnnotationStorageError} when annotation storage cannot be read.'],
+      },
+    ],
+  },
+  {
     key: 'homeActivityArtifacts',
     summary: 'Stores user-linked artifact pointers independently from delegation lifecycle facts.',
     description: 'Stores user-linked artifact pointers independently from delegation lifecycle facts.',
@@ -5677,6 +5698,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface Activity {\n    readonly id: ActivityId;\n    readonly name: string;\n    readonly objective: string;\n    readonly boundaries: ActivityBoundaries;\n    readonly createdAt: string;\n}',
   },
   {
+    name: 'ActivityAnnotation',
+    declaration: 'export interface ActivityAnnotation {\n    readonly id: ActivityAnnotationId;\n    readonly activityId: ActivityId;\n    readonly revision: number;\n    readonly text: string;\n    readonly supersedes?: ActivityAnnotationId | undefined;\n    readonly source: \'user-command\';\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'ActivityAnnotationId',
+    declaration: 'export type ActivityAnnotationId = Branded<\'ActivityAnnotationId\'>;',
+  },
+  {
     name: 'ActivityArtifactId',
     declaration: 'export type ActivityArtifactId = Branded<\'ActivityArtifactId\'>;',
   },
@@ -6343,6 +6372,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CordisRuntimeTreeReader',
     declaration: 'export interface CordisRuntimeTreeReader {\n    getTree(): Promise<CordisRuntimeTree>;\n}',
+  },
+  {
+    name: 'CorrectActivityAnnotationRequest',
+    declaration: 'export type CorrectActivityAnnotationRequest = Pick<ActivityAnnotation, \'activityId\' | \'text\'>;',
   },
   {
     name: 'CotTranslationPreferences',
