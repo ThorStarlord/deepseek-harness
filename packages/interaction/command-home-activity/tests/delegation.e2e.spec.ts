@@ -220,7 +220,9 @@ it('starts the real DSH spawn provider from `/activity`, then records success an
   const initialRecord = ctx.homeActivityDelegations.list(activity.id)[0]
   expect(initialRecord).toMatchObject({ status: 'admitted', request: { provider: 'spawn' } })
   const initialAdmission = initialRecord?.admission
-  if (initialAdmission === undefined || initialAdmission.provider === 'codex') {
+  if (initialAdmission === undefined
+    || initialAdmission.provider === 'codex'
+    || initialAdmission.provider === 'claude-code') {
     throw new Error('The spawn activation has no DSH child Session admission.')
   }
   expect(initialAdmission.childSessionId).toBeDefined()
