@@ -173,6 +173,7 @@ flowchart LR
   svc_homeActivityDelegations["ctx.homeActivityDelegations<br/>Recorded Home Activity delegations"]
   svc_homeActivityAssociations["ctx.homeActivityAssociations<br/>Activity Workspace and Session references"]
   svc_homeActivityArtifacts["ctx.homeActivityArtifacts<br/>User-linked Activity artifact pointers"]
+  svc_homeActivityReviews["ctx.homeActivityReviews<br/>User Activity outcome reviews"]
   svc_sessionQuery["ctx.sessionQuery<br/>Session reads, traces, filters, and search"]
   pkg_session_reference["session-reference"]
   pkg_tool_session_query["tool-session-query"]
@@ -399,6 +400,7 @@ flowchart LR
   pkg_home_activity --> svc_homeActivityArtifacts
   pkg_home_activity --> svc_homeActivityAssociations
   pkg_home_activity --> svc_homeActivityDelegations
+  pkg_home_activity --> svc_homeActivityReviews
   pkg_host_directory_picker --> svc_directoryPicker
   pkg_host_directory_picker_browse --> svc_directoryPicker
   pkg_host_directory_picker_native --> svc_directoryPicker
@@ -544,6 +546,7 @@ flowchart LR
   svc_homeActivityArtifacts --> pkg_command_home_activity
   svc_homeActivityAssociations --> pkg_command_home_activity
   svc_homeActivityDelegations --> pkg_command_home_activity
+  svc_homeActivityReviews --> pkg_command_home_activity
   svc_jobs --> pkg_api_job_controller
   svc_jobs --> pkg_tool_bash
   svc_jobs --> pkg_tool_jobs
@@ -729,6 +732,7 @@ flowchart LR
 | `ctx.homeActivityDelegations` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | 将显式请求、已接受的 DSH 激活引用和 provider 报告分别持久化；人工命令使用现有 subagent 运行时，不声称结果已验证或接受。 |
 | `ctx.homeActivityAssociations` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | 分别保存用户选定的 Workspace 注册表身份和 DSH Session 身份，不修改源记录，也不推断两者的关系。 |
 | `ctx.homeActivityArtifacts` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | 保存用户提供的输出位置和可选修订版，关联到 Activity 委派和用户选择的 Workspace，并与提供方报告分开保存。 |
+| `ctx.homeActivityReviews` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | 为 Activity 委派单独保存用户处置和带来源信息的用户填写证据；缺少审核记录时仍为 pending，审核记录不会更改提供方报告或启动工作。 |
 | `ctx.sessionQuery` | `seam` | [`session-query`](../packages/session-query/session-query) | [`session-query-sqlite`](../packages/session-query/session-query-sqlite) | [`session-reference`](../packages/context/session-reference), [`tool-session-query`](../packages/experimental/tool-session-query) | - | 该接口提供精确读取、过滤和追踪；具体后端还提供全文协调、排序、摘要片段和游标世代，而模型消费方负责工作区权限与不含游标的渲染。 |
 | `ctx.fileReferences` | `seam` | [`file-reference`](../packages/context/file-reference) | [`file-reference-local`](../packages/context/file-reference-local) | [`api-session-controller`](../packages/api/session-controller) | - | 该接口返回 Agent cwd 内仅含路径的补全候选；提供方负责命名空间访问与排序，但不读取文件内容。 |
 | `ctx.sessionReferenceResolver` | `core` | [`session-reference`](../packages/context/session-reference) | - | - | - | 将当前表层中有界的对话快照投影为持久但不可信的消息上下文；Host 适配器负责提及语法。 |

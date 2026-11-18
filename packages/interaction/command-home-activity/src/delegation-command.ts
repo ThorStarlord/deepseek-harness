@@ -232,19 +232,20 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
         : 'Status: DSH admitted this child; its provider report is unconfirmed.')
       lines.push(...renderAdmissionReferences(delegation.admission))
       lines.push(isCodex
-        ? 'This Codex run is one-shot. Activity does not inspect its transcript, resume it, or roll back its effects; its report is not verified or accepted.'
-        : 'Inspect the child Session summary before retrying. The provider report is not verified or accepted.')
+        ? 'This Codex run is one-shot. Activity does not inspect its transcript, resume it, or roll back its effects; its report is unconfirmed, and user disposition is shown separately.'
+        : 'Inspect the child Session summary before retrying. The provider report is unconfirmed; DSH has not independently verified it, and user disposition is shown separately.')
     }
     lines.push(`Reason: ${uncertaintyMessage(delegation.uncertainty?.reason)}`)
     return lines
   }
-  lines.push(`Status: ${delegation.status === 'reported' ? `${isCodex ? 'Codex' : 'provider'} reported` : 'admitted'}; not verified or accepted.`)
+  lines.push(`Delegation state: ${delegation.status}.`)
   if (delegation.admission === undefined) {
     lines.push('Activation reference is unavailable.')
   } else {
     lines.push(...renderAdmissionReferences(delegation.admission))
   }
   if (delegation.report !== undefined) {
+    lines.push('Provider report: received; DSH has not independently verified it.')
     lines.push(`Provider stop reason: ${delegation.report.stopReason}`)
     lines.push(`${isCodex ? 'Codex-reported' : 'Provider-reported'} output: ${delegation.report.outputText || '(no text output)'}`)
     if (delegation.report.nonTextBlockTypes.length > 0) {
@@ -255,7 +256,7 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
   } else {
     lines.push(isCodex
       ? 'Codex outcome is pending. This one-shot execution has no Activity continuation, resume, transcript inspection, or rollback; opening the Activity does not wait or start another run.'
-      : 'Provider outcome is pending; opening the Activity does not wait for the child Session.')
+      : 'Provider report: not recorded; opening the Activity does not wait for the child Session.')
   }
   return lines
 }

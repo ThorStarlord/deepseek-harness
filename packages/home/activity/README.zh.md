@@ -9,7 +9,8 @@ kind: "package-reference"
 
 ## 概述
 
-保存命名 Activity、目标和描述性范围说明，使其在原 Session 结束后仍可使用。Web 和 SDK 的 /activity 命令可以分别关联用户选择的 Workspace 与 DSH Session 身份，并允许其他 Session 重新打开这些引用。单独的委派服务会记录用户明确请求的 DSH 原生子级 activation 及提供方报告；委派不会创建关联。创建或打开 Activity 不会执行其目标、创建 Goal 或授予运行时权限。
+保存包含目标和描述性边界的命名 Activity，即使原 Session 已结束仍可继续使用。Web 和 SDK `/activity` 命令可关联所选 Workspace 与 DSH Session 身份，其他 Session 可重新打开这些引用。独立服务分别保存委派事实、用户关联的产物指针，以及带来源归属验证证据的用户处置；审核记录不会覆盖提供方报告。委派记录保存用户明确请求的 DSH 原生子级执行或一次性 Codex 运行，以及提供方报告的结果，但不会创建关联。创建或打开 Activity 不会执行其目标、创建 Goal 或授予运行时权限。
+
 
 ## 目录
 
@@ -74,9 +75,6 @@ Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associ
 | [`src/association-types.ts`](src/association-types.ts) | Workspace 和 Session 引用类型 |
 | [`src/association-spec.ts`](src/association-spec.ts) | 版本化关联记录 schema |
 | [`src/associations.ts`](src/associations.ts) | 独立关联 StorageDomain 服务 |
-| [`tests/activity.spec.ts`](tests/activity.spec.ts) | 存储关闭、重开与校验行为 |
-| [`tests/delegations.spec.ts`](tests/delegations.spec.ts) | 委派事实持久化、重启恢复与校验 |
-| [`tests/associations.spec.ts`](tests/associations.spec.ts) | 关联校验、重启恢复、幂等性与写入回滚 |
 
 </details>
 
@@ -87,7 +85,7 @@ Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associ
 
 - [Home Activity 子系统](../../../docs/subsystems/home-activity.zh.md) — 领域与持久化语义。
 - [StorageDomain](../../storage/storage-domain/README.zh.md) — 带版本的主机端记录。
-- [Web `/activity` 命令](../../interaction/command-home-activity/README.zh.md) — 创建、列出并打开 Activity。
+- [Web `/activity` 命令](../../interaction/command-home-activity/README.zh.md) — 创建、列出、打开并审核 Activity。
 
 -----
 
@@ -106,11 +104,11 @@ Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associ
 Activity 范围仍是描述性内容；委派不会将其作为授权规则执行。
 
 - 边界是描述性陈述，不是沙箱根目录或权限授予。
-- `spawn` 委派记录标识请求 Session 和已接受的子级 Session；Codex 记录单独保存外部执行 id，不会把它当成 DSH Session。两者都不会创建 Activity 与 Session 的关联，也不会提供可复用知识。
-- 委派执行由单独的显式 `/activity delegate` 命令启动；Activity 服务本身没有编辑、删除或调度操作。原生 Codex 委派是一次性执行；Activity 不提供继续、恢复、对话记录检查或回滚，并遵循 Codex 原生配置与权限模式。提供方报告的输出不会被标记为已验证或已接受。
-- 产物引用只是用户关联的指针；它不会复制或检查输出、证明生成者、验证内容，也不会触发跨 Workspace 写入、合并或发布。缺少来源修订版时仍显示为未知。
-
+- 委派记录标识请求方 Session 和获准入的子级 Session，但不会创建 Activity 与 Session 的关联或可复用知识。
 - Workspace 和 Session 引用由用户分别选择。Workspace id 表示已注册的 DSH Workspace 目录，而非推断出的仓库根目录；共享 Activity 不会把 Session 分配给 Workspace。
+- 委派执行必须通过单独的显式 `/activity delegate` 命令启动；Activity 服务本身没有编辑、删除或调度操作。DSH 不会独立验证提供方报告，也不会由报告决定用户的单独处置。原生 Codex 委派为一次性操作，Activity 不提供继续、恢复、查看转录或回滚功能；执行遵循 Codex 原生配置和权限模式。
+- 产物引用只是用户关联的指针；它不会复制或检查输出、证明生成者、验证内容，也不会触发跨 Workspace 写入、合并或发布。缺少来源修订版时仍显示为未知。
+- 审核证据及其报告结果由用户提供。DSH 会保留其来源信息，但不会检查来源、证据或结果；当前处置与提供方执行状态分开保存。
 
 <a id="dev-note"></a>
 ### 开发备注

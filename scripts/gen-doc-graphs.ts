@@ -611,6 +611,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Stores user-supplied output locations and optional revisions linked to one Activity delegation and one of its selected Workspaces, separately from provider-authored reports.',
   },
   {
+    key: 'homeActivityReviews',
+    pkg: 'home-activity',
+    title: 'User Activity outcome reviews',
+    mode: 'service',
+    consumers: ['command-home-activity'],
+    note: 'Stores user dispositions and separately attributed, user-entered evidence for Activity delegations; missing review remains pending, and review records do not alter provider reports or start work.',
+  },
+  {
     key: 'sessionQuery',
     pkg: 'session-query',
     title: 'Session reads, traces, filters, and search',
