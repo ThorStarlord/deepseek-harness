@@ -11,6 +11,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 
 const USAGE = 'Usage: /activity annotate <activity-id> <JSON> where JSON is {"text":"..."}'
 const MAX_INPUT_BYTES = 16_384
+const MAX_RENDERED_REVISIONS = 8
 const annotationInputSchema = z.object({ text: z.string() }).strict()
 
 type ParsedCommand =
@@ -95,11 +96,16 @@ export function renderActivityAnnotations(ctx: Context, activityId: ReturnType<t
   if (current === undefined) {
     return Object.freeze(['User annotation history could not be read; no current note was confirmed.'])
   }
+  const visibleAnnotations = annotations.slice(-MAX_RENDERED_REVISIONS)
+  const olderRevisionCount = annotations.length - visibleAnnotations.length
   return Object.freeze([
     'Home Harness coordination annotations (user-authored history; separate from provider reports and specialist assertions):',
     `Current annotation (revision ${current.revision}): ${current.text}`,
     'Annotation history:',
-    ...annotations.map(annotation => [
+    ...(olderRevisionCount === 0
+      ? []
+      : [`${olderRevisionCount} earlier revisions are saved; this view shows the latest ${MAX_RENDERED_REVISIONS}.`]),
+    ...visibleAnnotations.map(annotation => [
       `Revision ${annotation.revision} (${annotation.recordedAt}; source: ${annotation.source})${annotation.supersedes === undefined ? '' : `; supersedes ${annotation.supersedes}`}:`,
       annotation.text,
     ]).flat(),

@@ -13,6 +13,7 @@ import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence
 import type { SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Workspace } from '@deepseek-ai/dsh-workspace/types'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { Agent as DshAgent } from '@deepseek-ai/dsh-agent'
@@ -261,6 +262,38 @@ it('corrects only the user annotation and shows its history beside the unchanged
   expect(startActivation).not.toHaveBeenCalled()
   expect(test.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end'))
     .toEqual(beforeCommandEvents)
+})
+
+it('bounds opened annotation history while retaining the full saved revision list', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Long review history', objective: 'Inspect the latest coordination note.',
+    boundaries: { inScope: ['Review saved notes.'], outOfScope: ['Do not execute work.'] },
+  })
+  const revisions: ActivityAnnotation[] = []
+  for (let index = 0; index < 256; index += 1) {
+    const previous = revisions.at(-1)
+    revisions.push({
+      id: brandString<ActivityAnnotationId>(randomUUID()),
+      activityId: activity.id,
+      revision: index + 1,
+      text: `${index + 1}: ${'x'.repeat(3_990)}`,
+      ...(previous === undefined ? {} : { supersedes: previous.id }),
+      source: 'user-command',
+      recordedAt: '2026-11-18T00:00:00.000Z',
+    })
+  }
+  vi.spyOn(test.ctx.homeActivityAnnotations, 'list').mockReturnValue(Object.freeze(revisions))
+
+  const opened = await run(test, ` open ${activity.id}`)
+
+  expect(opened.kind).toBe('success')
+  expect(opened.text).toContain('Current annotation (revision 256): 256:')
+  expect(opened.text).toContain('248 earlier revisions are saved; this view shows the latest 8.')
+  expect(opened.text).toContain('Revision 249 (')
+  expect(opened.text).toContain('Revision 256 (')
+  expect(opened.text).not.toContain('Revision 248 (')
+  expect(opened.text?.length).toBeLessThan(50_000)
 })
 
 it('links selected Workspaces and Sessions independently and reopens them from another Session', async () => {

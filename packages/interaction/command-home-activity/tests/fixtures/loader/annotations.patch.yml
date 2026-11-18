@@ -1,0 +1,35 @@
+# Add the shipped Activity services to a real headless Loader for persistence coverage.
+- id: headless-startup
+  disabled: true
+
+- id: headless-runner
+  disabled: true
+
+- id: sandbox-policy
+  inject: []
+  config:
+    mode: read-only
+    workspaceRoot: !!js process.cwd()
+
+- id: storage-json
+  config:
+    root: !!js process.getBuiltinModule('node:path').join(process.cwd(), 'activity-storage')
+
+- insert:
+    - id: home-activity
+      name: '@deepseek-ai/dsh-home-activity'
+
+    - id: home-activity-delegations
+      name: '@deepseek-ai/dsh-home-activity/delegations'
+
+    - id: home-activity-associations
+      name: '@deepseek-ai/dsh-home-activity/associations'
+
+    - id: home-activity-artifacts
+      name: '@deepseek-ai/dsh-home-activity/artifacts'
+
+    - id: home-activity-annotations
+      name: '@deepseek-ai/dsh-home-activity/annotations'
+
+    - id: command-home-activity
+      name: '@deepseek-ai/dsh-command-home-activity'

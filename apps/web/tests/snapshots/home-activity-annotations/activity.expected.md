@@ -1,0 +1,33 @@
+- banner:
+  - navigation "Session hierarchy": Reply with the single word
+  - text: Standard mode
+  - button "More actions"
+  - button "Open right sidebar"
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+  - button "More conversation views"
+- text: Reply with the single word LIGHTHOUSE and stop. {{clock}}
+- button "Copy"
+- status: Completed
+- button "Completed in {{duration}}"
+- paragraph: LIGHTHOUSE
+- button "Copy"
+- button "Good response"
+- button "Bad response"
+- button "Branch into a new conversation"
+- text: {{clock}}
+- 'button "activity Activity created: Release review ID: {{activity-id}} Saved only; its objective has not been started. Use /activity open {{activity-id}} to view its objective and scope."'
+- 'button "activity User annotation revision 1 recorded for Activity {{activity-id}}. Current annotation: The provider report says the build is ready for release. This starts the annotation history. Provider-reported and specialist-authored facts were not changed."'
+- text: "Failed activity Activity annotation is invalid: Invalid input: expected string, received undefined; Unrecognized key: \"note\". Usage: /activity annotate <activity-id> <JSON> where JSON is {\"text\":\"...\"}"
+- 'button "activity User annotation revision 2 recorded for Activity {{activity-id}}. Current annotation: Correction: migration validation is still failing; keep the release blocked. Earlier user annotations remain in history. Provider-reported and specialist-authored facts were not changed."'
+- button [expanded]
+- text: "Activity: Release review ID: {{activity-id}} Created: {{activity-created-at}} Objective: Review the reported release state. Boundaries (descriptive only; runtime permissions are unchanged): In scope: Compare current checks. Out of scope: Do not release. Home Harness coordination annotations (user-authored history; separate from provider reports and specialist assertions): Current annotation (revision 2): Correction: migration validation is still failing; keep the release blocked. Annotation history: Revision 1 ({{annotation-recorded-at-1}}; source: user-command): The provider report says the build is ready for release. Revision 2 ({{annotation-recorded-at-2}}; source: user-command); supersedes {{annotation-revision-id-1}}: Correction: migration validation is still failing; keep the release blocked. Delegations: Delegation {{delegation-id}}: provider spawn Requested task: Report release readiness. Requesting Session: {{parent-session-id}} Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access. Status: provider reported; not verified or accepted. Child Session: {{annotation-child-session-id}} Activation: activity-annotation-fixture Provider stop reason: stop Provider-reported output: The build is ready for release. Workspace links (selected separately): No Workspace links. DSH Session links (selected separately; these links do not assign Sessions to Workspaces): No DSH Session links. User-linked artifact references (not verified outputs): No artifact references. Opening an Activity displays saved intent and reported facts; it does not start work or activate a Goal."
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Add files or run commands"
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash": DeepSeek-V4-Flash
+- button "Send message" [disabled]
+- button "1 turns 1 steps · {{throughput}} tok/s": 1 turns 1 steps{{throughput}} tok/s
+- button "7.8K tok · Cache hit 99%": 7.8K tokCache hit 99%
+- button "6% of context used": 6%
