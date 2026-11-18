@@ -39,7 +39,7 @@ kind: "package-library"
 
 `PROTECTED_PLUGINS` 列出[插件管理器](../../boot/plugin-manager/README.zh.md)因管理功能依赖而保持只读的插件包；包含其中任一插件的组合包是管理组合包。移除其中一项只解除这一条 `management-required` 拒绝；管理器自身的入口、随安装提供的组合包和不可寻址的行仍由各自的规则保护。[Web 插件页](../../client/ui-plugin-manager/README.zh.md)隐藏 `HIDDEN_BUNDLES`，把 `EXTENSION_BUNDLES` 按顺序排在最前，在 profile 启用 `MORE_BUNDLES` 之前不把它们放上主列表，并为 `EXPERIMENTAL_BUNDLES` 显示实验性标记。
 
-`EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS` 列出省略旧实验性前缀的精确实验性包名。Home Activity 委派来源记录使用此列表分类记录的组合包或活动 preset 模块。仓库策略测试会确保这些名称与 `scripts/experimental-package-policy.ts` 保持一致；此元数据不表示沙箱隔离或权限。
+`EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS` 列出未使用旧实验性前缀的精确实验性包名。Home Activity 执行选择会用此列表将捕获的 profile 组合包集合和活动 Agent preset 组合分类为实验性。仓库策略测试会确保这些名称与 `scripts/experimental-package-policy.ts` 保持一致；此元数据不表示沙箱隔离或权限。
 
 ### 按需组合包
 
@@ -61,7 +61,7 @@ kind: "package-library"
 |---|---|
 | [`src/bundles.ts`](src/bundles.ts) | Profile 模板，以及默认、安装持有、已退役、可选和按需组合包列表 |
 | [`src/plugin-manager.ts`](src/plugin-manager.ts) | 受保护的插件包，以及 Web 插件页的隐藏、排序和实验性组合包列表 |
-| [`src/experimental-packages.ts`](src/experimental-packages.ts) | Activity 来源记录使用的精确、无前缀实验性包名 |
+| [`src/experimental-packages.ts`](src/experimental-packages.ts) | 用于 Activity 选择分类的无前缀实验性包名 |
 | [`src/catalog.generated.ts`](src/catalog.generated.ts) | 按需组合包的生成离线元信息 |
 | [`src/index.ts`](src/index.ts) | 公开导出与目录条目类型 |
 

@@ -39,7 +39,7 @@ Edit this package when the installation's bundle selection or the plugin manager
 
 `PROTECTED_PLUGINS` names the plugin packages the [plugin manager](../../boot/plugin-manager/README.md) keeps read-only because management needs them; a bundle that contains one is a management bundle. Removing a name drops only this `management-required` refusal; the manager's own entry, installation-carried bundles, and unaddressable rows stay protected by their own rules. The [Web plugin page](../../client/ui-plugin-manager/README.md) hides the `HIDDEN_BUNDLES`, ranks the `EXTENSION_BUNDLES` first in their order, keeps the `MORE_BUNDLES` off its main list until the profile enables them, and marks the `EXPERIMENTAL_BUNDLES` with the Experimental badge.
 
-`EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS` lists exact experimental package names that omit the legacy experimental prefix. Home Activity delegation provenance uses this list when it classifies a recorded bundle or active preset module. A repository policy test keeps the names aligned with `scripts/experimental-package-policy.ts`; this metadata does not describe sandbox isolation or permissions.
+`EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS` lists exact experimental package names that omit the legacy experimental prefix. Home Activity execution selections use this list to classify captured profile bundle sets and active Agent preset compositions. A repository policy test keeps the names aligned with `scripts/experimental-package-policy.ts`; this metadata does not describe sandbox isolation or permissions.
 
 ### On-demand bundles
 
@@ -61,7 +61,7 @@ Repository checks read the lists in `src/bundles.ts` as TypeScript literals with
 |---|---|
 | [`src/bundles.ts`](src/bundles.ts) | Profile templates and the default, installation-owned, retired, optional, and on-demand bundle lists |
 | [`src/plugin-manager.ts`](src/plugin-manager.ts) | Protected plugin packages and the Web plugin page's hidden, ordered, and experimental bundle lists |
-| [`src/experimental-packages.ts`](src/experimental-packages.ts) | Exact unprefixed experimental package names used by Activity provenance |
+| [`src/experimental-packages.ts`](src/experimental-packages.ts) | Unprefixed experimental package names used for Activity selection classification |
 | [`src/catalog.generated.ts`](src/catalog.generated.ts) | Generated offline metadata for the on-demand bundles |
 | [`src/index.ts`](src/index.ts) | Public exports and the catalog entry type |
 
