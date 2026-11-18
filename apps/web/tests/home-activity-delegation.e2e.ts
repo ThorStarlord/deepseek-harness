@@ -178,7 +178,7 @@ describe('web e2e: Home Activity delegation', () => {
     )
     const codexAdmission = await page.getByText(/Delegation admitted: provider codex/u).last().textContent() ?? ''
     await page.getByText(/Delegation admitted: provider codex/u).last().click()
-    const codexAdmissionDetails = page.locator('pre').filter({ hasText: 'Codex provider run id' }).last()
+    const codexAdmissionDetails = page.locator('pre').filter({ hasText: 'Codex adapter run id' }).last()
     await codexAdmissionDetails.waitFor({ state: 'visible', timeout: 10_000 })
     const codexDelegation = scaffold.ctx.homeActivityDelegations.list(codexActivity.id)[0]
     if (codexDelegation === undefined) throw new Error('The Codex command did not persist its stable delegation identity.')
@@ -190,14 +190,14 @@ describe('web e2e: Home Activity delegation', () => {
       [codexDelegationId, '{{delegation-id}}'],
       [codexActivity.createdAt, '{{activity-created-at}}'],
     ] as const
-    expect(codexAdmission).toContain('Codex provider run id (not a DSH Session or native Codex conversation id): codex-provider-run-1')
+    expect(codexAdmission).toContain('Codex adapter run id (not a DSH Session or native Codex conversation id): codex-provider-run-1')
     expect(codexAdmission).not.toContain('Child Session: codex-provider-run-1')
     expect(codexAdmission).toContain('Activity does not expose transcript inspection, continuation, resume, or rollback.')
     expect(codexStart.mock.calls[0]?.[0]?.childId).toBeUndefined()
     await mkdir(CODEX_EXPECTED_DIR, { recursive: true })
     await compareOrRefreshGolden(
       CODEX_ADMISSION_EXPECTED,
-      await captureStableAria(page, '[class*="centerCol"] pre:has-text("Codex provider run id")', scaffold.workspaceCwd,
+      await captureStableAria(page, '[class*="centerCol"] pre:has-text("Codex adapter run id")', scaffold.workspaceCwd,
         { replacements: codexReplacements }),
       MODE,
     )

@@ -322,7 +322,7 @@ function observeActivation(
 /** Format accepted child Session and activation references. */
 function renderAdmissionReferences(admission: ActivityDelegationAdmission): string[] {
   if (admission.provider === 'codex') {
-    return [`Codex provider run id (not a DSH Session or native Codex conversation id): ${admission.providerRunId}`]
+    return [`Codex adapter run id (not a DSH Session or native Codex conversation id): ${admission.providerRunId}`]
   }
   return [
     `Child Session: ${admission.childSessionId}`,
