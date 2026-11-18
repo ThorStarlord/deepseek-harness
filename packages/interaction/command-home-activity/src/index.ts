@@ -11,7 +11,6 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import { ActivityError, ActivityId, createActivityRequestSchema } from '@deepseek-ai/dsh-home-activity'
 import { executeActivityDelegation, renderActivityDelegation } from './delegation-command.ts'
 import { executeAssociationCommand, renderActivityAssociations } from './association-command.ts'
-import { executeActivityArtifactCommand, renderActivityArtifacts } from './artifact-command.ts'
 
 export const name = 'command-home-activity'
 export const inject = [
@@ -64,8 +63,6 @@ export function apply(ctx: Context): void {
 }
 
 async function execute(ctx: Context, invocation: CommandInvocation): Promise<CommandResult> {
-  const artifactResult = await executeActivityArtifactCommand(ctx, invocation)
-  if (artifactResult !== undefined) return artifactResult
   const associationResult = await executeAssociationCommand(ctx, invocation)
   if (associationResult !== undefined) return associationResult
   const command = parseCommand(invocation.rawInput)
@@ -137,8 +134,6 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
           ])),
         '',
         ...await renderActivityAssociations(ctx, activity.id),
-        '',
-        ...renderActivityArtifacts(ctx, activity.id),
         '',
         'Opening an Activity displays saved intent and reported facts; it does not start work or activate a Goal.',
       ].join('\n'),
