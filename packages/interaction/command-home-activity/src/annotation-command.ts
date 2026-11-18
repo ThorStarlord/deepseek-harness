@@ -60,7 +60,7 @@ export async function executeActivityAnnotationCommand(
       const recovery = error.code === 'unknown-activity'
         ? 'Run /activity list to choose a saved Activity id.'
         : error.code === 'annotation-limit'
-          ? `Run /activity open ${activityId.data} to inspect the saved annotation history.`
+          ? `Run /activity open ${activityId.data} to view the current note and latest ${MAX_RENDERED_REVISIONS} revisions; older revisions remain saved but are not shown by that command.`
           : `Check the note text and retry. ${USAGE}`
       return { kind: 'error', text: `${error.message} ${recovery}` }
     }

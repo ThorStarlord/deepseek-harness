@@ -296,6 +296,25 @@ it('bounds opened annotation history while retaining the full saved revision lis
   expect(opened.text?.length).toBeLessThan(50_000)
 })
 
+it('describes the visible annotation subset when the history limit is reached', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Capped review history', objective: 'Keep the visible history limit accurate.',
+    boundaries: { inScope: ['Review the current note.'], outOfScope: ['Do not change saved history.'] },
+  })
+  vi.spyOn(test.ctx.homeActivityAnnotations, 'correct').mockRejectedValue(
+    new ActivityAnnotationError('annotation-limit', 'An Activity can have at most 256 annotation revisions.'),
+  )
+
+  const result = await run(test, ` annotate ${activity.id} {"text":"A new note."}`)
+
+  expect(result.kind).toBe('error')
+  expect(result.text).toContain('An Activity can have at most 256 annotation revisions.')
+  expect(result.text).toContain(
+    `Run /activity open ${activity.id} to view the current note and latest 8 revisions; older revisions remain saved but are not shown by that command.`,
+  )
+})
+
 it('links selected Workspaces and Sessions independently and reopens them from another Session', async () => {
   const test = await harness()
   const saved = await run(test, ' create {"name":"Release readiness","objective":"Prepare the next release for review.","boundaries":{"inScope":["Review release notes"],"outOfScope":["Do not publish"]}}')
