@@ -464,6 +464,7 @@ it('records Codex startup preparation failure before provider invocation as not 
   const rejected = await run(ctx, parent, ` delegate ${activity.id} codex Review the release checklist once.`)
   expect(rejected.kind).toBe('error')
   expect(rejected.text).toContain('DSH could not complete startup preparation and did not call the Codex provider.')
+  expect(rejected.text).toContain('Check the DSH runtime, current Session, Activity, and provider')
   expect(rejected.text).not.toContain('do not repeat this task')
   const saved = ctx.homeActivityDelegations.list(activity.id)[0]
   expect(saved).toMatchObject({ status: 'not-admitted', request: { provider: 'codex' } })

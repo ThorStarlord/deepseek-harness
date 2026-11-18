@@ -109,7 +109,7 @@ export async function executeActivityDelegation(
         : 'Codex'
       const message = error.code === 'PROVIDER_CHANGED'
         ? `The ${providerLabel} provider changed before dispatch, so DSH did not start this task. Check the provider, then explicitly submit a new request if you still want it run. Opening the Activity will not retry it.`
-        : `DSH could not complete startup preparation and did not call the ${providerLabel} provider. Check the Activity and provider, then explicitly submit a new request if you still want it run. Opening the Activity will not retry it.`
+        : `DSH could not complete startup preparation and did not call the ${providerLabel} provider. Check the DSH runtime, current Session, Activity, and provider, then explicitly submit a new request if you still want it run. Opening the Activity will not retry it.`
       try {
         await ctx.homeActivityDelegations.markNotAdmitted(request.id, message)
       } catch (recordError: unknown) {
