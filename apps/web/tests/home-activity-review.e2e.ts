@@ -18,6 +18,7 @@ import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './suppor
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/feedback-command/session.v3.jsonl', import.meta.url))
 const EXPECTED = fileURLToPath(new URL('./snapshots/home-activity-review/reviewed.expected.md', import.meta.url))
 const SCREENSHOT = fileURLToPath(new URL('../../../.artifacts/ui-review/home-activity-review.png', import.meta.url))
+const REVIEWED_SCREENSHOT = fileURLToPath(new URL('../../../.artifacts/ui-review/home-activity-review-bottom.png', import.meta.url))
 const MODE = webSnapshotMode()
 const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 
@@ -164,6 +165,26 @@ describe('web e2e: Home Activity outcome review', () => {
     await compareOrRefreshGolden(EXPECTED, output, MODE)
     await mkdir(dirname(SCREENSHOT), { recursive: true })
     await page.screenshot({ path: SCREENSHOT, fullPage: true })
+
+    const beforeScroll = await reviewedView.evaluate(element => ({
+      clientHeight: element.clientHeight,
+      overflowY: getComputedStyle(element).overflowY,
+      scrollHeight: element.scrollHeight,
+      scrollTop: element.scrollTop,
+    }))
+    expect(beforeScroll.scrollHeight).toBeGreaterThan(beforeScroll.clientHeight)
+    expect(['auto', 'scroll']).toContain(beforeScroll.overflowY)
+    expect(beforeScroll.scrollTop).toBeLessThan(beforeScroll.scrollHeight - beforeScroll.clientHeight)
+    await reviewedView.hover()
+    await page.mouse.wheel(0, beforeScroll.scrollHeight)
+    await expect.poll(async () => reviewedView.evaluate(element =>
+      Math.ceil(element.scrollTop + element.clientHeight) >= element.scrollHeight,
+    )).toBe(true)
+    const afterScroll = await reviewedView.evaluate(element => element.scrollTop)
+    expect(afterScroll).toBeGreaterThan(beforeScroll.scrollTop)
+    await page.mouse.wheel(0, -96)
+    await expect.poll(async () => reviewedView.evaluate(element => element.scrollTop)).toBeLessThan(afterScroll)
+    await page.screenshot({ path: REVIEWED_SCREENSHOT, fullPage: true })
 
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
