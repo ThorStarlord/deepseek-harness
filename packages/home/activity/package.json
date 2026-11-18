@@ -26,6 +26,10 @@
       "types": "./lib/types/associations.d.ts",
       "default": "./lib/types/associations.js"
     },
+    "./artifacts": {
+      "types": "./lib/types/artifacts.d.ts",
+      "default": "./lib/types/artifacts.js"
+    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"

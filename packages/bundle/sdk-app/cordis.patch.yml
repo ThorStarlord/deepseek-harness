@@ -63,6 +63,9 @@
     - id: home-activity-associations
       name: '@deepseek-ai/dsh-home-activity/associations'
 
+    - id: home-activity-artifacts
+      name: '@deepseek-ai/dsh-home-activity/artifacts'
+
     - id: command-home-activity
       name: '@deepseek-ai/dsh-command-home-activity'
 

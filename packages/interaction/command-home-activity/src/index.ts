@@ -19,11 +19,12 @@ export const inject = [
   'homeActivityDelegations',
   'subagents',
   'homeActivityAssociations',
+  'homeActivityArtifacts',
   'workspaceRegistry',
   'sessionPersistence',
 ]
 
-const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | delegate <activity-id> spawn <task>'
+const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | delegate <activity-id> spawn <task>'
 const MAX_INPUT_BYTES = 16_384
 
 type ActivityCommand =
@@ -54,8 +55,8 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.commands.register({
     definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-home-activity'),
     name: 'activity',
-    description: 'Create, list, reopen, and associate saved Activities with contexts or explicitly delegate one DSH-native task',
-    input: { hint: 'create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | delegate <activity-id> spawn <task>' },
+    description: 'Create, list, reopen, associate saved Activities with contexts, record artifact pointers, or explicitly delegate one DSH-native task',
+    input: { hint: 'create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | delegate <activity-id> spawn <task>' },
     recordInput: false,
     handler: invocation => execute(ctx, invocation),
   }))

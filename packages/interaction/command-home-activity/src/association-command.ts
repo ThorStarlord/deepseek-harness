@@ -14,6 +14,7 @@ import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { StorageError } from '@deepseek-ai/dsh-storage'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
+import { executeActivityArtifactCommand, renderActivityArtifacts } from './artifact-command.ts'
 
 const ID = String.raw`\S+`
 const ASSOCIATION_USAGE = 'Usage: /activity workspaces | sessions | link <activity-id> workspace <workspace-id> | link <activity-id> session <session-id> | unlink <activity-id> workspace <workspace-id> | unlink <activity-id> session <session-id>'
@@ -36,6 +37,8 @@ type AssociationCommand =
  * @returns The command result, or `undefined` when another `/activity` verb owns the input.
  */
 export async function executeAssociationCommand(ctx: Context, invocation: CommandInvocation): Promise<CommandResult | undefined> {
+  const artifactResult = await executeActivityArtifactCommand(ctx, invocation)
+  if (artifactResult !== undefined) return artifactResult
   const parsed = parseAssociationCommand(invocation.rawInput)
   if (parsed === undefined) return undefined
   if (parsed.kind === 'invalid') return { kind: 'error', text: parsed.message }
@@ -78,6 +81,7 @@ export async function renderActivityAssociations(ctx: Context, activityId: Retur
     lines.push(`Created: ${new Date(snapshot.header.createdAt).toISOString()}`)
     if (snapshot.header.cwd !== undefined) lines.push(`Session working directory: ${snapshot.header.cwd}`)
   }
+  lines.push('', ...renderActivityArtifacts(ctx, activityId))
   return Object.freeze(lines)
 }
 

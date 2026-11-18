@@ -1756,6 +1756,27 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'homeActivityArtifacts',
+    summary: 'Stores user-linked artifact pointers independently from delegation lifecycle facts.',
+    description: 'Stores user-linked artifact pointers independently from delegation lifecycle facts.',
+    methods: [
+      {
+        signature: 'create(request: CreateActivityArtifactRequest): Promise<ActivityArtifactReference>',
+        description: 'Record a user-linked pointer after confirming its Activity, delegation, and selected Workspace references.',
+        parameters: [{ name: 'request', description: 'User-supplied label, location, optional revision, and selected identities.' }],
+        returns: 'The durable pointer; this does not confirm its Workspace matches execution or who produced it.',
+        throws: ['{ActivityArtifactError} when identities are missing, mismatched, or unlinked.', '{ActivityArtifactStorageError} when pointer persistence fails.'],
+      },
+      {
+        signature: 'list(activityId: ActivityId): readonly ActivityArtifactReference[]',
+        description: 'List user-linked pointers for one Activity, newest first.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Detached pointers belonging to the Activity.',
+        throws: ['{ActivityArtifactError} when the Activity does not exist.', '{ActivityArtifactStorageError} when artifact storage cannot be read.'],
+      },
+    ],
+  },
+  {
     key: 'homeActivityAssociations',
     summary: 'Context references persisted separately from the strict Activity v1 record.',
     description: 'Context references persisted separately from the strict Activity v1 record.',
@@ -5628,6 +5649,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface Activity {\n    readonly id: ActivityId;\n    readonly name: string;\n    readonly objective: string;\n    readonly boundaries: ActivityBoundaries;\n    readonly createdAt: string;\n}',
   },
   {
+    name: 'ActivityArtifactId',
+    declaration: 'export type ActivityArtifactId = Branded<\'ActivityArtifactId\'>;',
+  },
+  {
+    name: 'ActivityArtifactReference',
+    declaration: 'export interface ActivityArtifactReference {\n    readonly id: ActivityArtifactId;\n    readonly activityId: ActivityId;\n    readonly delegationId: ActivityDelegationId;\n    readonly workspaceId: WorkspaceId;\n    readonly label: string;\n    readonly location: string;\n    readonly revision?: string | undefined;\n    readonly source: \'user-command\';\n    readonly recordedAt: string;\n}',
+  },
+  {
     name: 'ActivityBoundaries',
     declaration: 'export interface ActivityBoundaries {\n    readonly inScope: readonly string[];\n    readonly outOfScope: readonly string[];\n}',
   },
@@ -6266,6 +6295,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CotTranslationSnapshot',
     declaration: 'export interface CotTranslationSnapshot {\n    maxTextChars: number;\n    preferences: CotTranslationPreferences;\n    availableProviders: readonly TranslationProvider[];\n}',
+  },
+  {
+    name: 'CreateActivityArtifactRequest',
+    declaration: 'export type CreateActivityArtifactRequest = Pick<ActivityArtifactReference, \'activityId\' | \'delegationId\' | \'workspaceId\' | \'label\' | \'location\' | \'revision\'>;',
   },
   {
     name: 'CreateActivityDelegationRequest',

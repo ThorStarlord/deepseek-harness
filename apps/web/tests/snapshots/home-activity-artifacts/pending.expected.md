@@ -1,0 +1,32 @@
+- banner:
+  - navigation "Session hierarchy": Reply with the single word
+  - text: Standard mode
+  - button "More actions"
+  - button "Open right sidebar"
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+  - button "More conversation views"
+- text: Reply with the single word LIGHTHOUSE and stop. {{clock}}
+- button "Copy"
+- status: Completed
+- button "Completed in {{duration}}"
+- paragraph: LIGHTHOUSE
+- button "Copy"
+- button "Good response"
+- button "Bad response"
+- button "Branch into a new conversation"
+- text: {{clock}}
+- 'button "activity Available Workspaces (Workspace ids identify registered directories; no Git root is inferred): Workspace: artifact-repository-two — {{uuid}} Directory: {{workspace-directory-2}} Directory status: available. Workspace: workspace — {{uuid}} Directory: {{workspace-directory-1}} Directory status: available. Select an id with /activity link <activity-id> workspace <workspace-id>."'
+- text: activity Workspace {{uuid}} linked to Activity {{activity-id}}. This records a reference only; it does not start work or change permissions. activity Workspace {{uuid}} linked to Activity {{activity-id}}. This records a reference only; it does not start work or change permissions. activity DSH Session {{parent-session-id}} linked to Activity {{activity-id}}. This records a reference only; it does not start work or change permissions. activity DSH Session {{parent-session-id-2}} linked to Activity {{activity-id}}. This records a reference only; it does not start work or change permissions.
+- 'button "activity Delegation admitted: provider spawn Requested task: Inspect the release checklist. Requesting Session: {{parent-session-id}} Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access. Child Session: {{child-session-id}} Activation: activity-review The child Session is a separate one-shot DSH activation. Its result is not yet available, verified, or accepted."'
+- button [expanded]
+- text: "Activity: Release readiness ID: {{activity-id}} Created: {{activity-created-at}} Objective: Prepare the next release for review. Boundaries (descriptive only; runtime permissions are unchanged): In scope: Inspect the release checklist. Out of scope: Do not publish. Delegations: Delegation {{uuid}}: provider spawn Requested task: Inspect the release checklist. Requesting Session: {{parent-session-id}} Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access. Status: admitted; not verified or accepted. Child Session: {{child-session-id}} Activation: activity-review Provider outcome is pending; opening the Activity does not wait for the child Session. Workspace links (selected separately): Workspace: workspace — {{uuid}} Directory: {{workspace-directory-1}} Directory status: available. Workspace: artifact-repository-two — {{uuid}} Directory: {{workspace-directory-2}} Directory status: available. DSH Session links (selected separately; these links do not assign Sessions to Workspaces): DSH Session: {{parent-session-id}} Created: {{timestamp}} Session working directory: {{workspace-directory-1}} DSH Session: {{parent-session-id-2}} Created: {{timestamp}} Session working directory: {{workspace-directory-2}} User-linked artifact references (not verified outputs): No artifact references. Opening an Activity displays saved intent and reported facts; it does not start work or activate a Goal."
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Add files or run commands"
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash": DeepSeek-V4-Flash
+- button "Send message" [disabled]
+- button "1 turns 1 steps · {{throughput}} tok/s": 1 turns 1 steps{{throughput}} tok/s
+- button "7.8K tok · Cache hit 99%": 7.8K tokCache hit 99%
+- button "6% of context used": 6%
