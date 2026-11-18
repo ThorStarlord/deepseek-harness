@@ -210,6 +210,9 @@ it('starts the real DSH spawn provider from `/activity`, then records success an
   expect(admitted.text).toContain('Delegation admitted: provider spawn')
   expect(admitted.text).toContain('Requested task: Review release notes for missing migration steps.')
   expect(admitted.text).toContain(`Requesting Session: ${parent.session.id}`)
+  expect(admitted.text).toContain('DSH profile: unavailable (the runtime did not provide profile metadata).')
+  expect(admitted.text).toContain('Active Agent preset: unavailable (the Agent preset registry is unavailable).')
+  expect(admitted.text).toContain('These classifications do not establish sandbox isolation, permission enforcement, or Skill qualification.')
   expect(admitted.text).toContain('Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.')
   expect(admitted.text).toContain('not yet available, verified, or accepted')
   await started.promise

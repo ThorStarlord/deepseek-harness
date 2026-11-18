@@ -49,7 +49,7 @@ A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activit
 |---|---|
 | `/activity create <JSON>` | Save a name, objective, and `boundaries` object with `inScope` and `outOfScope` string arrays. At least one `inScope` item is required. |
 | `/activity list` | List saved Activities newest first, with their names and stable ids. |
-| `/activity open <activity-id>` | Show the saved objective, descriptive boundaries, context references, and delegation records. |
+| `/activity open <activity-id>` | Show the saved objective, descriptive boundaries, context references, delegation records, and captured profile and preset selection. |
 | `/activity workspaces` | List registered Workspace contexts that can be linked. |
 | `/activity sessions` | List stored DSH Sessions and their available summary metadata. |
 | `/activity link <activity-id> workspace <workspace-id>` | Record a selected Workspace reference without changing the Workspace record. |
@@ -70,12 +70,13 @@ Create and artifact JSON are limited to 16,384 UTF-8 bytes. Each Activity can re
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The command is registered for explicit human invocation, not as a model tool. Save/list/open use `ctx.homeActivities`; context references use `ctx.homeActivityAssociations`; delegation uses the existing `ctx.subagents.startActivation` lifecycle and a separate persisted record. It does not create a Goal or claim that a provider report was verified or accepted.
+The command is registered for explicit human invocation, not as a model tool. Save/list/open use `ctx.homeActivities`; context references use `ctx.homeActivityAssociations`; delegation uses the existing `ctx.subagents.startActivation` lifecycle and a separate persisted record. DSH `spawn` captures the launcher profile bundle selection and the exact active Agent preset modules before startup. Codex is recorded as unavailable because its external runtime does not expose DSH profile or preset data. It does not create a Goal or claim that a provider report was verified or accepted.
 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Command registration and dispatch |
 | [`src/delegation-command.ts`](src/delegation-command.ts) | Delegation parsing, lifecycle, and user-facing results |
+| [`src/execution-selection.ts`](src/execution-selection.ts) | DSH profile and preset snapshot and conservative product classification |
 | [`src/association-command.ts`](src/association-command.ts) | Workspace and Session catalogs, reference commands, and resolution |
 | [`src/artifact-command.ts`](src/artifact-command.ts) | User-linked artifact pointer commands and rendering |
 | [`tests/command.spec.ts`](tests/command.spec.ts) | Command behavior, safe failures, and no-execution assertions |
@@ -110,6 +111,7 @@ Activity scope statements describe requested work; they do not change provider p
 
 - The Web composer and SDK session.run() are the supported interaction surfaces; there is no standalone Activity browser or native Desktop command. SDK support requires a profile that mounts the Home Activity plugins.
 - Create input is JSON text, and Activities cannot be edited or deleted through this command. Codex delegation is one-shot: Activity does not expose continuation, resume, transcript inspection, or rollback. The Session catalog shows summary metadata only; it does not inspect child conversations or prove provider admission.
+- Product classification uses only the captured bundle list or active preset modules using product-supplied metadata. Profile patches and runtime overlays are not classified; a stable label is limited to an exact shipped profile-template bundle list, and an unclassified preset remains unavailable. These labels do not establish sandbox isolation, permission enforcement, or Skill qualification.
 - Artifact locations, revisions, and Workspace selection are user supplied. The command does not inspect referenced files or infer a Git root from a Workspace directory; missing revisions remain unknown, and pointers do not verify execution context or provider output.
 
 <a id="dev-note"></a>

@@ -26,6 +26,7 @@ const CODEX_UNAVAILABLE_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-unavailable.e
 const CODEX_UNCONFIRMED_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-unconfirmed.expected.md')
 const SCREENSHOT_DIR = fileURLToPath(new URL('../../../.artifacts/ui-review', import.meta.url))
 const PENDING_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation-pending.png')
+const PENDING_SCROLLED_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation-pending-scrolled.png')
 const REPORTED_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation.png')
 const MODE = webSnapshotMode()
 const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
@@ -101,6 +102,9 @@ describe('web e2e: Home Activity delegation', () => {
 
     const admissionText = await page.getByText(/Delegation admitted: provider spawn/u).last().textContent() ?? ''
     expect(admissionText).toContain(`Child Session: ${requestedChildSessionId}`)
+    expect(admissionText).toContain('DSH profile: scaffold; bundle-set classification: unavailable')
+    expect(admissionText).toMatch(/Active Agent preset: standard; composition classification: (?:experimental|unavailable)/u)
+    expect(admissionText).toContain('These classifications do not establish sandbox isolation, permission enforcement, or Skill qualification.')
     expect(admissionText).toContain('not yet available, verified, or accepted')
     await submit(`/activity open ${activity.id}`, /Activity: Release readiness/u)
     await page.getByRole('button', { name: /Activity: Release readiness/u }).last().click()
@@ -118,8 +122,21 @@ describe('web e2e: Home Activity delegation', () => {
     await compareOrRefreshGolden(PENDING_EXPECTED, pendingSnapshot, MODE)
     expect(pendingSnapshot).toContain('Status: admitted; not verified or accepted.')
     expect(pendingSnapshot).toContain('Provider outcome is pending')
+    expect(pendingSnapshot).toContain('DSH profile: scaffold; bundle-set classification: unavailable')
+    expect(pendingSnapshot).toContain('Active Agent preset: standard; composition classification:')
+    expect(pendingSnapshot).toContain('These classifications do not establish sandbox isolation, permission enforcement, or Skill qualification.')
+    await page.setViewportSize({ width: 1024, height: 700 })
     await mkdir(SCREENSHOT_DIR, { recursive: true })
     await page.screenshot({ path: PENDING_SCREENSHOT, fullPage: true })
+    const pendingDetails = page.locator('pre').filter({ hasText: 'Activity: Release readiness' }).last()
+    const maxScroll = await pendingDetails.evaluate(element => element.scrollHeight - element.clientHeight)
+    expect(maxScroll).toBeGreaterThan(0)
+    await pendingDetails.hover()
+    await page.mouse.wheel(0, maxScroll + 100)
+    await expect.poll(() => pendingDetails.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+    await expect.poll(() => pendingDetails.evaluate(element => element.scrollTop)).toBeGreaterThanOrEqual(maxScroll - 1)
+    expect(await pendingDetails.textContent()).toContain('These classifications do not establish sandbox isolation, permission enforcement, or Skill qualification.')
+    await page.screenshot({ path: PENDING_SCROLLED_SCREENSHOT, fullPage: true })
 
     childResult.resolve({
       stopReason: 'completed',
@@ -143,6 +160,7 @@ describe('web e2e: Home Activity delegation', () => {
     await compareOrRefreshGolden(REPORTED_EXPECTED, reportedSnapshot, MODE)
     expect(reportedSnapshot).toContain('Status: provider reported; not verified or accepted.')
     expect(reportedSnapshot).toContain('Provider-reported output: The checklist contains two unverified migration steps.')
+    expect(reportedSnapshot).toContain('DSH profile: scaffold; bundle-set classification: unavailable')
     expect(reportedSnapshot).not.toContain('Status: accepted.')
 
     start.mockRestore()
@@ -180,6 +198,7 @@ describe('web e2e: Home Activity delegation', () => {
     await page.getByText(/Delegation admitted: provider codex/u).last().click()
     const codexAdmissionDetails = page.locator('pre').filter({ hasText: 'Codex provider run id' }).last()
     await codexAdmissionDetails.waitFor({ state: 'visible', timeout: 10_000 })
+    expect(codexAdmission).toContain('Runtime profile and preset: unavailable (the native Codex provider does not expose DSH composition).')
     const codexDelegation = scaffold.ctx.homeActivityDelegations.list(codexActivity.id)[0]
     if (codexDelegation === undefined) throw new Error('The Codex command did not persist its stable delegation identity.')
     const codexDelegationId = codexDelegation.id
@@ -223,6 +242,7 @@ describe('web e2e: Home Activity delegation', () => {
     await page.getByText(/Codex-reported output: The checklist needs one migration step\./u)
       .last().waitFor({ timeout: 10_000 })
     const codexReport = await page.locator('pre').filter({ hasText: 'Codex-reported output:' }).last().textContent() ?? ''
+    expect(codexReport).toContain('Runtime profile and preset: unavailable (the native Codex provider does not expose DSH composition).')
     expect(codexReport).toContain('Status: Codex reported; not verified or accepted.')
     expect(codexReport).not.toContain('Child Session: codex-provider-run-1')
     await compareOrRefreshGolden(

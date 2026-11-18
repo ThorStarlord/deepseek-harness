@@ -16,6 +16,74 @@ export type ActivityDelegationStatus =
   | 'reported'
   | 'unconfirmed'
 
+/** Product maturity label for an observed profile or preset selection. */
+export type ActivityConfigurationClassification = 'stable' | 'experimental' | 'unavailable'
+
+/** Launch-time profile bundle facts, or why DSH could not expose them. */
+export type ActivityDelegationProfileSelectionSnapshot =
+  | {
+    readonly status: 'available'
+    /** Profile name supplied by the DSH launcher. */
+    readonly name: string
+    /** Ordered bundles used by the launcher, or null when the complete list exceeded the persistence limit. */
+    readonly startedBundles: readonly string[] | null
+    /** Classification of the recorded bundle selection, not of its runtime permissions. */
+    readonly classification: ActivityConfigurationClassification
+    /** Product data that supports the classification. */
+    readonly classificationSource: 'shipped-profile-template' | 'experimental-package-metadata' | 'unavailable'
+  }
+  | {
+    readonly status: 'unavailable'
+    /** Why the profile identity was not captured. */
+    readonly reason: 'runtime-profile-unavailable' | 'profile-identity-exceeds-persistence-limit'
+  }
+
+/** Active preset facts captured from the parent composition before a child starts. */
+export type ActivityDelegationPresetSelectionSnapshot =
+  | { readonly status: 'none' }
+  | {
+    readonly status: 'selected'
+    /** Stable preset id applied to the parent Agent and inherited by its DSH child. */
+    readonly id: string
+    /** Active module names in the retained preset revision, or null when inspection was unavailable. */
+    readonly activeModules: readonly string[] | null
+    /** Experimental is recorded only when an active module has explicit experimental metadata. */
+    readonly classification: 'experimental' | 'unavailable'
+    /** Product data that supports the classification. */
+    readonly classificationSource: 'experimental-package-metadata' | 'unavailable'
+  }
+  | {
+    readonly status: 'unavailable'
+    /** Why the selected preset identity could not be captured. */
+    readonly reason:
+        | 'agent-preset-registry-unavailable'
+        | 'preset-identity-exceeds-persistence-limit'
+        | 'preset-module-list-exceeds-persistence-limit'
+  }
+
+/** DSH profile and preset facts captured for one native spawn request. */
+export interface DshActivityDelegationExecutionSelectionSnapshot {
+  /** The child uses the DSH composition associated with the user-requesting runtime. */
+  readonly provider: 'spawn'
+  /** Runtime profile supplied at process launch. */
+  readonly profile: ActivityDelegationProfileSelectionSnapshot
+  /** Preset revision joined by the parent and inherited by its child. */
+  readonly preset: ActivityDelegationPresetSelectionSnapshot
+}
+
+/** Codex owns its external composition and does not expose DSH profile or preset facts. */
+export interface ExternalActivityDelegationExecutionSelectionSnapshot {
+  /** The selected provider owns a runtime outside DSH's profile and preset registry. */
+  readonly provider: 'codex'
+  /** Reason DSH cannot report that provider's selected configuration. */
+  readonly unavailableReason: 'external-provider-does-not-expose-dsh-composition'
+}
+
+/** Provider-specific runtime configuration captured when the request is saved. */
+export type ActivityDelegationExecutionSelectionSnapshot =
+  | DshActivityDelegationExecutionSelectionSnapshot
+  | ExternalActivityDelegationExecutionSelectionSnapshot
+
 interface ActivityDelegationRequestBase {
   /** One bounded task sent as the selected provider's initial request. */
   readonly task: string
@@ -25,6 +93,8 @@ interface ActivityDelegationRequestBase {
   readonly requestedAt: string
   /** Records that the request originated from the human `/activity` command. */
   readonly source: 'user-command'
+  /** Runtime selection captured before startup; absent only in records created before selection support. */
+  readonly executionSelection?: ActivityDelegationExecutionSelectionSnapshot | undefined
 }
 
 /** Request persisted before a local DSH child starts. */
@@ -118,7 +188,7 @@ export interface ActivityDelegationUncertainty {
   readonly observedAt: string
 }
 
-/** Version-3 delegation sidecar entry; Activity v1 remains unchanged. */
+/** Version-4 delegation sidecar entry; Activity v1 remains unchanged. */
 export interface ActivityDelegation {
   /** Stable delegation identity. */
   readonly id: ActivityDelegationId
@@ -148,4 +218,6 @@ export interface CreateActivityDelegationRequest {
   readonly task: string
   /** Exact live Session that owns the command invocation. */
   readonly parentSessionId: SessionId
+  /** DSH composition snapshot for `spawn`; omitted data is recorded as unavailable. Ignored for `codex`. */
+  readonly executionSelection?: DshActivityDelegationExecutionSelectionSnapshot | undefined
 }

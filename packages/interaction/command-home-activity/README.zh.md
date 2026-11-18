@@ -48,7 +48,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 |---|---|
 | `/activity create <JSON>` | 保存名称、目标，以及包含 `inScope` 和 `outOfScope` 字符串数组的 `boundaries` 对象。至少需要一项 `inScope` 内容。 |
 | `/activity list` | 按创建时间从新到旧列出已保存 Activity 的名称和稳定 id。 |
-| `/activity open <activity-id>` | 显示已保存目标、描述性边界和委派记录。 |
+| `/activity open <activity-id>` | 显示已保存目标、描述性边界、上下文引用、委派记录和捕获的 profile 和 preset 选择。 |
 | `/activity workspaces` | 列出可以关联的注册 Workspace 上下文。 |
 | `/activity sessions` | 列出已存储的 DSH Session 及可用摘要元数据。 |
 | `/activity link <activity-id> workspace <workspace-id>` | 添加 Workspace 引用，不修改 Workspace 记录。 |
@@ -69,12 +69,13 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-此命令供用户明确调用，而非模型工具。创建、列出和打开通过 `ctx.homeActivities` 执行；委派使用现有 `ctx.subagents.startActivation` 生命周期和单独的持久记录。此命令不会创建 Goal，也不会声称提供方报告已经过验证或接受。
+此命令供用户明确调用，而非模型工具。创建、列出和打开通过 `ctx.homeActivities` 执行；委派使用现有 `ctx.subagents.startActivation` 生命周期和单独的持久记录。DSH `spawn` 会在启动前捕获启动器的 profile bundle 选择和活动 Agent preset 模块。Codex 的 profile 和 preset 信息会记录为不可用，因为其外部运行时不会向 DSH 提供这些数据。此命令不会创建 Goal，也不会声称提供方报告已经过验证或接受。
 
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 命令注册、输入校验与用户可见结果 |
 | [`src/delegation-command.ts`](src/delegation-command.ts) | 委派解析、生命周期与用户可见结果 |
+| [`src/execution-selection.ts`](src/execution-selection.ts) | DSH profile 和 preset 快照及保守的产品分类 |
 | [`src/association-command.ts`](src/association-command.ts) | Workspace 和 Session 目录、引用命令与解析 |
 | [`src/artifact-command.ts`](src/artifact-command.ts) | 用户关联的产物指针命令与显示 |
 | [`tests/command.spec.ts`](tests/command.spec.ts) | 命令行为、安全失败与不执行断言 |
@@ -109,6 +110,7 @@ Activity 范围说明描述请求的工作；它们不会更改提供方权限�
 
 - Web composer 与 SDK session.run() 是受支持的交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。SDK profile 必须加载 Home Activity 插件。
 - 创建输入使用 JSON 文本，且无法通过此命令编辑或删除 Activity。Codex 委派仅执行一次；Activity 不提供继续、恢复、对话记录检查或回滚。Session 列表仅提供摘要元数据；它不会读取子级对话，也不能证明提供方已准入。
+- 产品分类只使用捕获的 bundle 列表或活动 preset 模块及产品提供的元数据。自定义 profile patch 和运行时 overlay 不参与分类；只有与已发布 profile 模板完全一致时，bundle 列表才标为稳定；没有明确分类的 preset 会显示为不可用。这些标签不代表沙箱隔离、权限强制执行或 Skill 资格。
 - 产物位置、修订版和 Workspace 选择由用户提供。命令不会检查被引用的文件，也不会从 Workspace 目录推断 Git 根目录；缺少的修订版保持未知，指针不验证执行上下文或提供方输出。
 
 <a id="dev-note"></a>

@@ -12,6 +12,65 @@ const activityIdSchema = z.uuid().transform(value => brandString<ActivityId>(val
 const delegationIdSchema = z.uuid().transform(value => brandString<ActivityDelegationId>(value))
 const sessionIdSchema = z.string().min(1).max(256).transform(value => brandString<SessionId>(value))
 const runIdSchema = z.string().min(1).max(256).transform(value => brandString<SubagentRunId>(value))
+const profileSelectionSnapshotSchema = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('available'),
+    name: z.string().min(1).max(256),
+    startedBundles: z.array(z.string().min(1).max(256)).max(256).nullable(),
+    classification: z.enum(['stable', 'experimental', 'unavailable']),
+    classificationSource: z.enum(['shipped-profile-template', 'experimental-package-metadata', 'unavailable']),
+  }).strict().superRefine((profile, context) => {
+    const sourceMatches = profile.classification === 'stable'
+      ? profile.classificationSource === 'shipped-profile-template'
+      : profile.classification === 'experimental'
+        ? profile.classificationSource === 'experimental-package-metadata'
+        : profile.classificationSource === 'unavailable'
+    if (!sourceMatches || (profile.startedBundles === null && profile.classification !== 'unavailable')) {
+      context.addIssue({ code: 'custom', message: 'profile classification does not match its source' })
+    }
+  }),
+  z.object({
+    status: z.literal('unavailable'),
+    reason: z.enum(['runtime-profile-unavailable', 'profile-identity-exceeds-persistence-limit']),
+  }).strict(),
+])
+const presetSelectionSnapshotSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('none') }).strict(),
+  z.object({
+    status: z.literal('selected'),
+    id: z.string().min(1).max(256),
+    activeModules: z.array(z.string().min(1).max(256)).max(256).nullable(),
+    classification: z.enum(['experimental', 'unavailable']),
+    classificationSource: z.enum(['experimental-package-metadata', 'unavailable']),
+  }).strict().superRefine((preset, context) => {
+    const sourceMatches = preset.classification === 'experimental'
+      ? preset.classificationSource === 'experimental-package-metadata'
+      : preset.classificationSource === 'unavailable'
+    if (!sourceMatches) context.addIssue({ code: 'custom', message: 'preset classification does not match its source' })
+    if (preset.activeModules === null && preset.classification !== 'unavailable') {
+      context.addIssue({ code: 'custom', message: 'an unavailable module inventory cannot have a positive classification' })
+    }
+  }),
+  z.object({
+    status: z.literal('unavailable'),
+    reason: z.enum([
+      'agent-preset-registry-unavailable',
+      'preset-identity-exceeds-persistence-limit',
+      'preset-module-list-exceeds-persistence-limit',
+    ]),
+  }).strict(),
+])
+const executionSelectionSchema = z.union([
+  z.object({
+    provider: z.literal('spawn'),
+    profile: profileSelectionSnapshotSchema,
+    preset: presetSelectionSnapshotSchema,
+  }).strict(),
+  z.object({
+    provider: z.literal('codex'),
+    unavailableReason: z.literal('external-provider-does-not-expose-dsh-composition'),
+  }).strict(),
+])
 const requestBaseSchema = z.object({
   task: z.string().trim().min(1).max(4_096)
     .refine(value => Buffer.byteLength(value, 'utf8') <= 4_096, 'task exceeds 4096 UTF-8 bytes'),
@@ -23,9 +82,11 @@ const requestSchema = z.union([
   requestBaseSchema.extend({
     provider: z.literal('spawn'),
     requestedChildSessionId: sessionIdSchema,
+    executionSelection: executionSelectionSchema.optional(),
   }).strict(),
   requestBaseSchema.extend({
     provider: z.literal('codex'),
+    executionSelection: executionSelectionSchema.optional(),
   }).strict(),
 ])
 const admissionBaseSchema = z.object({
@@ -86,11 +147,13 @@ export const activityDelegationRecordSchema = z.object({
   const hasReport = record.report !== undefined
   const hasFailure = record.failure !== undefined
   const hasUncertainty = record.uncertainty !== undefined
+  const selectionMatchesProvider = record.request.executionSelection === undefined
+    || record.request.executionSelection.provider === record.request.provider
   const admissionMatchesProvider = record.admission === undefined
     || (record.request.provider === 'codex'
       ? record.admission.provider === 'codex'
       : record.admission.provider !== 'codex')
-  const valid = admissionMatchesProvider && (record.status === 'requested'
+  const valid = selectionMatchesProvider && admissionMatchesProvider && (record.status === 'requested'
     ? !hasAdmission && !hasReport && !hasFailure && !hasUncertainty
     : record.status === 'not-admitted'
       ? !hasAdmission && !hasReport && hasFailure && !hasUncertainty
@@ -102,10 +165,10 @@ export const activityDelegationRecordSchema = z.object({
   if (!valid) context.addIssue({ code: 'custom', message: 'delegation status does not match its recorded facts' })
 })
 
-/** Version-3 sidecar preserves both admitted and ambiguous Codex start outcomes. */
+/** Version-4 sidecar adds immutable launch-time profile and preset facts. */
 export const homeActivityDelegationDomain = defineDomain({
   name: 'home_activity_delegations',
-  version: 3,
-  compatibleVersions: [1, 2],
+  version: 4,
+  compatibleVersions: [1, 2, 3],
   tables: { delegations: domainTable<ActivityDelegation['id'], ActivityDelegation>(activityDelegationRecordSchema) },
 })
