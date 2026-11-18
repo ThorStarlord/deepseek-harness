@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { NO_START_CAPABILITIES } from '@deepseek-ai/dsh-subagent'
 import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold, watchConsole,
   webSnapshotMode, type WebScaffold,
@@ -16,6 +18,12 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/feedback-comm
 const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
 const PENDING_EXPECTED = join(SNAPSHOT_DIR, 'activity-delegation-pending.expected.md')
 const REPORTED_EXPECTED = join(SNAPSHOT_DIR, 'activity-delegation-reported.expected.md')
+const CODEX_EXPECTED_DIR = fileURLToPath(new URL('./expected/home-activity-delegation/', import.meta.url))
+const CODEX_ADMISSION_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-admission.expected.md')
+const CODEX_PENDING_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-pending.expected.md')
+const CODEX_REPORTED_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-reported.expected.md')
+const CODEX_UNAVAILABLE_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-unavailable.expected.md')
+const CODEX_UNCONFIRMED_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-unconfirmed.expected.md')
 const SCREENSHOT_DIR = fileURLToPath(new URL('../../../.artifacts/ui-review', import.meta.url))
 const PENDING_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation-pending.png')
 const REPORTED_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation.png')
@@ -75,8 +83,10 @@ describe('web e2e: Home Activity delegation', () => {
     const submit = async (line: string, marker: RegExp) => {
       await input.fill(line)
       await input.press('Enter')
-      await page.getByText(marker).last().waitFor({ timeout: 10_000 })
+      const rendered = page.getByText(marker).last()
+      await rendered.waitFor({ timeout: 10_000 })
       await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
+      return await rendered.textContent() ?? ''
     }
     await submit(
       `/activity delegate ${activity.id} spawn Inspect the release checklist.`,
@@ -91,7 +101,7 @@ describe('web e2e: Home Activity delegation', () => {
 
     const admissionText = await page.getByText(/Delegation admitted: provider spawn/u).last().textContent() ?? ''
     expect(admissionText).toContain(`Child Session: ${requestedChildSessionId}`)
-    expect(admissionText).toContain('Its provider report is pending; opening the Activity shows user disposition separately.')
+    expect(admissionText).toContain('The child Session is a separate one-shot DSH activation. Its result is not yet available, verified, or accepted.')
     await submit(`/activity open ${activity.id}`, /Activity: Release readiness/u)
     await page.getByRole('button', { name: /Activity: Release readiness/u }).last().click()
     await page.getByText(/Provider report: not recorded/u).last().waitFor({ timeout: 10_000 })
@@ -135,6 +145,164 @@ describe('web e2e: Home Activity delegation', () => {
     expect(reportedSnapshot).toContain('Provider report: received; DSH has not independently verified it.')
     expect(reportedSnapshot).toContain('Provider-reported output: The checklist contains two unverified migration steps.')
     expect(reportedSnapshot).not.toContain('Status: accepted.')
+
+    start.mockRestore()
+    let codexProviderStarts = 0
+    const registerCodexProvider = () => scaffold.ctx.subagents.registerProvider({
+      name: 'codex',
+      capabilities: NO_START_CAPABILITIES,
+      inheritsParentContext: false,
+      async start() {
+        codexProviderStarts += 1
+        throw new Error('simulated transport loss after turn/start')
+      },
+    })
+    const disposeCodexProvider = registerCodexProvider()
+    const codexActivity = await scaffold.ctx.homeActivities.create({
+      name: 'Codex one-shot',
+      objective: 'Receive one bounded external Codex report.',
+      boundaries: { inScope: ['Review the checklist.'], outOfScope: ['Do not publish.'] },
+    })
+    const codexResult = Promise.withResolvers<SubagentResult>()
+    const codexStart = vi.spyOn(scaffold.ctx.subagents, 'startActivation').mockImplementation(async (spec) => {
+      if (spec.childId !== undefined) throw new Error('Codex must not receive a reserved DSH Session id.')
+      return {
+        childId: SessionId('codex-provider-run-1'),
+        name: 'activity-codex-one-shot',
+        result: codexResult.promise,
+        dispose: async () => {},
+      }
+    })
+    await submit(
+      `/activity delegate ${codexActivity.id} codex Review the release checklist once.`,
+      /Delegation admitted: provider codex/u,
+    )
+    const codexAdmission = await page.getByText(/Delegation admitted: provider codex/u).last().textContent() ?? ''
+    await page.getByText(/Delegation admitted: provider codex/u).last().click()
+    const codexAdmissionDetails = page.locator('pre').filter({ hasText: 'Codex adapter run id' }).last()
+    await codexAdmissionDetails.waitFor({ state: 'visible', timeout: 10_000 })
+    const codexDelegation = scaffold.ctx.homeActivityDelegations.list(codexActivity.id)[0]
+    if (codexDelegation === undefined) throw new Error('The Codex command did not persist its stable delegation identity.')
+    const codexDelegationId = codexDelegation.id
+    const codexReplacements = [
+      [codexActivity.id, '{{activity-id}}'],
+      [parentSessionId, '{{parent-session-id}}'],
+      ['codex-provider-run-1', '{{provider-run-id}}'],
+      [codexDelegationId, '{{delegation-id}}'],
+      [codexActivity.createdAt, '{{activity-created-at}}'],
+    ] as const
+    expect(codexAdmission).toContain('Codex adapter run id (not a DSH Session or native Codex conversation id): codex-provider-run-1')
+    expect(codexAdmission).not.toContain('Child Session: codex-provider-run-1')
+    expect(codexAdmission).toContain('Activity does not expose transcript inspection, continuation, resume, or rollback.')
+    expect(codexStart.mock.calls[0]?.[0]?.childId).toBeUndefined()
+    await mkdir(CODEX_EXPECTED_DIR, { recursive: true })
+    await compareOrRefreshGolden(
+      CODEX_ADMISSION_EXPECTED,
+      await captureStableAria(page, '[class*="centerCol"] pre:has-text("Codex adapter run id")', scaffold.workspaceCwd,
+        { replacements: codexReplacements }),
+      MODE,
+    )
+
+    await submit(`/activity open ${codexActivity.id}`, /Activity: Codex one-shot/u)
+    await page.getByRole('button', { name: /Activity: Codex one-shot/u }).last().click()
+    await page.getByText(/Codex outcome is pending/u).last().waitFor({ timeout: 10_000 })
+    await compareOrRefreshGolden(
+      CODEX_PENDING_EXPECTED,
+      await captureStableAria(page, '[class*="centerCol"] pre:has-text("Codex outcome is pending")', scaffold.workspaceCwd,
+        { replacements: codexReplacements }),
+      MODE,
+    )
+    codexResult.resolve({
+      stopReason: 'completed',
+      output: [{ type: 'text', text: 'The checklist needs one migration step.' }],
+    })
+    await vi.waitFor(() => {
+      expect(scaffold.ctx.homeActivityDelegations.list(codexActivity.id)[0]?.status).toBe('reported')
+    })
+    await submit(`/activity open ${codexActivity.id}`, /Activity: Codex one-shot/u)
+    await page.getByRole('button', { name: /Activity: Codex one-shot/u }).last().click()
+    await page.getByText(/Codex-reported output: The checklist needs one migration step\./u)
+      .last().waitFor({ timeout: 10_000 })
+    const codexReport = await page.locator('pre').filter({ hasText: 'Codex-reported output:' }).last().textContent() ?? ''
+    expect(codexReport).toContain('Provider report: received; DSH has not independently verified it.')
+    expect(codexReport).toContain('User disposition: pending; no review has been recorded.')
+    expect(codexReport).toContain('Verification evidence: none recorded.')
+    expect(codexReport).not.toContain('Child Session: codex-provider-run-1')
+    await compareOrRefreshGolden(
+      CODEX_REPORTED_EXPECTED,
+      await captureStableAria(page, '[class*="centerCol"] pre:has-text("Codex-reported output:")', scaffold.workspaceCwd,
+        { replacements: codexReplacements }),
+      MODE,
+    )
+
+    codexStart.mockRestore()
+    disposeCodexProvider()
+    const unavailableActivity = await scaffold.ctx.homeActivities.create({
+      name: 'Unavailable Codex',
+      objective: 'Show the unavailable provider state.',
+      boundaries: { inScope: ['Report that Codex is unavailable.'], outOfScope: ['Start another provider.'] },
+    })
+    expect(scaffold.ctx.subagents.getProvider('codex')).toBeUndefined()
+    const codexUnavailable = await submit(
+      `/activity delegate ${unavailableActivity.id} codex Review the release checklist.`,
+      /The Codex provider is unavailable/u,
+    )
+    expect(codexUnavailable).toContain('DSH did not attempt activation.')
+    const unavailableRecord = scaffold.ctx.homeActivityDelegations.list(unavailableActivity.id)[0]
+    expect(unavailableRecord?.status).toBe('not-admitted')
+    if (unavailableRecord === undefined) throw new Error('Unavailable-provider state omitted its saved request identity.')
+    await compareOrRefreshGolden(
+      CODEX_UNAVAILABLE_EXPECTED,
+      await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd, {
+        replacements: [
+          ...replacements,
+          [delegationId, '{{spawn-delegation-id}}'],
+          ...codexReplacements,
+          [unavailableActivity.id, '{{unavailable-activity-id}}'],
+          [unavailableRecord.id, '{{unavailable-delegation-id}}'],
+        ],
+      }),
+      MODE,
+    )
+
+    registerCodexProvider()
+    const uncertainActivity = await scaffold.ctx.homeActivities.create({
+      name: 'Codex startup uncertainty',
+      objective: 'Keep an ambiguous external start from being retried.',
+      boundaries: { inScope: ['Record whether startup is confirmed.'], outOfScope: ['Retry external work.'] },
+    })
+    const uncertainResult = await submit(
+      `/activity delegate ${uncertainActivity.id} codex Review the release checklist once.`,
+      /DSH could not confirm whether Codex started/u,
+    )
+    expect(uncertainResult).toContain('It may have started; do not repeat this task unless you have independently confirmed it did not start.')
+    await page.getByText(/DSH could not confirm whether Codex started/u).last().click()
+    const uncertainRecord = scaffold.ctx.homeActivityDelegations.list(uncertainActivity.id)[0]
+    expect(uncertainRecord).toMatchObject({
+      status: 'unconfirmed',
+      request: { provider: 'codex' },
+      uncertainty: { reason: 'codex-start-outcome-unknown' },
+    })
+    expect(uncertainRecord?.admission).toBeUndefined()
+    await submit(`/activity open ${uncertainActivity.id}`, /Activity: Codex startup uncertainty/u)
+    await page.getByRole('button', { name: /Activity: Codex startup uncertainty/u }).last().click()
+    await page.getByText(/do not repeat the task unless you independently confirm it did not start/u)
+      .last().waitFor({ timeout: 10_000 })
+    expect(codexProviderStarts).toBe(1)
+    await compareOrRefreshGolden(
+      CODEX_UNCONFIRMED_EXPECTED,
+      await captureStableAria(page, '[class*="centerCol"] pre:has-text("do not repeat the task unless you independently confirm it did not start")',
+        scaffold.workspaceCwd, {
+          replacements: [
+            [uncertainActivity.id, '{{activity-id}}'],
+            [parentSessionId, '{{parent-session-id}}'],
+            [uncertainActivity.createdAt, '{{activity-created-at}}'],
+            ...(uncertainRecord === undefined ? [] : [[uncertainRecord.id, '{{delegation-id}}'] as const]),
+          ],
+        }),
+      MODE,
+    )
+    expect(codexProviderStarts).toBe(1)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 60_000)
