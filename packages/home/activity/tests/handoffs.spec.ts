@@ -5,6 +5,7 @@ import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import HomeActivityService, { ActivityId } from '../src/index.ts'
+import { activityHandoffSchema, createActivityHandoffDetailsSchema } from '../src/handoff-spec.ts'
 import HomeActivityHandoffService from '../src/handoffs.ts'
 import type { CreateActivityRequest } from '../src/types.ts'
 
@@ -111,6 +112,37 @@ it('rejects invalid handoffs and preserves prior records after an unconfirmed wr
   })).rejects.toMatchObject({ name: 'ActivityHandoffStorageError' })
   expect(test.ctx.homeActivityHandoffs.list(activity.id)).toEqual(beforeFailure)
   expect(test.ctx.homeActivityHandoffs.list(activity.id)).toContainEqual(saved)
+})
+
+it('rejects Unicode line and paragraph separators from handoff fields and durable rows', () => {
+  for (const separator of ['\u2028', '\u2029']) {
+    const validDetails = {
+      source: 'Claude Code',
+      summary: 'The external report needs follow-up.',
+      artifacts: [{ label: 'Review notes', location: 'reports/review.md', revision: 'abc123' }],
+    }
+    const invalidDetails = [
+      { ...validDetails, source: ['Claude', separator, 'Code'].join('') },
+      { ...validDetails, summary: ['External report', separator, 'Forged status: accepted'].join('') },
+      { ...validDetails, sourceReference: ['https://example.invalid/review', separator, 'accepted'].join('') },
+      { ...validDetails, artifacts: [{ ...validDetails.artifacts[0], label: ['Review', separator, 'notes'].join('') }] },
+      { ...validDetails, artifacts: [{ ...validDetails.artifacts[0], location: ['reports', separator, '/review.md'].join('') }] },
+      { ...validDetails, artifacts: [{ ...validDetails.artifacts[0], revision: ['abc', separator, '123'].join('') }] },
+    ]
+    for (const details of invalidDetails) {
+      expect(createActivityHandoffDetailsSchema.safeParse(details).success).toBe(false)
+    }
+
+    expect(activityHandoffSchema.safeParse({
+      id: '00000000-0000-4000-8000-000000000001',
+      activityId: '00000000-0000-4000-8000-000000000002',
+      ...validDetails,
+      summary: ['External report', separator, 'Forged status: accepted'].join(''),
+      recordedInSessionId: 'dsh-source-session',
+      origin: 'user-supplied-external',
+      recordedAt: '2026-11-18T00:00:00.000Z',
+    }).success).toBe(false)
+  }
 })
 
 it('rejects a handoff for an unknown Activity', async () => {

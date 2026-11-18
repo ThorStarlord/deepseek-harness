@@ -67,7 +67,7 @@ Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associ
 
 用户关联的产物指针保存在独立的版本 1 `home_activity_artifacts` 域中。每个指针会记录一个 Activity、其委派之一，以及已关联到该 Activity 的一个 Workspace；标签、位置和可选修订版由用户提供。缺少修订版时会显示为未知。打开 Activity 时会分别显示委派发起 Session 与用户选择的 Workspace，并说明两者与所报告输出的关系未经验证。指针与提供方写入的委派报告分开保存，既不证明产物来源，也不代表已验证或已接受。Workspace 目录仅显示为用户选择的上下文；不会推断共享 checkout 或 Git 根目录。
 
-用户提供的外部交接保存在独立的版本 1 `home_activity_handoffs` 域中。每条记录属于一个现有 Activity，并保存来源标签、可选的用户摘要或来源引用、用户提供的产物引用，以及记录时所在的 DSH Session。其他 Session 打开 Activity 时，这些引用会显示为外部用户输入，而非导入的原生执行历史。此服务不会导入 transcript、同步外部 Session、确认工作执行者，也不会声称结果已验证或接受。
+用户提供的外部交接保存在独立的版本 1 `home_activity_handoffs` 域中。每条记录属于一个现有 Activity，并保存来源标签、可选的用户摘要或来源引用、用户提供的产物引用，以及记录时所在的 DSH Session。所有文本都会去除首尾空白并限制长度，且必须为单行；控制、格式、行分隔和段落分隔字符会被拒绝。其他 Session 打开 Activity 时，这些引用会显示为外部用户输入，而非导入的原生执行历史。此服务不会导入 transcript、同步外部 Session、确认工作执行者，也不会声称结果已验证或接受。
 
 | 文件 | 职责 |
 |---|---|

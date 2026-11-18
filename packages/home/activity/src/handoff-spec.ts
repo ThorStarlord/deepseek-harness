@@ -10,7 +10,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 const handoffIdSchema = z.uuid().transform(value => brandString<ActivityHandoffId>(value))
 const activityIdSchema = z.uuid().transform(value => brandString<ActivityId>(value))
 const sessionIdSchema = z.string().trim().min(1).max(256).regex(/^\S+$/u).transform(value => brandString<SessionId>(value))
-const safeLine = z.string().trim().min(1).regex(/^[^\p{Cc}\p{Cf}]+$/u)
+const safeLine = z.string().trim().min(1).regex(/^[^\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+$/u)
 
 /** Maximum handoffs retained for one Activity. */
 export const MAX_HOME_ACTIVITY_HANDOFFS_PER_ACTIVITY = 256
@@ -23,7 +23,7 @@ const handoffArtifactSchema = z.object({
   revision: safeLine.max(256).optional(),
 }).strict() satisfies z.ZodType<ActivityHandoffArtifact>
 
-/** Parse user-supplied handoff details before adding Activity and DSH Session identity. */
+/** Validate bounded, single-line handoff fields before adding Activity and DSH Session identity. */
 export const createActivityHandoffDetailsSchema = z.object({
   source: safeLine.max(120),
   summary: safeLine.max(4000).optional(),
@@ -33,7 +33,7 @@ export const createActivityHandoffDetailsSchema = z.object({
   message: 'A handoff needs a user-supplied summary, source reference, or artifact reference.',
 })
 
-/** Strict durable row schema; additions require a versioned successor. */
+/** Strict durable row schema; text fields are single-line, and additions require a versioned successor. */
 export const activityHandoffSchema = z.object({
   id: handoffIdSchema,
   activityId: activityIdSchema,
