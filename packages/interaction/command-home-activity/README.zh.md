@@ -55,10 +55,11 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 | `/activity link <activity-id> session <session-id>` | 添加 DSH Session 引用，不修改 Session 日志。 |
 | `/activity unlink <activity-id> workspace <workspace-id>` | 删除 Workspace 引用，保留源记录。 |
 | `/activity unlink <activity-id> session <session-id>` | 删除 DSH Session 引用，保留 Session 日志。 |
+| `/activity artifact add <activity-id> <delegation-id> <workspace-id> <JSON>` | 为该 Activity 的委派记录输出指针，并要求所选 Workspace 已关联到同一 Activity。JSON 字段为 `label`、`location` 和可选的 `revision`；缺少修订版时显示为未知。 |
 | `/activity delegate <activity-id> spawn <task>` | 保存请求，明确启动一个 DSH 原生子级 Session，并单独报告提供方结果。 |
 | `/activity delegate <activity-id> codex <task>` | 保存请求，明确启动一次原生 Codex 执行，并单独报告结果。它是一次性执行，不会创建 DSH Session。任务最多为 4,096 个 UTF-8 字节。 |
 
-`spawn` 请求和拟请求子级 Session id 会在提供方启动前持久化；该 id 不证明已获准入。Codex 请求不会虚构 DSH Session id。若 `spawn` 准入状态不确定，`/activity sessions` 会显示拟议 id 是否对应已存储 Session 及其可用摘要元数据；该命令不会读取对话记录。未找到 Session 不能证明启动失败。Codex 准入事实会记录其适配器的 `SubagentRun.id`，不是 DSH Session 或原生 Codex 线程 id；Activity 不提供继续、恢复、对话记录检查或回滚。Codex 使用其原生配置与权限模式，Activity 范围仍仅作描述。提供方输出仍按原样报告，不会标为已验证或已接受。若 Codex 提供方在 dispatch 前不可用，会明确记录为未获准入。若启动调用在 dispatch 开始后拒绝，记录会保持 `unconfirmed`；外部运行可能已经启动，因此除非独立确认 Codex 未启动，否则不要重复该任务。打开 Activity 不会重试。
+创建和产物 JSON 最多为 16,384 个 UTF-8 字节。 每个 Activity 最多可关联 256 个 Workspace、256 个 DSH Session 和 512 个产物指针。 `spawn` 请求和拟请求子级 Session id 会在提供方启动前持久化；该 id 不证明已获准入。Codex 请求不会虚构 DSH Session id。若 `spawn` 准入状态不确定，`/activity sessions` 会显示拟议 id 是否对应已存储 Session 及其可用摘要元数据；该命令不会读取对话记录。未找到 Session 不能证明启动失败。Codex 准入事实会记录其适配器的 `SubagentRun.id`，不是 DSH Session 或原生 Codex 线程 id；Activity 不提供继续、恢复、对话记录检查或回滚。Codex 使用其原生配置与权限模式，Activity 范围仍仅作描述。提供方输出仍按原样报告，不会标为已验证或已接受。若 Codex 提供方在 dispatch 前不可用，会明确记录为未获准入。若启动调用在 dispatch 开始后拒绝，记录会保持 `unconfirmed`；外部运行可能已经启动，因此除非独立确认 Codex 未启动，否则不要重复该任务。打开 Activity 不会重试。
 
 -----
 
@@ -75,6 +76,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 | [`src/index.ts`](src/index.ts) | 命令注册、输入校验与用户可见结果 |
 | [`src/delegation-command.ts`](src/delegation-command.ts) | 委派解析、生命周期与用户可见结果 |
 | [`src/association-command.ts`](src/association-command.ts) | Workspace 和 Session 目录、引用命令与解析 |
+| [`src/artifact-command.ts`](src/artifact-command.ts) | 用户关联的产物指针命令与显示 |
 | [`tests/command.spec.ts`](tests/command.spec.ts) | 命令行为、安全失败与不执行断言 |
 | [`tests/delegation.e2e.spec.ts`](tests/delegation.e2e.spec.ts) | 通过宿主调用路径验证提供方委派成功与失败 |
 
@@ -107,6 +109,7 @@ Activity 范围说明描述请求的工作；它们不会更改提供方权限�
 
 - Web composer 与 SDK session.run() 是受支持的交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。SDK profile 必须加载 Home Activity 插件。
 - 创建输入使用 JSON 文本，且无法通过此命令编辑或删除 Activity。Codex 委派仅执行一次；Activity 不提供继续、恢复、对话记录检查或回滚。Session 列表仅提供摘要元数据；它不会读取子级对话，也不能证明提供方已准入。
+- 产物位置、修订版和 Workspace 选择由用户提供。命令不会检查被引用的文件，也不会从 Workspace 目录推断 Git 根目录；缺少的修订版保持未知，指针不验证执行上下文或提供方输出。
 
 <a id="dev-note"></a>
 ### 开发备注

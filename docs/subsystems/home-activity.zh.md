@@ -2,7 +2,7 @@
 
 [English](home-activity.md) | 中文
 
-Home Activity 是由用户发起并持久保存的事务，包含稳定身份、名称、目标、描述性范围说明和创建时间。它独立于任何 Session；创建或打开 Activity 不会启动其目标。`home-activity` 包通过 [StorageDomain](storage.zh.md) 保存 Activity 记录，明确委派的记录则保存在单独的 sidecar 中。Web [`/activity` 命令](../../packages/interaction/command-home-activity/README.zh.md) 可创建、列出、打开并明确委派一项有界任务。
+Home Activity 是由用户发起并持久保存的事务，包含稳定身份、名称、目标、描述性范围说明和创建时间。它独立于任何 Session；创建或打开 Activity 不会启动其目标。`home-activity` 包会通过独立的 [StorageDomain](storage.zh.md) 记录保存 Activity、上下文引用、明确请求的委派事实和用户关联的产物指针。Web [`/activity` 命令](../../packages/interaction/command-home-activity/README.zh.md) 可创建、列出、打开、关联上下文、记录产物指针并明确委派有界任务。
 
 ## 已保存意图
 
@@ -15,6 +15,12 @@ Home Activity 是由用户发起并持久保存的事务，包含稳定身份、
 独立的版本 1 `home_activity_associations` 域会在 Activity 记录之外保存用户选定的 Workspace 和 DSH Session id，每种引用最多 256 个。两类 id 分别选择；共享 Activity 不会把 Session 分配给 Workspace，也不会从 Workspace 目录推断 Git 仓库根目录。删除引用只修改关联记录，不会重写 Workspace 记录或 Session 日志。
 
 打开 Activity 时，系统会通过各自的注册表解析 id。已删除的上下文会标记为不可用，直到用户主动解除关联。目录、注册表或持久化读取失败会显示为未知状态，而不会误报为引用不存在。
+
+## 产物指针
+
+独立的版本 1 `home_activity_artifacts` 域会保存用户关联的输出指针。每个指针关联到特定 Activity 委派和已关联到该 Activity 的 Workspace，并记录标签、用户提供的来源位置、可选来源修订版和记录时间。缺少修订版时会显示为未知。若委派属于其他 Activity，或 Workspace 尚未关联到该 Activity，服务会拒绝该指针。
+
+产物指针不会修改委派请求、准入或报告。打开 Activity 时会分别显示委派发起 Session 与用户选择的 Workspace，并说明两者与报告输出的关系未经验证；Workspace 与 Session 关联始终相互独立。指针不会暗示共享 checkout、Git 根目录，也不会自动触发跨 Workspace 写入、合并或发布。
 
 ## Cordis API
 
@@ -55,6 +61,34 @@ get(id: ActivityId): Activity | undefined
 ```
 
 Source: [`packages/home/activity/src/index.ts`](../../packages/home/activity/src/index.ts)
+
+<a id="ctxhomeactivityartifacts--homeactivityartifactservice"></a>
+
+### `ctx.homeActivityArtifacts` — `HomeActivityArtifactService`
+
+Stores user-linked artifact pointers independently from delegation lifecycle facts.
+
+```ts cordis-catalog
+/**
+ * Record a user-linked pointer after confirming its Activity, delegation, and selected Workspace references.
+ * @param request - User-supplied label, location, optional revision, and selected identities.
+ * @returns The durable pointer; this does not confirm its Workspace matches execution or who produced it.
+ * @throws {ActivityArtifactError} when identities are missing, mismatched, or unlinked.
+ * @throws {ActivityArtifactStorageError} when pointer persistence fails.
+ */
+create(request: CreateActivityArtifactRequest): Promise<ActivityArtifactReference>
+
+/**
+ * List user-linked pointers for one Activity, newest first.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached pointers belonging to the Activity.
+ * @throws {ActivityArtifactError} when the Activity does not exist.
+ * @throws {ActivityArtifactStorageError} when artifact storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityArtifactReference[]
+```
+
+Source: [`packages/home/activity/src/artifacts.ts`](../../packages/home/activity/src/artifacts.ts)
 
 <a id="ctxhomeactivityassociations--homeactivityassociationservice"></a>
 

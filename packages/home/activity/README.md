@@ -109,6 +109,7 @@ Activity scope remains descriptive, and delegation does not enforce it as an aut
 - Delegation records identify the requesting Session and the admitted child Session but do not create Activity-to-Session links or reusable knowledge.
 - Workspace and Session references are selected independently. A Workspace id names a registered DSH Workspace directory, not an inferred repository root, and sharing an Activity does not assign a Session to a Workspace.
 - Delegated execution is a separate explicit `/activity delegate` command; the Activity service itself has no edit, delete, or scheduling operation. Provider-reported output is not verified or accepted. Native Codex delegation is one-shot and does not expose continuation, resume, transcript inspection, or rollback through Activity; it follows native Codex configuration and permission mode.
+- Artifact references are user-linked pointers. They do not copy or inspect output, prove its producer, verify contents, or trigger cross-Workspace writes, merges, or releases. A missing source revision remains unknown.
 
 <a id="dev-note"></a>
 ### Dev Note

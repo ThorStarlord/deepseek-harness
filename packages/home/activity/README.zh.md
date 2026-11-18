@@ -108,6 +108,7 @@ Activity 范围仍是描述性内容；委派不会将其作为授权规则执�
 - 边界是描述性陈述，不是沙箱根目录或权限授予。
 - `spawn` 委派记录标识请求 Session 和已接受的子级 Session；Codex 记录单独保存外部执行 id，不会把它当成 DSH Session。两者都不会创建 Activity 与 Session 的关联，也不会提供可复用知识。
 - 委派执行由单独的显式 `/activity delegate` 命令启动；Activity 服务本身没有编辑、删除或调度操作。原生 Codex 委派是一次性执行；Activity 不提供继续、恢复、对话记录检查或回滚，并遵循 Codex 原生配置与权限模式。提供方报告的输出不会被标记为已验证或已接受。
+- 产物引用只是用户关联的指针；它不会复制或检查输出、证明生成者、验证内容，也不会触发跨 Workspace 写入、合并或发布。缺少来源修订版时仍显示为未知。
 
 - Workspace 和 Session 引用由用户分别选择。Workspace id 表示已注册的 DSH Workspace 目录，而非推断出的仓库根目录；共享 Activity 不会把 Session 分配给 Workspace。
 

@@ -56,10 +56,11 @@ A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activit
 | `/activity link <activity-id> session <session-id>` | Record a selected DSH Session reference without changing its Session log. |
 | `/activity unlink <activity-id> workspace <workspace-id>` | Remove a Workspace reference while preserving its source record. |
 | `/activity unlink <activity-id> session <session-id>` | Remove a DSH Session reference while preserving its log. |
+| `/activity artifact add <activity-id> <delegation-id> <workspace-id> <JSON>` | Record a user-linked output pointer with a Workspace already linked to the same Activity and a delegation owned by that Activity. JSON fields are `label`, `location`, and optional `revision`; an absent revision is displayed as unknown. |
 | `/activity delegate <activity-id> spawn <task>` | Save the request, explicitly start one DSH-native child Session, and report the provider outcome separately. |
 | `/activity delegate <activity-id> codex <task>` | Save the request, explicitly start one native Codex execution, and report its outcome separately. It is one-shot and does not create a DSH Session. The task is limited to 4,096 UTF-8 bytes. |
 
-Create JSON is limited to 16,384 UTF-8 bytes. Each Activity can reference at most 256 Workspaces and 256 DSH Sessions. A `spawn` request and proposed child Session id are durably saved before provider startup; the id is not proof of admission. A Codex request does not invent a DSH Session id. The command returns after DSH accepts the activation, while outcome recording continues independently. A missing Codex provider is recorded as not admitted before dispatch. If a Codex start call rejects after dispatch begins, the record is unconfirmed because the external run may already have started; do not repeat the task unless you independently confirm it did not start. Opening an Activity never retries it. If `spawn` admission is uncertain, `/activity sessions` shows whether a stored Session with the proposed id is visible and its available summary metadata; it does not inspect the transcript. An absent Session does not confirm startup failure. A Codex admission records the provider adapter's `SubagentRun.id`, not a DSH Session or native Codex thread id; Activity provides no continuation, resume, transcript inspection, or rollback. Codex uses its native configuration and permission mode, while Activity scope remains descriptive. Provider output is reported as supplied and is never labeled verified or accepted.
+Create and artifact JSON are limited to 16,384 UTF-8 bytes. Each Activity can reference at most 256 Workspaces, 256 DSH Sessions, and 512 artifact pointers. A `spawn` request and proposed child Session id are durably saved before provider startup; the id is not proof of admission. A Codex request does not invent a DSH Session id. The command returns after DSH accepts the activation, while outcome recording continues independently. A missing Codex provider is recorded as not admitted before dispatch. If a Codex start call rejects after dispatch begins, the record is unconfirmed because the external run may already have started; do not repeat the task unless you independently confirm it did not start. Opening an Activity never retries it. If `spawn` admission is uncertain, `/activity sessions` shows whether a stored Session with the proposed id is visible and its available summary metadata; it does not inspect the transcript. An absent Session does not confirm startup failure. A Codex admission records the provider adapter's `SubagentRun.id`, not a DSH Session or native Codex thread id; Activity provides no continuation, resume, transcript inspection, or rollback. Codex uses its native configuration and permission mode, while Activity scope remains descriptive. Provider output is reported as supplied and is never labeled verified or accepted.
 
 -----
 
@@ -76,6 +77,7 @@ The command is registered for explicit human invocation, not as a model tool. Sa
 | [`src/index.ts`](src/index.ts) | Command registration and dispatch |
 | [`src/delegation-command.ts`](src/delegation-command.ts) | Delegation parsing, lifecycle, and user-facing results |
 | [`src/association-command.ts`](src/association-command.ts) | Workspace and Session catalogs, reference commands, and resolution |
+| [`src/artifact-command.ts`](src/artifact-command.ts) | User-linked artifact pointer commands and rendering |
 | [`tests/command.spec.ts`](tests/command.spec.ts) | Command behavior, safe failures, and no-execution assertions |
 | [`tests/delegation.e2e.spec.ts`](tests/delegation.e2e.spec.ts) | Provider-backed command success and failure through the host seam |
 
@@ -108,6 +110,7 @@ Activity scope statements describe requested work; they do not change provider p
 
 - The Web composer and SDK session.run() are the supported interaction surfaces; there is no standalone Activity browser or native Desktop command. SDK support requires a profile that mounts the Home Activity plugins.
 - Create input is JSON text, and Activities cannot be edited or deleted through this command. Codex delegation is one-shot: Activity does not expose continuation, resume, transcript inspection, or rollback. The Session catalog shows summary metadata only; it does not inspect child conversations or prove provider admission.
+- Artifact locations, revisions, and Workspace selection are user supplied. The command does not inspect referenced files or infer a Git root from a Workspace directory; missing revisions remain unknown, and pointers do not verify execution context or provider output.
 
 <a id="dev-note"></a>
 ### Dev Note
