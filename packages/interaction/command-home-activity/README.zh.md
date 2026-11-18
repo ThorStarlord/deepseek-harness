@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 Web composer 或 SDK session.run() 中使用 /activity 创建带有目标和描述性范围的命名 Activity，列出并重新打开 Activity，分别关联或解除用户选择的 Workspace 与 DSH Session 身份，记录用户关联的产物指针，并显式委派有界任务给 DSH 原生 spawn 提供方。Activity 目标不会自动执行；委派仅启动用户请求的子级任务，并单独记录 DSH 报告的结果。产物指针与提供方报告分开保存，且不会被标记为已验证。此命令需要命令注册表、Activity、关联、产物与委派服务、Workspace 注册表、Session 持久化和 subagent 服务。
+在 Web composer 或 SDK session.run() 中使用 /activity 创建带有目标和描述性范围的命名 Activity，列出并重新打开 Activity，管理上下文引用与产物指针，显式委派有界工作，并分别记录用户处置和带来源信息的验证证据。Activity 命令不会自动执行已保存目标；审核不会启动或重试委派，提供方报告也保持不变。此命令需要命令注册表以及已挂载命令所用的 Home Activity 服务。
 ## 目录
 
 - [使用此包](#use-this-package)
@@ -48,7 +48,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 |---|---|
 | `/activity create <JSON>` | 保存名称、目标，以及包含 `inScope` 和 `outOfScope` 字符串数组的 `boundaries` 对象。至少需要一项 `inScope` 内容。 |
 | `/activity list` | 按创建时间从新到旧列出已保存 Activity 的名称和稳定 id。 |
-| `/activity open <activity-id>` | 显示已保存目标、描述性边界、上下文引用、委派记录和用户关联的产物指针。 |
+| `/activity open <activity-id>` | 显示已保存意图、上下文引用、委派报告、产物指针，以及每项委派独立的用户审核状态。没有审核记录时显示为待处理。 |
 | `/activity workspaces` | 列出可以关联的注册 Workspace 上下文。 |
 | `/activity sessions` | 列出已存储的 DSH Session 及可用摘要元数据。 |
 | `/activity link <activity-id> workspace <workspace-id>` | 添加 Workspace 引用，不修改 Workspace 记录。 |
@@ -57,8 +57,9 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 | `/activity unlink <activity-id> session <session-id>` | 删除 DSH Session 引用，保留 Session 日志。 |
 | `/activity artifact add <activity-id> <delegation-id> <workspace-id> <JSON>` | 为该 Activity 的委派记录输出指针，并要求所选 Workspace 已关联到同一 Activity。JSON 字段为 `label`、`location` 和可选的 `revision`；缺少修订版时显示为未知。 |
 | `/activity delegate <activity-id> spawn <task>` | 保存请求，明确启动一个 DSH 原生子级 activation，并单独报告提供方结果。任务最多为 4,096 个 UTF-8 字节。 |
+| `/activity review set <activity-id> <delegation-id> <JSON>` | 记录明确的用户处置和可选的用户提供证据，不修改提供方报告。JSON 必须包含 `disposition`（`pending`、`accepted`、`declined` 或 `requires-investigation`）；可选 `evidence` 包含 `source`、`result`（`passed`、`failed`、`inconclusive` 或 `unavailable`）和 `summary`，并可选 `reference`、`observedAt`。 |
 
-创建和产物 JSON 最多为 16,384 个 UTF-8 字节。每个 Activity 最多可关联 256 个 Workspace、256 个 DSH Session 和 512 个产物指针。委派请求与拟请求的子级 Session id 会在提供方启动前持久保存；该 id 不能证明已准入。DSH 接受 activation 后命令即返回，结果记录在后台继续进行。启动被拒绝时会记录为未准入。若准入状态不确定，`/activity sessions` 会显示是否存在拟议 id 的已存储 Session 及可用摘要元数据；该命令不会查看子 Session 的对话。未找到 Session 不能证明启动失败。提供方输出按原样报告，不会标为已验证或已接受。产物指针会分别显示用户选择的 Workspace 与委派发起 Session，并标明其与报告输出的关系未经验证；不会证明生成者、内容、验证或接受状态，也不代表共享 checkout 或仓库操作。
+命令 JSON 最多为 16,384 个 UTF-8 字节。每个 Activity 最多可关联 256 个 Workspace、256 个 DSH Session 和 512 个产物指针。审核证据会追加到当前审核记录中；每项委派最多保存 128 条。证据会记录用户填写的来源和报告结果，DSH 不会检查它。提供方报告的成功仍只是执行报告，不代表已验证或用户接受。委派请求与拟请求的子级 Session id 会在提供方启动前持久保存；该 id 不能证明已准入。DSH 接受 activation 后命令即返回，结果记录在后台继续进行。启动被拒绝时会记录为未准入。若准入状态不确定，`/activity sessions` 会显示是否存在拟议 id 的已存储 Session 及可用摘要元数据；该命令不会查看子 Session 的对话。未找到 Session 不能证明启动失败。产物指针与报告分开保存，并标明其与输出的关系未经验证。
 
 -----
 
@@ -68,7 +69,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-此命令供用户明确调用，而非模型工具。创建、列出和打开通过 `ctx.homeActivities` 执行；上下文引用使用 `ctx.homeActivityAssociations`，产物指针使用 `ctx.homeActivityArtifacts`；委派使用现有 `ctx.subagents.startActivation` 生命周期和单独的持久记录。此命令不会创建 Goal，也不会声称提供方报告已经过验证或接受。
+此命令供用户明确调用，而非模型工具。创建、列出和打开通过 `ctx.homeActivities` 执行；上下文引用使用 `ctx.homeActivityAssociations`，产物指针使用 `ctx.homeActivityArtifacts`，审核使用 `ctx.homeActivityReviews`；委派使用现有 `ctx.subagents.startActivation` 生命周期和单独的持久事实。审核命令不会调用委派服务，也不会修改提供方写入的记录。
 
 | 文件 | 职责 |
 |---|---|
@@ -76,7 +77,9 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 | [`src/delegation-command.ts`](src/delegation-command.ts) | 委派解析、生命周期与用户可见结果 |
 | [`src/association-command.ts`](src/association-command.ts) | Workspace 和 Session 目录、引用命令与解析 |
 | [`src/artifact-command.ts`](src/artifact-command.ts) | 用户关联的产物指针命令与显示 |
+| [`src/review-command.ts`](src/review-command.ts) | 审核输入、持久化命令与结果显示 |
 | [`tests/command.spec.ts`](tests/command.spec.ts) | 命令行为、安全失败与不执行断言 |
+| [`apps/web/tests/home-activity-review.e2e.ts`](../../../apps/web/tests/home-activity-review.e2e.ts) | 通过组装后的 Web 应用和命令 RPC 验证处置与证据 |
 | [`tests/delegation.e2e.spec.ts`](tests/delegation.e2e.spec.ts) | 通过宿主调用路径验证提供方委派成功与失败 |
 
 </details>
@@ -108,6 +111,7 @@ Activity 范围说明描述请求的工作；它们不会限制子级工具或�
 
 - Web composer 与 SDK session.run() 是受支持的交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。SDK profile 必须加载 Home Activity 插件。
 - 创建输入使用 JSON 文本，且无法通过此命令编辑或删除 Activity。委派目前只支持 spawn DSH 原生提供方。Session 列表仅提供摘要元数据；它不会读取子级对话，也不能证明提供方已准入。
+- 审核证据及其报告结果由用户提供，DSH 不会检查。除非用户主动更改，当前处置保持 pending；执行成功报告不会自动接受结果。
 - 产物位置、修订版和 Workspace 选择由用户提供。命令不会检查被引用的文件，也不会从 Workspace 目录推断 Git 根目录；缺少的修订版保持未知，指针不验证执行上下文或提供方输出。
 
 <a id="dev-note"></a>

@@ -23,8 +23,10 @@ import { SubagentRunId } from '@deepseek-ai/dsh-subagent'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import HomeActivityService from '@deepseek-ai/dsh-home-activity'
+import HomeActivityArtifactService from '@deepseek-ai/dsh-home-activity/artifacts'
 import HomeActivityAssociationService from '@deepseek-ai/dsh-home-activity/associations'
 import HomeActivityDelegations, { ActivityDelegationError } from '@deepseek-ai/dsh-home-activity/delegations'
+import HomeActivityReviewService from '@deepseek-ai/dsh-home-activity/reviews'
 import type { ActivityDelegation, ActivityDelegationUncertainty } from '@deepseek-ai/dsh-home-activity/delegations'
 import * as commandHomeActivity from '../src/index.ts'
 import { executeActivityDelegation, renderActivityDelegation } from '../src/delegation-command.ts'
@@ -132,6 +134,8 @@ async function harness(adapter: DelegationAdapter) {
   await ctx.plugin(HomeActivityDelegations)
   ctx.provide('workspaceRegistry', { get: () => undefined, list: () => [] } as never)
   await ctx.plugin(HomeActivityAssociationService)
+  await ctx.plugin(HomeActivityArtifactService)
+  await ctx.plugin(HomeActivityReviewService)
   await ctx.plugin(commandHomeActivity)
   ctx.llm.registerAdapter(['mock'], adapter)
   const parent = await ctx.agentLoop.create(SessionId(`activity-parent-${randomUUID()}`), {

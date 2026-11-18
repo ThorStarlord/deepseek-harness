@@ -1,0 +1,33 @@
+- banner:
+  - navigation "Session hierarchy": Reply with the single word
+  - text: Standard mode
+  - button "More actions"
+  - button "Open right sidebar"
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+  - button "More conversation views"
+- text: Reply with the single word LIGHTHOUSE and stop. {{clock}}
+- button "Copy"
+- status: Completed
+- button "Completed in {{duration}}"
+- paragraph: LIGHTHOUSE
+- button "Copy"
+- button "Good response"
+- button "Bad response"
+- button "Branch into a new conversation"
+- text: {{clock}}
+- button [expanded]
+- text: "Activity: Release readiness ID: {{activity-id}} Created: {{timestamp}} Objective: Review a provider-reported release change. Boundaries (descriptive only; runtime permissions are unchanged): In scope: Inspect the report and evidence. Out of scope: Do not publish. Delegations: Delegation {{delegation-id}}: provider spawn Requested task: Inspect the release change. Requesting Session: {{parent-session-id}} Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access. Status: provider reported; not verified or accepted. Child Session: activity-review-child Activation: activity-review Provider stop reason: stop Provider-reported output: The provider reported the requested change complete. User disposition: pending; no review has been recorded. Verification evidence: none recorded. Workspace links (selected separately): No Workspace links. DSH Session links (selected separately; these links do not assign Sessions to Workspaces): No DSH Session links. User-linked artifact references (not verified outputs): No artifact references. Opening an Activity displays saved intent and reported facts; it does not start work or activate a Goal."
+- 'button "activity User disposition recorded: requires investigation. User-supplied evidence recorded: Release CI run reports failed. DSH did not verify its source or result. The provider execution report was not changed."'
+- 'button "activity User disposition recorded: requires investigation. User-supplied evidence recorded: Independent smoke check reports passed. DSH did not verify its source or result. The provider execution report was not changed."'
+- button [expanded]
+- text: "Activity: Release readiness ID: {{activity-id}} Created: {{timestamp}} Objective: Review a provider-reported release change. Boundaries (descriptive only; runtime permissions are unchanged): In scope: Inspect the report and evidence. Out of scope: Do not publish. Delegations: Delegation {{delegation-id}}: provider spawn Requested task: Inspect the release change. Requesting Session: {{parent-session-id}} Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access. Status: provider reported; not verified or accepted. Child Session: activity-review-child Activation: activity-review Provider stop reason: stop Provider-reported output: The provider reported the requested change complete. User disposition: requires investigation (recorded {{timestamp}}). User-supplied verification evidence (not checked by DSH): Evidence 1: Release CI run reports failed. Evidence summary: The publish validation job failed. Evidence reference: https://example.test/checks/release-validation Evidence recorded: {{timestamp}}; source entered by user command. Evidence 2: Independent smoke check reports passed. Evidence summary: The smoke check reported success. Evidence recorded: {{timestamp}}; source entered by user command. This user disposition and evidence do not alter the provider report. Workspace links (selected separately): No Workspace links. DSH Session links (selected separately; these links do not assign Sessions to Workspaces): No DSH Session links. User-linked artifact references (not verified outputs): No artifact references. Opening an Activity displays saved intent and reported facts; it does not start work or activate a Goal."
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Add files or run commands"
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash": DeepSeek-V4-Flash
+- button "Send message" [disabled]
+- button "1 turns 1 steps · {{throughput}} tok/s": 1 turns 1 steps{{throughput}} tok/s
+- button "7.8K tok · Cache hit 99%": 7.8K tokCache hit 99%
+- button "6% of context used": 6%

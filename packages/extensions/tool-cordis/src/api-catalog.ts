@@ -1868,6 +1868,34 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'homeActivityReviews',
+    summary: 'User dispositions and verification evidence stored independently from delegation reports.',
+    description: 'User dispositions and verification evidence stored independently from delegation reports.',
+    methods: [
+      {
+        signature: 'record(request: RecordActivityReviewRequest): Promise<ActivityReview>',
+        description: 'Record a user disposition and optionally append one user-supplied evidence entry.',
+        parameters: [{ name: 'request', description: 'Activity, owned delegation, disposition, and optional evidence.' }],
+        returns: 'The durable review, without changing the delegation report.',
+        throws: ['{ActivityReviewError} when either identity is unavailable, mismatched, or the evidence limit is reached.', '{ActivityReviewStorageError} when review persistence fails.'],
+      },
+      {
+        signature: 'get(activityId: ActivityId, delegationId: ActivityDelegationId): ActivityReview | undefined',
+        description: 'Read a review for one delegation, returning no row when its disposition is still pending.',
+        parameters: [{ name: 'activityId', description: 'Saved Activity that owns the delegation.' }, { name: 'delegationId', description: 'Delegation identity selected for review.' }],
+        returns: 'The saved review, or `undefined` when the user has not recorded one.',
+        throws: ['{ActivityReviewError} when either identity is unavailable or mismatched.', '{ActivityReviewStorageError} when review storage cannot be read.'],
+      },
+      {
+        signature: 'list(activityId: ActivityId): readonly ActivityReview[]',
+        description: 'List user reviews belonging to one saved Activity.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Detached reviews, newest update first.',
+        throws: ['{ActivityReviewError} when the Activity does not exist.', '{ActivityReviewStorageError} when review storage cannot be read.'],
+      },
+    ],
+  },
+  {
     key: 'inspector',
     summary: 'Shared Host/Client service façade over the realm\'s source publisher.',
     description: 'Shared Host/Client service façade over the realm\'s source publisher.',
@@ -5693,6 +5721,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ActivityDelegationUncertainty {\n    readonly reason: \'restart-before-admission-recorded\' | \'restart-before-report-recorded\' | \'admission-write-failed\' | \'report-write-failed\' | \'startup-result-rejected\';\n    readonly observedAt: string;\n}',
   },
   {
+    name: 'ActivityReview',
+    declaration: 'export interface ActivityReview {\n    readonly activityId: ActivityId;\n    readonly delegationId: ActivityDelegationId;\n    readonly disposition: ActivityReviewDisposition;\n    readonly evidence: readonly ActivityReviewEvidence[];\n    readonly updatedAt: string;\n    readonly source: \'user-command\';\n}',
+  },
+  {
+    name: 'ActivityReviewDisposition',
+    declaration: 'export type ActivityReviewDisposition = \'pending\' | \'accepted\' | \'declined\' | \'requires-investigation\';',
+  },
+  {
+    name: 'ActivityReviewEvidence',
+    declaration: 'export interface ActivityReviewEvidence {\n    readonly id: ActivityReviewEvidenceId;\n    readonly source: string;\n    readonly result: ActivityReviewEvidenceResult;\n    readonly summary: string;\n    readonly reference?: string | undefined;\n    readonly observedAt?: string | undefined;\n    readonly recordedAt: string;\n    readonly origin: \'user-command\';\n}',
+  },
+  {
+    name: 'ActivityReviewEvidenceId',
+    declaration: 'export type ActivityReviewEvidenceId = Branded<\'ActivityReviewEvidenceId\'>;',
+  },
+  {
+    name: 'ActivityReviewEvidenceResult',
+    declaration: 'export type ActivityReviewEvidenceResult = \'passed\' | \'failed\' | \'inconclusive\' | \'unavailable\';',
+  },
+  {
     name: 'AdapterRegistrationHandle',
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
@@ -8067,6 +8115,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RecommendationDetails',
     declaration: 'export type RecommendationDetails = {\n    readonly status: \'available\';\n    readonly title: LocalizedText;\n    readonly description: LocalizedText;\n    readonly enabled: boolean;\n} | {\n    readonly status: \'refused\';\n    readonly reason: \'unknown\' | \'unavailable\' | \'not-live-root\' | \'closing\';\n};',
+  },
+  {
+    name: 'RecordActivityReviewRequest',
+    declaration: 'export interface RecordActivityReviewRequest {\n    readonly activityId: ActivityId;\n    readonly delegationId: ActivityDelegationId;\n    readonly disposition: ActivityReviewDisposition;\n    readonly evidence?: Omit<ActivityReviewEvidence, \'id\' | \'recordedAt\' | \'origin\'> | undefined;\n}',
   },
   {
     name: 'RecurringScheduleRecord',

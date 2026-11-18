@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-保存命名 Activity、目标和描述性范围说明，使其在原 Session 结束后仍可使用。Web 和 SDK 的 /activity 命令可以分别关联用户选择的 Workspace 与 DSH Session 身份，并允许其他 Session 重新打开这些引用。独立服务会保存用户明确请求的 DSH 原生委派事实，以及由用户关联的产物指针。产物指针会标记所选 Workspace 和委派，但不会验证输出由谁生成。创建或打开 Activity 不会执行其目标、创建 Goal 或授予运行时权限。
+保存命名 Activity、目标和描述性范围说明，使其在原 Session 结束后仍可使用。Web 和 SDK 的 /activity 命令可以分别关联用户选择的 Workspace 与 DSH Session 身份，并允许其他 Session 重新打开这些引用。独立服务会保存委派事实、用户关联的产物指针，以及带有来源信息的用户处置和验证证据；审核记录不会覆盖提供方报告。创建或打开 Activity 不会执行其目标、创建 Goal 或授予运行时权限。
 
 ## 目录
 
@@ -46,6 +46,7 @@ Web 和 SDK 配置会将此服务、关联服务、JSON StorageDomain 提供方�
 - name: '@deepseek-ai/dsh-home-activity'
 - name: '@deepseek-ai/dsh-home-activity/associations'
 - name: '@deepseek-ai/dsh-home-activity/artifacts'
+- name: '@deepseek-ai/dsh-home-activity/reviews'
 ```
 
 存储提供方拥有各自的设置；请参阅 [JSON 后端](../../storage/storage-json/README.zh.md)和 [StorageDomain](../../storage/storage-domain/README.zh.md)参考。
@@ -66,6 +67,8 @@ Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associ
 
 用户关联的产物指针保存在独立的版本 1 `home_activity_artifacts` 域中。每个指针会记录一个 Activity、其委派之一，以及已关联到该 Activity 的一个 Workspace；标签、位置和可选修订版由用户提供。缺少修订版时会显示为未知。打开 Activity 时会分别显示委派发起 Session 与用户选择的 Workspace，并说明两者与所报告输出的关系未经验证。指针与提供方写入的委派报告分开保存，既不证明产物来源，也不代表已验证或已接受。Workspace 目录仅显示为用户选择的上下文；不会推断共享 checkout 或 Git 根目录。
 
+结果审核保存在独立的版本 1 `home_activity_reviews` 域中，按委派身份建立记录并关联其所属 Activity。没有已保存审核记录表示用户处置仍为 pending。用户可以记录明确处置并添加带来源信息的证据；每条证据都会明确显示为用户提供且未经 DSH 检查。更新处置会保留现有证据，不会修改请求、准入或提供方报告事实。
+
 | 文件 | 职责 |
 |---|---|
 | [`src/types.ts`](src/types.ts) | Activity 身份与请求类型 |
@@ -80,10 +83,14 @@ Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associ
 | [`src/artifact-types.ts`](src/artifact-types.ts) | 用户关联的产物指针类型 |
 | [`src/artifact-spec.ts`](src/artifact-spec.ts) | 带版本的产物指针 schema |
 | [`src/artifacts.ts`](src/artifacts.ts) | 独立产物指针 StorageDomain 服务 |
+| [`src/review-types.ts`](src/review-types.ts) | 用户处置与证据类型 |
+| [`src/review-spec.ts`](src/review-spec.ts) | 带版本的审核记录 schema |
+| [`src/reviews.ts`](src/reviews.ts) | 独立审核 StorageDomain 服务 |
 | [`tests/activity.spec.ts`](tests/activity.spec.ts) | 存储关闭、重开与校验行为 |
 | [`tests/delegations.spec.ts`](tests/delegations.spec.ts) | 委派事实持久化、重启恢复与校验 |
 | [`tests/associations.spec.ts`](tests/associations.spec.ts) | 关联校验、重启恢复、幂等性与写入回滚 |
 | [`tests/artifacts.spec.ts`](tests/artifacts.spec.ts) | 指针重启恢复、Workspace 归属与跨 Activity 拒绝 |
+| [`tests/reviews.spec.ts`](tests/reviews.spec.ts) | 审核持久化、重启恢复、处置更新、证据来源与归属校验 |
 
 </details>
 
@@ -94,7 +101,7 @@ Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associ
 
 - [Home Activity 子系统](../../../docs/subsystems/home-activity.zh.md) — 领域与持久化语义。
 - [StorageDomain](../../storage/storage-domain/README.zh.md) — 带版本的主机端记录。
-- [Web `/activity` 命令](../../interaction/command-home-activity/README.zh.md) — 创建、列出并打开 Activity。
+- [Web `/activity` 命令](../../interaction/command-home-activity/README.zh.md) — 创建、列出、打开并审核 Activity。
 
 -----
 
@@ -116,6 +123,7 @@ Activity 范围仍是描述性内容；委派不会将其作为授权规则执�
 - 委派记录标识请求 Session 和已接受的子级 Session，但不会创建 Activity 与 Session 的关联，也不会提供可复用知识。
 - 委派执行由单独的显式 `/activity delegate` 命令启动；Activity 服务本身没有编辑、删除或调度操作。提供方报告的输出不会被标记为已验证或已接受。
 - 产物引用只是用户关联的指针；它不会复制或检查输出、证明生成者、验证内容，也不会触发跨 Workspace 写入、合并或发布。缺少来源修订版时仍显示为未知。
+- 审核证据及其报告结果由用户提供。DSH 会保留其来源信息，但不会检查来源、证据或结果；当前处置与提供方执行状态分开保存。
 
 - Workspace 和 Session 引用由用户分别选择。Workspace id 表示已注册的 DSH Workspace 目录，而非推断出的仓库根目录；共享 Activity 不会把 Session 分配给 Workspace。
 

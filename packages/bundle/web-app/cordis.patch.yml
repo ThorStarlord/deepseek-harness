@@ -101,6 +101,9 @@
     - id: home-activity-artifacts
       name: '@deepseek-ai/dsh-home-activity/artifacts'
 
+    - id: home-activity-reviews
+      name: '@deepseek-ai/dsh-home-activity/reviews'
+
     - id: command-home-activity
       name: '@deepseek-ai/dsh-command-home-activity'
 

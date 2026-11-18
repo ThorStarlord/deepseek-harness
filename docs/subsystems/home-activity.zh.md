@@ -2,7 +2,7 @@
 
 [English](home-activity.md) | 中文
 
-Home Activity 是由用户发起并持久保存的事务，包含稳定身份、名称、目标、描述性范围说明和创建时间。它独立于任何 Session；创建或打开 Activity 不会启动其目标。`home-activity` 包会通过独立的 [StorageDomain](storage.zh.md) 记录保存 Activity、上下文引用、明确请求的委派事实和用户关联的产物指针。Web [`/activity` 命令](../../packages/interaction/command-home-activity/README.zh.md) 可创建、列出、打开、关联上下文、记录产物指针并明确委派有界任务。
+Home Activity 是由用户发起并持久保存的事务，包含稳定身份、名称、目标、描述性范围说明和创建时间。它独立于任何 Session；创建或打开 Activity 不会启动其目标。`home-activity` 包会通过独立的 [StorageDomain](storage.zh.md) 记录保存 Activity、上下文引用、明确请求的委派事实、用户关联的产物指针，以及带来源信息的用户处置和验证证据。Web [`/activity` 命令](../../packages/interaction/command-home-activity/README.zh.md) 可创建、列出、打开、关联上下文、记录指针与审核，并明确委派有界任务。
 
 ## 已保存意图
 
@@ -21,6 +21,12 @@ Home Activity 是由用户发起并持久保存的事务，包含稳定身份、
 独立的版本 1 `home_activity_artifacts` 域会保存用户关联的输出指针。每个指针关联到特定 Activity 委派和已关联到该 Activity 的 Workspace，并记录标签、用户提供的来源位置、可选来源修订版和记录时间。缺少修订版时会显示为未知。若委派属于其他 Activity，或 Workspace 尚未关联到该 Activity，服务会拒绝该指针。
 
 产物指针不会修改委派请求、准入或报告。打开 Activity 时会分别显示委派发起 Session 与用户选择的 Workspace，并说明两者与报告输出的关系未经验证；Workspace 与 Session 关联始终相互独立。指针不会暗示共享 checkout、Git 根目录，也不会自动触发跨 Workspace 写入、合并或发布。
+
+## 结果审核
+
+独立的版本 1 `home_activity_reviews` 域会为每项委派保存一条用户审核记录，并关联到其所属 Activity。没有审核记录表示用户处置仍为 pending。用户可以将当前处置设为 pending、accepted、declined 或 requires investigation，并追加分别注明来源的证据，记录用户填写的来源和报告结果。打开 Activity 时会将处置及各条证据与提供方报告分别显示。
+
+证据及其结果由用户提供，DSH 不会检查。相互冲突的记录会分别显示，不会合并为单一验证状态。更新处置会保留证据，也不会修改委派请求、准入或报告。审核 Activity 不会启动或重试委派。
 
 ## Cordis API
 
@@ -205,4 +211,42 @@ async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAd
 ```
 
 Source: [`packages/home/activity/src/delegations.ts`](../../packages/home/activity/src/delegations.ts)
+
+<a id="ctxhomeactivityreviews--homeactivityreviewservice"></a>
+
+### `ctx.homeActivityReviews` — `HomeActivityReviewService`
+
+User dispositions and verification evidence stored independently from delegation reports.
+
+```ts cordis-catalog
+/**
+ * Record a user disposition and optionally append one user-supplied evidence entry.
+ * @param request - Activity, owned delegation, disposition, and optional evidence.
+ * @returns The durable review, without changing the delegation report.
+ * @throws {ActivityReviewError} when either identity is unavailable, mismatched, or the evidence limit is reached.
+ * @throws {ActivityReviewStorageError} when review persistence fails.
+ */
+record(request: RecordActivityReviewRequest): Promise<ActivityReview>
+
+/**
+ * Read a review for one delegation, returning no row when its disposition is still pending.
+ * @param activityId - Saved Activity that owns the delegation.
+ * @param delegationId - Delegation identity selected for review.
+ * @returns The saved review, or `undefined` when the user has not recorded one.
+ * @throws {ActivityReviewError} when either identity is unavailable or mismatched.
+ * @throws {ActivityReviewStorageError} when review storage cannot be read.
+ */
+get(activityId: ActivityId, delegationId: ActivityDelegationId): ActivityReview | undefined
+
+/**
+ * List user reviews belonging to one saved Activity.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached reviews, newest update first.
+ * @throws {ActivityReviewError} when the Activity does not exist.
+ * @throws {ActivityReviewStorageError} when review storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityReview[]
+```
+
+Source: [`packages/home/activity/src/reviews.ts`](../../packages/home/activity/src/reviews.ts)
 <!-- END GENERATED cordis-surface -->
