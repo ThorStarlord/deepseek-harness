@@ -70,6 +70,10 @@ const executionSelectionSchema = z.union([
     provider: z.literal('codex'),
     unavailableReason: z.literal('external-provider-does-not-expose-dsh-composition'),
   }).strict(),
+  z.object({
+    provider: z.literal('claude-code'),
+    unavailableReason: z.literal('external-provider-does-not-expose-dsh-composition'),
+  }).strict(),
 ])
 const requestBaseSchema = z.object({
   task: z.string().trim().min(1).max(4_096)
@@ -88,6 +92,10 @@ const requestSchema = z.union([
     provider: z.literal('codex'),
     executionSelection: executionSelectionSchema.optional(),
   }).strict(),
+  requestBaseSchema.extend({
+    provider: z.literal('claude-code'),
+    executionSelection: executionSelectionSchema.optional(),
+  }).strict(),
 ])
 const admissionBaseSchema = z.object({
   runId: runIdSchema.optional(),
@@ -102,6 +110,10 @@ const admissionSchema = z.union([
   }).strict(),
   admissionBaseSchema.extend({
     provider: z.literal('codex'),
+    providerRunId: z.string().min(1).max(256),
+  }).strict(),
+  admissionBaseSchema.extend({
+    provider: z.literal('claude-code'),
     providerRunId: z.string().min(1).max(256),
   }).strict(),
 ])
@@ -128,6 +140,7 @@ const uncertaintySchema = z.object({
     'report-write-failed',
     'startup-result-rejected',
     'codex-start-outcome-unknown',
+    'claude-code-start-outcome-unknown',
   ]),
   observedAt: z.iso.datetime(),
 }).strict()
@@ -150,9 +163,9 @@ export const activityDelegationRecordSchema = z.object({
   const selectionMatchesProvider = record.request.executionSelection === undefined
     || record.request.executionSelection.provider === record.request.provider
   const admissionMatchesProvider = record.admission === undefined
-    || (record.request.provider === 'codex'
-      ? record.admission.provider === 'codex'
-      : record.admission.provider !== 'codex')
+    || (record.request.provider === 'spawn'
+      ? record.admission.provider === undefined || record.admission.provider === 'spawn'
+      : record.admission.provider === record.request.provider)
   const valid = selectionMatchesProvider && admissionMatchesProvider && (record.status === 'requested'
     ? !hasAdmission && !hasReport && !hasFailure && !hasUncertainty
     : record.status === 'not-admitted'
@@ -165,10 +178,10 @@ export const activityDelegationRecordSchema = z.object({
   if (!valid) context.addIssue({ code: 'custom', message: 'delegation status does not match its recorded facts' })
 })
 
-/** Version-4 sidecar adds immutable launch-time profile and preset facts. */
+/** Version-5 sidecar adds native Claude Code one-shot delegation facts. */
 export const homeActivityDelegationDomain = defineDomain({
   name: 'home_activity_delegations',
-  version: 4,
-  compatibleVersions: [1, 2, 3],
+  version: 5,
+  compatibleVersions: [1, 2, 3, 4],
   tables: { delegations: domainTable<ActivityDelegation['id'], ActivityDelegation>(activityDelegationRecordSchema) },
 })

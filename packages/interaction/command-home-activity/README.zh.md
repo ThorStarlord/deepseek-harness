@@ -40,7 +40,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 
 [命令注册表](../commands/README.zh.md)负责直接调用人工命令，[`dsh-home-activity`](../../home/activity/README.zh.md)负责持久记录。
 
-启用委派的组合还需挂载 `@deepseek-ai/dsh-home-activity/delegations`、`@deepseek-ai/dsh-subagent` 和受支持的提供方。命令支持 `spawn`；启用可选的原生 Codex 提供方后也支持 `codex`。
+启用委派的组合还需挂载 `@deepseek-ai/dsh-home-activity/delegations`、`@deepseek-ai/dsh-subagent` 和受支持的提供方。命令支持 `spawn`；启用可选的原生 Codex 或 Claude Code 提供方后，也支持 `codex` 和 `claude-code`。
 
 ### 命令参考
 
@@ -58,8 +58,9 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 | `/activity artifact add <activity-id> <delegation-id> <workspace-id> <JSON>` | 为该 Activity 的委派记录输出指针，并要求所选 Workspace 已关联到同一 Activity。JSON 字段为 `label`、`location` 和可选的 `revision`；缺少修订版时显示为未知。 |
 | `/activity delegate <activity-id> spawn <task>` | 保存请求，明确启动一个 DSH 原生子级 Session，并单独报告提供方结果。 |
 | `/activity delegate <activity-id> codex <task>` | 保存请求，明确启动一次原生 Codex 执行，并单独报告结果。它是一次性执行，不会创建 DSH Session。任务最多为 4,096 个 UTF-8 字节。 |
+| `/activity delegate <activity-id> claude-code <task>` | 保存请求，明确启动一次原生 Claude Code 执行，并单独报告结果。它是一次性执行，不会创建 DSH Session。任务最多为 4,096 个 UTF-8 字节。 |
 
-创建和产物 JSON 最多为 16,384 个 UTF-8 字节。 每个 Activity 最多可关联 256 个 Workspace、256 个 DSH Session 和 512 个产物指针。 `spawn` 请求和拟请求子级 Session id 会在提供方启动前持久化；该 id 不证明已获准入。Codex 请求不会虚构 DSH Session id。若 `spawn` 准入状态不确定，`/activity sessions` 会显示拟议 id 是否对应已存储 Session 及其可用摘要元数据；该命令不会读取对话记录。未找到 Session 不能证明启动失败。Codex 准入事实会记录其适配器的 `SubagentRun.id`，不是 DSH Session 或原生 Codex 线程 id；Activity 不提供继续、恢复、对话记录检查或回滚。Codex 使用其原生配置与权限模式，Activity 范围仍仅作描述。提供方输出仍按原样报告，不会标为已验证或已接受。若 Codex 提供方在 dispatch 前不可用，会明确记录为未获准入。若启动调用在 dispatch 开始后拒绝，记录会保持 `unconfirmed`；外部运行可能已经启动，因此除非独立确认 Codex 未启动，否则不要重复该任务。打开 Activity 不会重试。
+创建和产物 JSON 最多为 16,384 个 UTF-8 字节。每个 Activity 最多可关联 256 个 Workspace、256 个 DSH Session 和 512 个产物指针。`spawn` 请求和拟请求子级 Session id 会在提供方启动前持久化；该 id 不证明已获准入。Codex 和 Claude Code 请求不会虚构 DSH Session id。命令会在 DSH 接受 activation 后返回，结果记录独立继续。外部提供方不可用时会在 dispatch 前记录为未获准入。若 Codex 或 Claude Code 启动调用在 dispatch 开始后拒绝，记录会保持 `unconfirmed`，因为外部运行可能已经启动；除非独立确认其未启动，否则不要重复任务。打开 Activity 不会重试。若 `spawn` 准入状态不确定，`/activity sessions` 会显示拟议 id 是否对应已存储 Session 及其可用摘要元数据；该命令不会读取对话记录。未找到 Session 不能证明启动失败。外部准入会记录适配器的 `SubagentRun.id`，不是 DSH Session 或原生提供方会话 id；Activity 不提供继续、恢复、对话记录检查或回滚。Codex 和 Claude Code 遵循各自的原生配置与权限处理，Activity 范围仍仅作描述。提供方输出按原样报告，不会标为已验证或已接受。
 
 -----
 
@@ -69,7 +70,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-此命令供用户明确调用，而非模型工具。创建、列出和打开通过 `ctx.homeActivities` 执行；委派使用现有 `ctx.subagents.startActivation` 生命周期和单独的持久记录。DSH `spawn` 会在启动前捕获启动器的 profile bundle 选择和活动 Agent preset 模块。Codex 的 profile 和 preset 信息会记录为不可用，因为其外部运行时不会向 DSH 提供这些数据。此命令不会创建 Goal，也不会声称提供方报告已经过验证或接受。
+此命令供用户明确调用，而非模型工具。创建、列出和打开通过 `ctx.homeActivities` 执行；上下文引用通过 `ctx.homeActivityAssociations` 执行；委派使用现有 `ctx.subagents.startActivation` 生命周期和单独的持久记录。DSH `spawn` 会在启动前捕获启动器的 profile bundle 选择和活动 Agent preset 模块。Codex 和 Claude Code 的 profile 与 preset 信息会记录为不可用，因为 DSH 无法查看其外部运行时组合。此命令不会创建 Goal，也不会声称提供方报告已经过验证或接受。
 
 | 文件 | 职责 |
 |---|---|
@@ -106,10 +107,10 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 ## 已知限制与后续工作
 <a id="known-limitations-and-deferred-work"></a>
 
-Activity 范围说明描述请求的工作；它们不会更改提供方权限。`spawn` 由 DSH 运行时策略控制；`codex` 由 Codex 原生配置和指定权限模式控制。
+Activity 范围说明描述请求的工作，不会更改提供方权限。`spawn` 由 DSH 运行时策略控制；Codex 和 Claude Code 分别由其原生配置和权限处理控制。
 
 - Web composer 与 SDK session.run() 是受支持的交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。SDK profile 必须加载 Home Activity 插件。
-- 创建输入使用 JSON 文本，且无法通过此命令编辑或删除 Activity。Codex 委派仅执行一次；Activity 不提供继续、恢复、对话记录检查或回滚。Session 列表仅提供摘要元数据；它不会读取子级对话，也不能证明提供方已准入。
+- 创建输入使用 JSON 文本，且无法通过此命令编辑或删除 Activity。Codex 和 Claude Code 委派均为一次性执行；Activity 不提供继续、恢复、对话记录检查或回滚。Session 列表仅提供摘要元数据，不会读取子级对话，也不能证明提供方已准入。
 - 产品分类只使用捕获的 bundle 列表或活动 preset 模块及产品提供的元数据。自定义 profile patch 和运行时 overlay 不参与分类；只有与已发布 profile 模板完全一致时，bundle 列表才标为稳定；没有明确分类的 preset 会显示为不可用。这些标签不代表沙箱隔离、权限强制执行或 Skill 资格。
 - 产物位置、修订版和 Workspace 选择由用户提供。命令不会检查被引用的文件，也不会从 Workspace 目录推断 Git 根目录；缺少的修订版保持未知，指针不验证执行上下文或提供方输出。
 

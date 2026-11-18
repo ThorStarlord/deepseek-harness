@@ -21,7 +21,7 @@ import { captureActivityDelegationExecutionSelection } from './execution-selecti
 
 const MAX_TASK_BYTES = 4_096
 const MAX_RENDERED_SELECTION_NAMES = 12
-const DELEGATE_USAGE = 'Usage: /activity delegate <activity-id> spawn|codex <one bounded task>'
+const DELEGATE_USAGE = 'Usage: /activity delegate <activity-id> spawn|codex|claude-code <one bounded task>'
 type SpawnExecutionSelectionSnapshot = Extract<
   NonNullable<ActivityDelegation['request']['executionSelection']>,
   { readonly provider: 'spawn' }
@@ -46,8 +46,8 @@ export async function executeActivityDelegation(
   }
   const activityIdResult = z.uuid().safeParse(match[1])
   if (!activityIdResult.success) return { kind: 'error', text: `Activity id must be a UUID. ${DELEGATE_USAGE}` }
-  if (match[2] !== 'spawn' && match[2] !== 'codex') {
-    return { kind: 'error', text: `Provider ${JSON.stringify(match[2])} is not supported here. Choose spawn or codex. ${DELEGATE_USAGE}` }
+  if (match[2] !== 'spawn' && match[2] !== 'codex' && match[2] !== 'claude-code') {
+    return { kind: 'error', text: `Provider ${JSON.stringify(match[2])} is not supported here. Choose spawn, codex, or claude-code. ${DELEGATE_USAGE}` }
   }
   const parsedTask = taskSchema.safeParse(match[3])
   if (!parsedTask.success) {
@@ -84,12 +84,13 @@ export async function executeActivityDelegation(
   const childSessionId = request.request.provider === 'spawn'
     ? request.request.requestedChildSessionId
     : undefined
-  if (request.request.provider === 'codex' && ctx.subagents.getProvider('codex') === undefined) {
-    const message = 'The Codex provider is unavailable; DSH did not attempt activation.'
+  if (request.request.provider !== 'spawn' && ctx.subagents.getProvider(request.request.provider) === undefined) {
+    const providerLabel = externalProviderLabel(request.request.provider)
+    const message = `The ${providerLabel} provider is unavailable; DSH did not attempt activation.`
     try {
       await ctx.homeActivityDelegations.markNotAdmitted(request.id, message)
     } catch (error: unknown) {
-      ctx.logger.warn('command-home-activity: unavailable Codex state could not be saved: %o', error)
+      ctx.logger.warn('command-home-activity: unavailable external provider state could not be saved: %o', error)
       return { kind: 'error', text: `${message} Saving this Activity state failed; no provider call occurred.` }
     }
     return { kind: 'error', text: message }
@@ -116,30 +117,31 @@ export async function executeActivityDelegation(
     })
   } catch (error: unknown) {
     stopObservingStart()
-    if (request.request.provider === 'codex') {
-      const message = 'DSH could not confirm whether Codex started. It may have started; do not repeat this task unless you have independently confirmed it did not start. Reopening the Activity will not retry it.'
+    if (request.request.provider !== 'spawn') {
+      const providerLabel = externalProviderLabel(request.request.provider)
+      const message = `DSH could not confirm whether ${providerLabel} started. It may have started; do not repeat this task unless you have independently confirmed it did not start. Reopening the Activity will not retry it.`
       try {
         await ctx.homeActivityDelegations.markUnconfirmed(
           request.id,
           undefined,
-          'codex-start-outcome-unknown',
+          request.request.provider === 'codex'
+            ? 'codex-start-outcome-unknown'
+            : 'claude-code-start-outcome-unknown',
         )
       } catch (recordError: unknown) {
-        ctx.logger.warn('command-home-activity: uncertain Codex startup could not be saved: %o', recordError)
+        ctx.logger.warn('command-home-activity: uncertain external provider startup could not be saved: %o', recordError)
         return {
           kind: 'error',
           text: `${message} Saving the Activity status also failed; check the Activity after storage is available.`,
         }
       }
-      ctx.logger.warn('command-home-activity: Codex startup outcome is unknown: %o', error)
+      ctx.logger.warn('command-home-activity: external provider startup outcome is unknown: %o', error)
       return { kind: 'error', text: message }
     }
     try {
       await ctx.homeActivityDelegations.markNotAdmitted(
         request.id,
-        request.request.provider === 'spawn'
-          ? 'The DSH provider did not admit this task; no activation was published.'
-          : 'The codex provider did not admit this task; no DSH activation was published.',
+        'The DSH provider did not admit this task; no activation was published.',
       )
     } catch (recordError: unknown) {
       ctx.logger.warn('command-home-activity: rejected delegation state could not be saved: %o', recordError)
@@ -151,7 +153,7 @@ export async function executeActivityDelegation(
     ctx.logger.warn('command-home-activity: subagent activation was not admitted: %o', error)
     return {
       kind: 'error',
-      text: `${request.request.provider === 'spawn' ? 'The DSH provider did not admit this task; no activation was published.' : 'The codex provider did not admit this task; no DSH activation was published.'} Request ID: ${request.id}`,
+      text: `The DSH provider did not admit this task; no activation was published. Request ID: ${request.id}`,
     }
   }
   stopObservingStart()
@@ -165,8 +167,8 @@ export async function executeActivityDelegation(
       source: 'subagents.startActivation',
     }
     : {
-      provider: 'codex',
-      // External activation.childId is SubagentRun.id, not the native Codex thread id.
+      provider: request.request.provider,
+      // External activation.childId is SubagentRun.id, not the native provider conversation id.
       providerRunId: String(activation.childId),
       admittedAt: new Date().toISOString(),
       source: 'subagents.startActivation',
@@ -190,22 +192,23 @@ export async function executeActivityDelegation(
  * @returns User-facing Activity detail lines.
  */
 export function renderActivityDelegation(delegation: ActivityDelegation): readonly string[] {
-  const isCodex = delegation.request.provider === 'codex'
+  const isExternal = delegation.request.provider !== 'spawn'
+  const providerLabel = isExternal ? externalProviderLabel(delegation.request.provider) : 'provider'
   const lines = [
-    `Delegation ${delegation.id}: provider ${delegation.request.provider}${isCodex ? ' (native Codex, external one-shot)' : ''}`,
+    `Delegation ${delegation.id}: provider ${delegation.request.provider}${isExternal ? ` (native ${providerLabel}, external one-shot)` : ''}`,
     `Requested task: ${delegation.request.task}`,
     `Requesting Session: ${delegation.request.parentSessionId}`,
     ...renderExecutionSelection(delegation.request.executionSelection),
-    isCodex
-      ? 'Activity scope is descriptive; native Codex configuration and its configured permission mode govern this execution.'
+    isExternal
+      ? externalExecutionPolicyMessage(delegation.request.provider)
       : 'Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.',
   ]
   if (delegation.status === 'requested') {
-    lines.push(`Status: request saved; ${isCodex ? 'Codex' : 'provider'} admission has not been confirmed.`)
+    lines.push(`Status: request saved; ${isExternal ? `${providerLabel} admission` : 'provider admission'} has not been confirmed.`)
     if (delegation.request.provider === 'spawn') {
       lines.push(`Requested child Session id (not admission evidence): ${delegation.request.requestedChildSessionId}`)
     } else {
-      lines.push('The Codex start outcome may be unknown. Do not repeat this task unless you independently confirm it did not start; opening the Activity does not start it.')
+      lines.push(`The ${providerLabel} start outcome may be unknown. Do not repeat this task unless you independently confirm it did not start; opening the Activity does not start it.`)
     }
     return lines
   }
@@ -220,22 +223,22 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
         lines.push(`Requested child Session id (not admission evidence): ${delegation.request.requestedChildSessionId}`)
         lines.push('Check /activity sessions for this exact id and its summary metadata before deciding whether to retry. A missing Session record does not confirm that admission failed.')
       } else {
-        lines.push('Status: unconfirmed; saved facts do not establish whether the external Codex run started.')
-        lines.push('No Codex execution id was saved. Activity does not expose a Codex transcript, resume the run, or retry it; do not repeat the task unless you independently confirm it did not start.')
+        lines.push(`Status: unconfirmed; saved facts do not establish whether the external ${externalProviderLabel(delegation.request.provider)} run started.`)
+        lines.push(`No ${externalProviderLabel(delegation.request.provider)} execution id was saved. Activity does not expose its transcript, resume the run, or retry it; do not repeat the task unless you independently confirm it did not start.`)
       }
     } else {
-      lines.push(isCodex
-        ? 'Status: DSH admitted one external Codex execution; its provider report is unconfirmed.'
+      lines.push(isExternal
+        ? `Status: DSH admitted one external ${externalProviderLabel(delegation.request.provider)} execution; its provider report is unconfirmed.`
         : 'Status: DSH admitted this child; its provider report is unconfirmed.')
       lines.push(...renderAdmissionReferences(delegation.admission))
-      lines.push(isCodex
-        ? 'This Codex run is one-shot. Activity does not inspect its transcript, resume it, or roll back its effects; its report is not verified or accepted.'
+      lines.push(isExternal
+        ? `This ${externalProviderLabel(delegation.request.provider)} run is one-shot. Activity does not inspect its transcript, resume it, or roll back its effects; its report is not verified or accepted.`
         : 'Inspect the child Session summary before retrying. The provider report is not verified or accepted.')
     }
     lines.push(`Reason: ${uncertaintyMessage(delegation.uncertainty?.reason)}`)
     return lines
   }
-  lines.push(`Status: ${delegation.status === 'reported' ? `${isCodex ? 'Codex' : 'provider'} reported` : 'admitted'}; not verified or accepted.`)
+  lines.push(`Status: ${delegation.status === 'reported' ? `${isExternal ? providerLabel : 'provider'} reported` : 'admitted'}; not verified or accepted.`)
   if (delegation.admission === undefined) {
     lines.push('Activation reference is unavailable.')
   } else {
@@ -243,15 +246,15 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
   }
   if (delegation.report !== undefined) {
     lines.push(`Provider stop reason: ${delegation.report.stopReason}`)
-    lines.push(`${isCodex ? 'Codex-reported' : 'Provider-reported'} output: ${delegation.report.outputText || '(no text output)'}`)
+    lines.push(`${isExternal ? `${providerLabel}-reported` : 'Provider-reported'} output: ${delegation.report.outputText || '(no text output)'}`)
     if (delegation.report.nonTextBlockTypes.length > 0) {
       lines.push(`Additional provider output blocks: ${delegation.report.nonTextBlockTypes.join(', ')}`)
     }
     if (delegation.report.outputTruncated) lines.push('Provider-reported text was clipped at 16384 UTF-8 bytes.')
     if (delegation.report.diagnostic !== undefined) lines.push(`Provider diagnostic: ${delegation.report.diagnostic}`)
   } else {
-    lines.push(isCodex
-      ? 'Codex outcome is pending. This one-shot execution has no Activity continuation, resume, transcript inspection, or rollback; opening the Activity does not wait or start another run.'
+    lines.push(isExternal
+      ? `${providerLabel} outcome is pending. This one-shot execution has no Activity continuation, resume, transcript inspection, or rollback; opening the Activity does not wait or start another run.`
       : 'Provider outcome is pending; opening the Activity does not wait for the child Session.')
   }
   return lines
@@ -265,8 +268,8 @@ function renderExecutionSelection(
   selection: ActivityDelegation['request']['executionSelection'],
 ): readonly string[] {
   if (selection === undefined) return ['Runtime profile and preset: unavailable (record predates profile and preset capture).']
-  if (selection.provider === 'codex') {
-    return ['Runtime profile and preset: unavailable (the native Codex provider does not expose DSH composition).']
+  if (selection.provider !== 'spawn') {
+    return [`Runtime profile and preset: unavailable (the native ${externalProviderLabel(selection.provider)} provider does not expose DSH composition).`]
   }
   const lines = [...renderProfileSelection(selection.profile), ...renderPresetSelection(selection.preset)]
   lines.push('These classifications do not establish sandbox isolation, permission enforcement, or Skill qualification.')
@@ -390,8 +393,9 @@ function observeActivation(
 
 /** Format accepted child Session and activation references. */
 function renderAdmissionReferences(admission: ActivityDelegationAdmission): string[] {
-  if (admission.provider === 'codex') {
-    return [`Codex provider run id (not a DSH Session or native Codex conversation id): ${admission.providerRunId}`]
+  if (admission.provider === 'codex' || admission.provider === 'claude-code') {
+    const providerLabel = externalProviderLabel(admission.provider)
+    return [`${providerLabel} provider run id (not a DSH Session or native ${providerLabel} conversation id): ${admission.providerRunId}`]
   }
   return [
     `Child Session: ${admission.childSessionId}`,
@@ -407,6 +411,7 @@ const uncertaintyMessages: Record<ActivityDelegationUncertainty['reason'], strin
   'report-write-failed': 'Saving the provider report failed after the child Session was admitted.',
   'startup-result-rejected': 'The accepted activation did not provide a usable report through the managed result API.',
   'codex-start-outcome-unknown': 'DSH did not confirm whether the external Codex run started.',
+  'claude-code-start-outcome-unknown': 'DSH did not confirm whether the external Claude Code run started.',
 }
 
 /** Explain the source of uncertainty in actionable user language. */
@@ -420,23 +425,37 @@ function renderAdmission(
   admission: ActivityDelegationAdmission,
   unconfirmed: boolean,
 ): string {
+  const isExternal = admission.provider === 'codex' || admission.provider === 'claude-code'
+  const providerLabel = isExternal ? externalProviderLabel(admission.provider) : 'provider'
   return [
-    `Delegation ${unconfirmed ? 'admitted but not durably confirmed' : 'admitted'}: provider ${request.request.provider}${admission.provider === 'codex' ? ' (native Codex, external one-shot)' : ''}`,
+    `Delegation ${unconfirmed ? 'admitted but not durably confirmed' : 'admitted'}: provider ${request.request.provider}${isExternal ? ` (native ${providerLabel}, external one-shot)` : ''}`,
     `Requested task: ${request.request.task}`,
     `Requesting Session: ${request.request.parentSessionId}`,
     ...renderExecutionSelection(request.request.executionSelection),
-    admission.provider === 'codex'
-      ? 'Activity scope is descriptive; native Codex configuration and its configured permission mode govern this execution.'
+    isExternal
+      ? externalExecutionPolicyMessage(admission.provider)
       : 'Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.',
     ...renderAdmissionReferences(admission),
     unconfirmed
-      ? admission.provider === 'codex'
-        ? 'Execution was accepted by DSH, but its admission record could not be confirmed. This one-shot run cannot be resumed or inspected through Activity; do not treat this record as proof it did not run.'
+      ? isExternal
+        ? `Execution was accepted by DSH, but its admission record could not be confirmed. This one-shot ${providerLabel} run cannot be resumed or inspected through Activity; do not treat this record as proof it did not run.`
         : 'Execution was accepted by DSH, but the admission record could not be confirmed. Do not retry until you inspect this Activity and child Session summary.'
-      : admission.provider === 'codex'
-        ? 'Codex accepted one external one-shot execution; its result is not yet available, verified, or accepted. Activity does not expose transcript inspection, continuation, resume, or rollback.'
+      : isExternal
+        ? `${providerLabel} accepted one external one-shot execution; its result is not yet available, verified, or accepted. Activity does not expose transcript inspection, continuation, resume, or rollback.`
         : 'The child Session is a separate one-shot DSH activation. Its result is not yet available, verified, or accepted.',
   ].join('\n')
+}
+
+/** Return the product label for an explicitly selected external provider. */
+function externalProviderLabel(provider: 'codex' | 'claude-code'): 'Codex' | 'Claude Code' {
+  return provider === 'codex' ? 'Codex' : 'Claude Code'
+}
+
+/** Describe native external settings without exposing provider-specific values. */
+function externalExecutionPolicyMessage(provider: 'codex' | 'claude-code'): string {
+  return provider === 'codex'
+    ? 'Activity scope is descriptive; native Codex configuration and its configured permission mode govern this execution.'
+    : 'Activity scope is descriptive; native Claude Code configuration and permission handling govern this one-shot execution.'
 }
 
 /** Clip on a UTF-8 code-point boundary so persisted text is valid and bounded. */
