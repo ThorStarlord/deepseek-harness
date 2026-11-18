@@ -1,5 +1,5 @@
 ---
-description: "Installation-owned lists of official dsh bundles (shipped profile templates, the default list, and the optional, on-demand, and retired bundles) and the plugin manager's protected and presented packages."
+description: "Installation-owned dsh bundle lists, explicit experimental package names, and the plugin manager's protected and presented packages."
 kind: "package-library"
 ---
 
@@ -39,6 +39,8 @@ Edit this package when the installation's bundle selection or the plugin manager
 
 `PROTECTED_PLUGINS` names the plugin packages the [plugin manager](../../boot/plugin-manager/README.md) keeps read-only because management needs them; a bundle that contains one is a management bundle. Removing a name drops only this `management-required` refusal; the manager's own entry, installation-carried bundles, and unaddressable rows stay protected by their own rules. The [Web plugin page](../../client/ui-plugin-manager/README.md) hides the `HIDDEN_BUNDLES`, ranks the `EXTENSION_BUNDLES` first in their order, keeps the `MORE_BUNDLES` off its main list until the profile enables them, and marks the `EXPERIMENTAL_BUNDLES` with the Experimental badge.
 
+`EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS` lists exact experimental package names that omit the legacy experimental prefix. Home Activity delegation provenance uses this list when it classifies a recorded bundle or active preset module. A repository policy test keeps the names aligned with `scripts/experimental-package-policy.ts`; this metadata does not describe sandbox isolation or permissions.
+
 ### On-demand bundles
 
 `ON_DEMAND_BUNDLES` names the public Official packages installed only on request. `OFFICIAL_ON_DEMAND_CATALOG` embeds their package-owned localized metadata, icons, and optional `dsh.bundle.platforms` declarations for offline discovery and Host platform checks before installation; `pnpm gen-official-bundle-catalog` explicitly updates generated content, and `verify-official-bundle-catalog` checks resource completeness and freshness; builds consume the committed catalog without importing provider code. The catalog contains no install target: the plugin manager derives it from the running version and installation and uses the ordinary bundle installer. The [product-use check](../../../scripts/verify-product-use.ts) composes shipped and on-demand selections against Web without executing providers.
@@ -59,6 +61,7 @@ Repository checks read the lists in `src/bundles.ts` as TypeScript literals with
 |---|---|
 | [`src/bundles.ts`](src/bundles.ts) | Profile templates and the default, installation-owned, retired, optional, and on-demand bundle lists |
 | [`src/plugin-manager.ts`](src/plugin-manager.ts) | Protected plugin packages and the Web plugin page's hidden, ordered, and experimental bundle lists |
+| [`src/experimental-packages.ts`](src/experimental-packages.ts) | Exact unprefixed experimental package names used by Activity provenance |
 | [`src/catalog.generated.ts`](src/catalog.generated.ts) | Generated offline metadata for the on-demand bundles |
 | [`src/index.ts`](src/index.ts) | Public exports and the catalog entry type |
 

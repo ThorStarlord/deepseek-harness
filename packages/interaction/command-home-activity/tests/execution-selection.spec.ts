@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
+import { EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS, PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
 import type { AgentPresetRegistry } from '@deepseek-ai/dsh-agent-preset-registry'
 import { captureActivityDelegationExecutionSelection, isExplicitlyExperimentalPackage } from '../src/execution-selection.ts'
 
@@ -35,7 +35,30 @@ it('classifies only explicitly experimental package identities', () => {
   expect(isExplicitlyExperimentalPackage('@deepseek-ai/dsh-experimental-terminal-bundle')).toBe(true)
   expect(isExplicitlyExperimentalPackage('@deepseek-ai/dsh-terminal-bundle')).toBe(false)
   expect(isExplicitlyExperimentalPackage('@deepseek-ai/dsh-personalized-recommendations')).toBe(true)
+  expect(isExplicitlyExperimentalPackage('@deepseek-ai/dsh-tool-session-query')).toBe(true)
+  expect(EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS.has('@deepseek-ai/dsh-tool-session-query')).toBe(true)
   expect(isExplicitlyExperimentalPackage('cordis:experimental-loader')).toBe(false)
+})
+
+it('classifies a supported shipped profile and an unprefixed experimental preset module', () => {
+  const context = new Context()
+  const presets: Pick<AgentPresetRegistry, 'composedPreset' | 'inspectCompositions'> = {
+    composedPreset: () => 'session-query-review',
+    inspectCompositions: () => [{
+      id: 'session-query-review', modules: [{ moduleName: '@deepseek-ai/dsh-tool-session-query', useHostBase: true }],
+      leakedServices: [],
+    }],
+  }
+
+  expect(captureActivityDelegationExecutionSelection({
+    name: 'web', startedBundles: PROFILE_TEMPLATES.web!.bundles,
+  }, presets, context)).toMatchObject({
+    profile: { status: 'available', name: 'web', classification: 'stable', classificationSource: 'shipped-profile-template' },
+    preset: {
+      status: 'selected', id: 'session-query-review', activeModules: ['@deepseek-ai/dsh-tool-session-query'],
+      classification: 'experimental', classificationSource: 'experimental-package-metadata',
+    },
+  })
 })
 
 it('marks a profile or preset unavailable when the product cannot classify its selected composition', () => {

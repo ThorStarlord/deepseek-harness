@@ -1,6 +1,8 @@
 /** Capture DSH profile and Agent preset facts for one Activity delegation. */
 import type { Context } from '@deepseek-ai/cordis'
-import { EXPERIMENTAL_BUNDLES, PROFILE_TEMPLATES } from '@deepseek-ai/dsh-official-bundles'
+import {
+  EXPERIMENTAL_BUNDLES, EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS, PROFILE_TEMPLATES,
+} from '@deepseek-ai/dsh-official-bundles'
 import type { ProfileContext } from '@deepseek-ai/dsh-app-boot'
 import type { AgentPresetRegistry } from '@deepseek-ai/dsh-agent-preset-registry'
 import type { DshActivityDelegationExecutionSelectionSnapshot } from '@deepseek-ai/dsh-home-activity/delegations'
@@ -34,7 +36,9 @@ export function captureActivityDelegationExecutionSelection(
 export function isExplicitlyExperimentalPackage(specifier: string): boolean {
   const packageName = specifier.startsWith('@') ? specifier.split('/').slice(0, 2).join('/') : specifier.split('/')[0]
   return packageName !== undefined
-    && (EXPERIMENTAL_BUNDLES.has(packageName) || packageName.startsWith(EXPERIMENTAL_PACKAGE_PREFIX))
+    && (EXPERIMENTAL_BUNDLES.has(packageName)
+      || EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS.has(packageName)
+      || packageName.startsWith(EXPERIMENTAL_PACKAGE_PREFIX))
 }
 
 function captureProfile(
