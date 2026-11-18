@@ -80,7 +80,9 @@ export async function executeActivityReviewCommand(
       text: [
         `User disposition recorded: ${dispositionLabel(review.disposition)}.`,
         details.data.evidence === undefined
-          ? 'No new verification evidence was supplied; previously recorded evidence was retained.'
+          ? review.evidence.length === 0
+            ? 'No verification evidence is currently recorded.'
+            : 'No new verification evidence was supplied; previously recorded evidence was retained.'
           : `User-supplied evidence recorded: ${details.data.evidence.source} reports ${details.data.evidence.result}. DSH did not verify its source or result.`,
         'The provider execution report was not changed.',
       ].join('\n'),

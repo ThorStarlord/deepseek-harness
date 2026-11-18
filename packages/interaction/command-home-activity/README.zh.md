@@ -57,7 +57,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 | `/activity unlink <activity-id> session <session-id>` | 删除 DSH Session 引用，保留 Session 日志。 |
 | `/activity artifact add <activity-id> <delegation-id> <workspace-id> <JSON>` | 为该 Activity 的委派记录输出指针，并要求所选 Workspace 已关联到同一 Activity。JSON 字段为 `label`、`location` 和可选的 `revision`；缺少修订版时显示为未知。 |
 | `/activity delegate <activity-id> spawn <task>` | 保存请求，明确启动一个 DSH 原生子级 activation，并单独报告提供方结果。任务最多为 4,096 个 UTF-8 字节。 |
-| `/activity review set <activity-id> <delegation-id> <JSON>` | 记录明确的用户处置和可选的用户提供证据，不修改提供方报告。JSON 必须包含 `disposition`（`pending`、`accepted`、`declined` 或 `requires-investigation`）；可选 `evidence` 包含 `source`、`result`（`passed`、`failed`、`inconclusive` 或 `unavailable`）和 `summary`，并可选 `reference`、`observedAt`。 |
+| `/activity review set <activity-id> <delegation-id> <JSON>` | 记录明确的用户处置和可选的用户提供证据，不修改提供方报告。JSON 必须包含 `disposition`（`pending`、`accepted`、`declined` 或 `requires-investigation`）；可选 `evidence` 包含 `source`、`result`（`passed`、`failed`、`inconclusive` 或 `unavailable`）和 `summary`，并可选 `reference`、`observedAt`。响应会区分新增证据、保留的既有证据以及尚无记录的证据。 |
 
 命令 JSON 最多为 16,384 个 UTF-8 字节。每个 Activity 最多可关联 256 个 Workspace、256 个 DSH Session 和 512 个产物指针。审核证据会追加到当前审核记录中；每项委派最多保存 128 条。证据会记录用户填写的来源和报告结果，DSH 不会检查它。提供方报告的成功仍只是执行报告，不代表已验证或用户接受。委派请求与拟请求的子级 Session id 会在提供方启动前持久保存；该 id 不能证明已准入。DSH 接受 activation 后命令即返回，结果记录在后台继续进行。启动被拒绝时会记录为未准入。若准入状态不确定，`/activity sessions` 会显示是否存在拟议 id 的已存储 Session 及可用摘要元数据；该命令不会查看子 Session 的对话。未找到 Session 不能证明启动失败。产物指针与报告分开保存，并标明其与输出的关系未经验证。
 

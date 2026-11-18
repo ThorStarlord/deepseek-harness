@@ -595,6 +595,41 @@ it('keeps a successful provider report separate from failed verification and the
   expect(startActivation).not.toHaveBeenCalled()
 })
 
+it('does not imply verification evidence exists when recording a disposition alone', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Evidence-free review', objective: 'Review a reported provider result.',
+    boundaries: { inScope: ['Inspect the provider report.'], outOfScope: ['Do not rerun the provider.'] },
+  })
+  const delegation = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'spawn',
+    task: 'Summarize the requested change.',
+    parentSessionId: test.session.id,
+  })
+  const admission = {
+    childSessionId: SessionId('evidence-free-child'),
+    activationName: 'activity-review',
+    admittedAt: '2026-11-18T12:00:00.000Z',
+    source: 'subagents.startActivation' as const,
+  }
+  await test.ctx.homeActivityDelegations.recordAdmitted(delegation.id, admission)
+  await test.ctx.homeActivityDelegations.recordReported(delegation.id, admission, {
+    stopReason: 'stop',
+    outputText: 'The provider reported completion.',
+    nonTextBlockTypes: [],
+    outputTruncated: false,
+    reportedAt: '2026-11-18T12:01:00.000Z',
+    source: 'subagent-activation-result',
+  })
+
+  const recorded = await run(test, ` review set ${activity.id} ${delegation.id} {"disposition":"accepted"}`)
+
+  expect(recorded.text).toContain('User disposition recorded: accepted.')
+  expect(recorded.text).toContain('No verification evidence is currently recorded.')
+  expect(recorded.text).not.toContain('previously recorded evidence was retained')
+})
+
 it('validates review commands and reports safe selection, read, and write failures', async () => {
   const test = await harness()
   const activity = await test.ctx.homeActivities.create({
