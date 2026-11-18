@@ -146,6 +146,17 @@ describe('web e2e: Home Activity delegation', () => {
     expect(reportedSnapshot).not.toContain('Status: accepted.')
 
     start.mockRestore()
+    let codexProviderStarts = 0
+    const registerCodexProvider = () => scaffold.ctx.subagents.registerProvider({
+      name: 'codex',
+      capabilities: NO_START_CAPABILITIES,
+      inheritsParentContext: false,
+      async start() {
+        codexProviderStarts += 1
+        throw new Error('simulated transport loss after turn/start')
+      },
+    })
+    const disposeCodexProvider = registerCodexProvider()
     const codexActivity = await scaffold.ctx.homeActivities.create({
       name: 'Codex one-shot',
       objective: 'Receive one bounded external Codex report.',
@@ -222,6 +233,7 @@ describe('web e2e: Home Activity delegation', () => {
     )
 
     codexStart.mockRestore()
+    disposeCodexProvider()
     const unavailableActivity = await scaffold.ctx.homeActivities.create({
       name: 'Unavailable Codex',
       objective: 'Show the unavailable provider state.',
@@ -250,20 +262,11 @@ describe('web e2e: Home Activity delegation', () => {
       MODE,
     )
 
+    registerCodexProvider()
     const uncertainActivity = await scaffold.ctx.homeActivities.create({
       name: 'Codex startup uncertainty',
       objective: 'Keep an ambiguous external start from being retried.',
       boundaries: { inScope: ['Record whether startup is confirmed.'], outOfScope: ['Retry external work.'] },
-    })
-    let codexProviderStarts = 0
-    scaffold.ctx.subagents.registerProvider({
-      name: 'codex',
-      capabilities: NO_START_CAPABILITIES,
-      inheritsParentContext: false,
-      async start() {
-        codexProviderStarts += 1
-        throw new Error('simulated transport loss after turn/start')
-      },
     })
     const uncertainResult = await submit(
       `/activity delegate ${uncertainActivity.id} codex Review the release checklist once.`,
