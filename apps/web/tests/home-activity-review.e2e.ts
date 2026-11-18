@@ -124,7 +124,8 @@ describe('web e2e: Home Activity outcome review', () => {
     const initialView = page.locator('pre').filter({ hasText: 'User disposition: pending' }).last()
     await initialView.waitFor({ timeout: 10_000 })
     const initialText = await initialView.textContent() ?? ''
-    expect(initialText).toContain('Status: provider reported; not verified or accepted.')
+    expect(initialText).toContain('Delegation state: reported.')
+    expect(initialText).toContain('Provider report: received; DSH has not independently verified it.')
     expect(initialText).toContain('Verification evidence: none recorded.')
 
     const reviewCommand = await submit(
@@ -145,7 +146,8 @@ describe('web e2e: Home Activity outcome review', () => {
     const reviewedView = page.locator('pre').filter({ hasText: 'Independent smoke check reports passed' }).last()
     await reviewedView.waitFor({ timeout: 10_000 })
     const rendered = await reviewedView.textContent() ?? ''
-    expect(rendered).toContain('Status: provider reported; not verified or accepted.')
+    expect(rendered).toContain('Delegation state: reported.')
+    expect(rendered).toContain('Provider report: received; DSH has not independently verified it.')
     expect(rendered).toContain('User disposition: requires investigation')
     expect(rendered).toContain('The publish validation job failed.')
     expect(rendered).toContain('Independent smoke check reports passed.')
@@ -194,7 +196,8 @@ describe('web e2e: Home Activity outcome review', () => {
     expect(session.sessionId).not.toBe(parentSessionId)
     const reopened = await executeCommand(scaffold, session.sessionId, `/activity open ${activity.id}`)
     expect(reopened.kind).toBe('success')
-    expect(reopened.text).toContain('Status: provider reported; not verified or accepted.')
+    expect(reopened.text).toContain('Delegation state: reported.')
+    expect(reopened.text).toContain('Provider report: received; DSH has not independently verified it.')
     expect(reopened.text).toContain('User disposition: requires investigation')
     expect(reopened.text).toContain('Release CI run reports failed.')
     expect(reopened.text).toContain('Independent smoke check reports passed.')

@@ -91,10 +91,10 @@ describe('web e2e: Home Activity delegation', () => {
 
     const admissionText = await page.getByText(/Delegation admitted: provider spawn/u).last().textContent() ?? ''
     expect(admissionText).toContain(`Child Session: ${requestedChildSessionId}`)
-    expect(admissionText).toContain('not yet available, verified, or accepted')
+    expect(admissionText).toContain('Its provider report is pending; opening the Activity shows user disposition separately.')
     await submit(`/activity open ${activity.id}`, /Activity: Release readiness/u)
     await page.getByRole('button', { name: /Activity: Release readiness/u }).last().click()
-    await page.getByText(/Provider outcome is pending/u).last().waitFor({ timeout: 10_000 })
+    await page.getByText(/Provider report: not recorded/u).last().waitFor({ timeout: 10_000 })
 
     const replacements = [
       [activity.id, '{{activity-id}}'],
@@ -106,8 +106,8 @@ describe('web e2e: Home Activity delegation', () => {
       page, '[class*="centerCol"]', scaffold.workspaceCwd, { replacements },
     )
     await compareOrRefreshGolden(PENDING_EXPECTED, pendingSnapshot, MODE)
-    expect(pendingSnapshot).toContain('Status: admitted; not verified or accepted.')
-    expect(pendingSnapshot).toContain('Provider outcome is pending')
+    expect(pendingSnapshot).toContain('Delegation state: admitted.')
+    expect(pendingSnapshot).toContain('Provider report: not recorded; opening the Activity does not wait for the child Session.')
     await mkdir(SCREENSHOT_DIR, { recursive: true })
     await page.screenshot({ path: PENDING_SCREENSHOT, fullPage: true })
 
@@ -131,7 +131,8 @@ describe('web e2e: Home Activity delegation', () => {
       page, '[class*="centerCol"]', scaffold.workspaceCwd, { replacements: reportReplacements },
     )
     await compareOrRefreshGolden(REPORTED_EXPECTED, reportedSnapshot, MODE)
-    expect(reportedSnapshot).toContain('Status: provider reported; not verified or accepted.')
+    expect(reportedSnapshot).toContain('Delegation state: reported.')
+    expect(reportedSnapshot).toContain('Provider report: received; DSH has not independently verified it.')
     expect(reportedSnapshot).toContain('Provider-reported output: The checklist contains two unverified migration steps.')
     expect(reportedSnapshot).not.toContain('Status: accepted.')
     expect(tripwire.pageErrors).toEqual([])

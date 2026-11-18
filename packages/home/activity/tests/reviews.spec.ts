@@ -165,6 +165,44 @@ it('rejects reviews for unknown or cross-Activity delegations', async () => {
     .toThrow(expect.objectContaining({ code: 'unknown-activity' }))
 })
 
+it('requires a saved provider report before recording a user disposition', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create(request)
+  const delegation = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'spawn',
+    task: 'Inspect an unreported release outcome.',
+    parentSessionId: SessionId('unreported-parent'),
+  })
+  const reviewRequest = { activityId: activity.id, delegationId: delegation.id, disposition: 'accepted' as const }
+
+  await expect(test.ctx.homeActivityReviews.record(reviewRequest))
+    .rejects.toMatchObject({ code: 'provider-report-unavailable' })
+  const admission = {
+    childSessionId: SessionId('unreported-child'),
+    activationName: 'activity-review',
+    admittedAt: '2026-11-18T12:00:00.000Z',
+    source: 'subagents.startActivation' as const,
+  }
+  await test.ctx.homeActivityDelegations.recordAdmitted(delegation.id, admission)
+  await expect(test.ctx.homeActivityReviews.record(reviewRequest))
+    .rejects.toMatchObject({ code: 'provider-report-unavailable' })
+  await test.ctx.homeActivityDelegations.markUnconfirmed(delegation.id, admission, 'restart-before-report-recorded')
+  await expect(test.ctx.homeActivityReviews.record(reviewRequest))
+    .rejects.toMatchObject({ code: 'provider-report-unavailable' })
+  await test.ctx.homeActivityDelegations.recordReported(delegation.id, admission, {
+    stopReason: 'stop',
+    outputText: 'The provider reported completion.',
+    nonTextBlockTypes: [],
+    outputTruncated: false,
+    reportedAt: '2026-11-18T12:01:00.000Z',
+    source: 'subagent-activation-result',
+  })
+
+  await expect(test.ctx.homeActivityReviews.record(reviewRequest))
+    .resolves.toMatchObject({ disposition: 'accepted', delegationId: delegation.id })
+})
+
 it('does not publish a review when the durable write fails', async () => {
   const test = await harness()
   const activity = await test.ctx.homeActivities.create(request)

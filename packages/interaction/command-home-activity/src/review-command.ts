@@ -29,6 +29,7 @@ const REVIEW_RECOVERY: Readonly<Record<ActivityReviewError['code'], (activityId:
   'unknown-activity': () => 'Run /activity list to choose a saved Activity id.',
   'unknown-delegation': activityId => `Run /activity open ${activityId} to choose a saved delegation id.`,
   'delegation-activity-mismatch': () => 'Choose a delegation recorded for this Activity.',
+  'provider-report-unavailable': activityId => `Run /activity open ${activityId} after its provider report is recorded, then retry the review.`,
   'evidence-limit': activityId => `Inspect saved review evidence with /activity open ${activityId}.`,
 }
 

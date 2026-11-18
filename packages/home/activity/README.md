@@ -67,7 +67,7 @@ Selected Workspace and DSH Session references use the separate version-1 `home_a
 
 User-linked artifact pointers use the separate version-1 `home_activity_artifacts` domain. Each pointer names one Activity, one of its delegations, and one Workspace already linked to that Activity; the user supplies its label, location, and optional revision. A missing revision is shown as unknown. Opening the Activity displays the delegation's requesting Session separately from the user-selected Workspace and states that their relationship to the reported output is unverified. The pointer remains separate from the provider-authored delegation report and establishes neither artifact origin, verification, nor acceptance. Workspace directories are displayed as selected contexts; a shared checkout or Git root is not inferred.
 
-Outcome reviews use the separate version-1 `home_activity_reviews` domain, keyed by delegation identity and linked to its owning Activity. No saved review means the user disposition is pending. The user can record an explicit disposition and append attributed evidence; each evidence entry remains visibly user-supplied and unchecked by DSH. Updating the disposition preserves evidence and does not change request, admission, or provider-report facts.
+Outcome reviews use the separate version-1 `home_activity_reviews` domain, keyed by delegation identity and linked to its owning Activity. No saved review means the user disposition is pending. A user can record a disposition only after a provider report is saved, then append attributed evidence; each evidence entry remains visibly user-supplied and unchecked by DSH. Updating the disposition preserves evidence and does not change request, admission, or provider-report facts.
 
 | File | Role |
 |---|---|
@@ -122,7 +122,7 @@ Activity scope remains descriptive, and delegation does not enforce it as an aut
 - Boundaries are descriptive statements, not sandbox roots or permission grants.
 - Delegation records identify the requesting Session and the admitted child Session but do not create Activity-to-Session links or reusable knowledge.
 - Workspace and Session references are selected independently. A Workspace id names a registered DSH Workspace directory, not an inferred repository root, and sharing an Activity does not assign a Session to a Workspace.
-- Delegated execution is a separate explicit `/activity delegate` command; the Activity service itself has no edit, delete, or scheduling operation. Provider-reported output is not verified or accepted.
+- Delegated execution is a separate explicit `/activity delegate` command; the Activity service itself has no edit, delete, or scheduling operation. Provider reports are not independently verified by DSH and do not determine the user's separate disposition.
 - Artifact references are user-linked pointers. They do not copy or inspect output, prove its producer, verify contents, or trigger cross-Workspace writes, merges, or releases. A missing source revision remains unknown.
 - Review evidence and its reported result are user supplied. DSH preserves their source attribution but does not check the source, evidence, or outcome; the current disposition is separate from provider execution status.
 

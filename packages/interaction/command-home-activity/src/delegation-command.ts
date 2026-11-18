@@ -155,18 +155,19 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
     } else {
       lines.push('Status: DSH admitted this child; its provider report is unconfirmed.')
       lines.push(...renderAdmissionReferences(delegation.admission))
-      lines.push('Inspect the child Session before retrying. The provider report is not verified or accepted.')
+      lines.push('Inspect the child Session before retrying. The provider report is unconfirmed; DSH has not independently verified it, and user disposition is shown separately.')
     }
     lines.push(`Reason: ${uncertaintyMessage(delegation.uncertainty?.reason)}`)
     return lines
   }
-  lines.push(`Status: ${delegation.status === 'reported' ? 'provider reported' : 'admitted'}; not verified or accepted.`)
+  lines.push(`Delegation state: ${delegation.status}.`)
   if (delegation.admission === undefined) {
     lines.push('Activation reference is unavailable.')
   } else {
     lines.push(...renderAdmissionReferences(delegation.admission))
   }
   if (delegation.report !== undefined) {
+    lines.push('Provider report: received; DSH has not independently verified it.')
     lines.push(`Provider stop reason: ${delegation.report.stopReason}`)
     lines.push(`Provider-reported output: ${delegation.report.outputText || '(no text output)'}`)
     if (delegation.report.nonTextBlockTypes.length > 0) {
@@ -175,7 +176,7 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
     if (delegation.report.outputTruncated) lines.push('Provider-reported text was clipped at 16384 UTF-8 bytes.')
     if (delegation.report.diagnostic !== undefined) lines.push(`Provider diagnostic: ${delegation.report.diagnostic}`)
   } else {
-    lines.push('Provider outcome is pending; opening the Activity does not wait for the child Session.')
+    lines.push('Provider report: not recorded; opening the Activity does not wait for the child Session.')
   }
   return lines
 }
@@ -275,7 +276,7 @@ function renderAdmission(
     ...renderAdmissionReferences(admission),
     unconfirmed
       ? 'Execution was accepted by DSH, but the admission record could not be confirmed. Do not retry until you inspect this Activity and child Session.'
-      : 'The child Session is a separate one-shot DSH activation. Its result is not yet available, verified, or accepted.',
+      : 'The child Session is a separate one-shot DSH activation. Its provider report is pending; opening the Activity shows user disposition separately.',
   ].join('\n')
 }
 

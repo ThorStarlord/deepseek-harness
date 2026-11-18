@@ -560,7 +560,8 @@ it('keeps a successful provider report separate from failed verification and the
   const startActivation = vi.spyOn(test.ctx.subagents, 'startActivation')
 
   const initial = await run(test, ` open ${activity.id}`, test.secondaryAgent)
-  expect(initial.text).toContain('Status: provider reported; not verified or accepted.')
+  expect(initial.text).toContain('Delegation state: reported.')
+  expect(initial.text).toContain('Provider report: received; DSH has not independently verified it.')
   expect(initial.text).toContain('User disposition: pending; no review has been recorded.')
   expect(initial.text).toContain('Verification evidence: none recorded.')
 
@@ -575,7 +576,8 @@ it('keeps a successful provider report separate from failed verification and the
   expect(conflicting.text).toContain('Independent smoke check reports passed.')
 
   const reopened = await run(test, ` open ${activity.id}`, test.secondaryAgent)
-  expect(reopened.text).toContain('Status: provider reported; not verified or accepted.')
+  expect(reopened.text).toContain('Delegation state: reported.')
+  expect(reopened.text).toContain('Provider report: received; DSH has not independently verified it.')
   expect(reopened.text).toContain('User disposition: requires investigation')
   expect(reopened.text).toContain('Release CI run reports failed.')
   expect(reopened.text).toContain('The publish validation job failed.')
@@ -589,7 +591,10 @@ it('keeps a successful provider report separate from failed verification and the
   expect(accepted.text).toContain('User disposition recorded: accepted.')
   expect(accepted.text).toContain('previously recorded evidence was retained')
   const acceptedView = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+  expect(acceptedView.text).toContain('Delegation state: reported.')
+  expect(acceptedView.text).toContain('Provider report: received; DSH has not independently verified it.')
   expect(acceptedView.text).toContain('User disposition: accepted')
+  expect(acceptedView.text).not.toContain('not verified or accepted')
   expect(acceptedView.text).toContain('Release CI run reports failed.')
   expect(test.ctx.homeActivityDelegations.get(delegation.id)).toEqual(providerReport)
   expect(startActivation).not.toHaveBeenCalled()
@@ -654,6 +659,12 @@ it('validates review commands and reports safe selection, read, and write failur
   })
   const details = '{"disposition":"accepted"}'
 
+  const prematureReview = await run(test, ` review set ${activity.id} ${delegation.id} ${details}`)
+  expect(prematureReview.kind).toBe('error')
+  expect(prematureReview.text).toContain('A provider report is required before recording a review.')
+  expect(prematureReview.text).toContain(`Run /activity open ${activity.id} after its provider report is recorded, then retry the review.`)
+  expect(test.ctx.homeActivityReviews.get(activity.id, delegation.id)).toBeUndefined()
+
   expect((await run(test, ' review')).text).toContain('Usage: /activity review set')
   expect((await run(test, ` review set invalid ${delegation.id} ${details}`)).text).toContain('Activity id must be a UUID.')
   expect((await run(test, ` review set ${activity.id} invalid ${details}`)).text).toContain('Delegation id must be a UUID.')
@@ -669,6 +680,22 @@ it('validates review commands and reports safe selection, read, and write failur
     .toContain(`Run /activity open ${activity.id} to choose a saved delegation id.`)
   expect((await run(test, ` review set ${activity.id} ${foreignDelegation.id} ${details}`)).text)
     .toContain('Choose a delegation recorded for this Activity.')
+
+  const admission = {
+    childSessionId: SessionId('review-validation-child'),
+    activationName: 'activity-review',
+    admittedAt: '2026-11-18T12:00:00.000Z',
+    source: 'subagents.startActivation' as const,
+  }
+  await test.ctx.homeActivityDelegations.recordAdmitted(delegation.id, admission)
+  await test.ctx.homeActivityDelegations.recordReported(delegation.id, admission, {
+    stopReason: 'stop',
+    outputText: 'The provider reported completion.',
+    nonTextBlockTypes: [],
+    outputTruncated: false,
+    reportedAt: '2026-11-18T12:01:00.000Z',
+    source: 'subagent-activation-result',
+  })
 
   vi.spyOn(test.ctx.homeActivityReviews, 'record').mockRejectedValueOnce(
     new ActivityReviewError('evidence-limit', 'No further evidence can be added.'),

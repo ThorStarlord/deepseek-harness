@@ -24,7 +24,7 @@ Home Activity 是由用户发起并持久保存的事务，包含稳定身份、
 
 ## 结果审核
 
-独立的版本 1 `home_activity_reviews` 域会为每项委派保存一条用户审核记录，并关联到其所属 Activity。没有审核记录表示用户处置仍为 pending。用户可以将当前处置设为 pending、accepted、declined 或 requires investigation，并追加分别注明来源的证据，记录用户填写的来源和报告结果。打开 Activity 时会将处置及各条证据与提供方报告分别显示。
+独立的版本 1 `home_activity_reviews` 域会为每项委派保存一条用户审核记录，并关联到其所属 Activity。没有审核记录表示用户处置仍为 pending。只有委派的提供方报告已保存后，服务才接受审核记录。用户可以将当前处置设为 pending、accepted、declined 或 requires investigation，并追加分别注明来源的证据，记录用户填写的来源和报告结果。打开 Activity 时会将处置及各条证据与提供方报告分别显示。
 
 证据及其结果由用户提供，DSH 不会检查。相互冲突的记录会分别显示，不会合并为单一验证状态。更新处置会保留证据，也不会修改委派请求、准入或报告。审核 Activity 不会启动或重试委派。
 
@@ -223,7 +223,7 @@ User dispositions and verification evidence stored independently from delegation
  * Record a user disposition and optionally append one user-supplied evidence entry.
  * @param request - Activity, owned delegation, disposition, and optional evidence.
  * @returns The durable review, without changing the delegation report.
- * @throws {ActivityReviewError} when either identity is unavailable, mismatched, or the evidence limit is reached.
+ * @throws {ActivityReviewError} when either identity is unavailable, mismatched, no provider report is saved, or the evidence limit is reached.
  * @throws {ActivityReviewStorageError} when review persistence fails.
  */
 record(request: RecordActivityReviewRequest): Promise<ActivityReview>

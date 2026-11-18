@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
-import type { ActivityDelegationId } from './delegation-types.ts'
+import type { ActivityDelegation, ActivityDelegationId } from './delegation-types.ts'
 import type { ActivityId } from './types.ts'
 import type { ActivityReview, ActivityReviewEvidence, RecordActivityReviewRequest } from './review-types.ts'
 import { homeActivityReviewsDomain, MAX_HOME_ACTIVITY_REVIEW_EVIDENCE } from './review-spec.ts'
@@ -25,6 +25,7 @@ export type ActivityReviewErrorCode =
   | 'unknown-activity'
   | 'unknown-delegation'
   | 'delegation-activity-mismatch'
+  | 'provider-report-unavailable'
   | 'evidence-limit'
 
 /** Expected ownership or review validation rejection. */
@@ -66,12 +67,15 @@ export class HomeActivityReviewService extends Service {
    * Record a user disposition and optionally append one user-supplied evidence entry.
    * @param request - Activity, owned delegation, disposition, and optional evidence.
    * @returns The durable review, without changing the delegation report.
-   * @throws {ActivityReviewError} when either identity is unavailable, mismatched, or the evidence limit is reached.
+   * @throws {ActivityReviewError} when an identity is invalid, no report is saved, or the evidence limit is reached.
    * @throws {ActivityReviewStorageError} when review persistence fails.
    */
   record(request: RecordActivityReviewRequest): Promise<ActivityReview> {
     return this.enqueue(async () => {
-      this.requireOwnedDelegation(request.activityId, request.delegationId)
+      const delegation = this.requireOwnedDelegation(request.activityId, request.delegationId)
+      if (delegation.status !== 'reported' || delegation.report === undefined) {
+        throw new ActivityReviewError('provider-report-unavailable', 'A provider report is required before recording a review.')
+      }
       const current = this.readRecord(request.delegationId)
       if ((current?.evidence.length ?? 0) >= MAX_HOME_ACTIVITY_REVIEW_EVIDENCE && request.evidence !== undefined) {
         throw new ActivityReviewError(
@@ -145,7 +149,7 @@ export class HomeActivityReviewService extends Service {
     }
   }
 
-  private requireOwnedDelegation(activityId: ActivityId, delegationId: ActivityDelegationId): void {
+  private requireOwnedDelegation(activityId: ActivityId, delegationId: ActivityDelegationId): ActivityDelegation {
     this.requireActivity(activityId)
     const delegation = this.ctx.homeActivityDelegations.get(delegationId)
     if (delegation === undefined) {
@@ -154,6 +158,7 @@ export class HomeActivityReviewService extends Service {
     if (delegation.activityId !== activityId) {
       throw new ActivityReviewError('delegation-activity-mismatch', 'The selected delegation belongs to a different Activity.')
     }
+    return delegation
   }
 
   private readRecord(delegationId: ActivityDelegationId): ActivityReview | undefined {

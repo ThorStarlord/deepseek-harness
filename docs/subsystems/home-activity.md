@@ -24,7 +24,7 @@ Artifact pointers do not alter delegation requests, admissions, or reports. Open
 
 ## Outcome reviews
 
-The separate version-1 `home_activity_reviews` domain stores one user review per delegation, linked to its owning Activity. No review row means the user disposition is pending. A user can set the current disposition to pending, accepted, declined, or requires investigation, and append separately attributed evidence that records a user-entered source and reported result. Opening an Activity shows the disposition and each evidence entry separately from its provider report.
+The separate version-1 `home_activity_reviews` domain stores one user review per delegation, linked to its owning Activity. No review row means the user disposition is pending. The service accepts a review only after the delegation has a saved provider report. A user can set the current disposition to pending, accepted, declined, or requires investigation, and append separately attributed evidence that records a user-entered source and reported result. Opening an Activity shows the disposition and each evidence entry separately from its provider report.
 
 Evidence and its result are user-supplied and are not checked by DSH. Conflicting entries remain visible rather than being collapsed into a verification status. Updating a disposition retains the evidence and does not modify delegation requests, admissions, or reports. Reviewing an Activity never starts or retries delegation.
 
@@ -223,7 +223,7 @@ User dispositions and verification evidence stored independently from delegation
  * Record a user disposition and optionally append one user-supplied evidence entry.
  * @param request - Activity, owned delegation, disposition, and optional evidence.
  * @returns The durable review, without changing the delegation report.
- * @throws {ActivityReviewError} when either identity is unavailable, mismatched, or the evidence limit is reached.
+ * @throws {ActivityReviewError} when either identity is unavailable, mismatched, no provider report is saved, or the evidence limit is reached.
  * @throws {ActivityReviewStorageError} when review persistence fails.
  */
 record(request: RecordActivityReviewRequest): Promise<ActivityReview>

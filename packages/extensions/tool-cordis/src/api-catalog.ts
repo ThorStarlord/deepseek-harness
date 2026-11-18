@@ -1877,7 +1877,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Record a user disposition and optionally append one user-supplied evidence entry.',
         parameters: [{ name: 'request', description: 'Activity, owned delegation, disposition, and optional evidence.' }],
         returns: 'The durable review, without changing the delegation report.',
-        throws: ['{ActivityReviewError} when either identity is unavailable, mismatched, or the evidence limit is reached.', '{ActivityReviewStorageError} when review persistence fails.'],
+        throws: ['{ActivityReviewError} when either identity is unavailable, mismatched, no provider report is saved, or the evidence limit is reached.', '{ActivityReviewStorageError} when review persistence fails.'],
       },
       {
         signature: 'get(activityId: ActivityId, delegationId: ActivityDelegationId): ActivityReview | undefined',

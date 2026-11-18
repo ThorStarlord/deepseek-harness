@@ -205,7 +205,7 @@ it('starts the real DSH spawn provider from `/activity`, then records success an
   expect(admitted.text).toContain('Requested task: Review release notes for missing migration steps.')
   expect(admitted.text).toContain(`Requesting Session: ${parent.session.id}`)
   expect(admitted.text).toContain('Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.')
-  expect(admitted.text).toContain('not yet available, verified, or accepted')
+  expect(admitted.text).toContain('Its provider report is pending; opening the Activity shows user disposition separately.')
   await started.promise
 
   const initialRecord = ctx.homeActivityDelegations.list(activity.id)[0]
@@ -214,14 +214,15 @@ it('starts the real DSH spawn provider from `/activity`, then records success an
   expect(initialRecord?.admission?.activationName).toMatch(/^activity-[a-f0-9]{8}$/u)
   expect(initialRecord?.admission?.runId).toBeDefined()
   const pending = await run(ctx, parent, ` open ${activity.id}`)
-  expect(pending.text).toContain('Status: admitted; not verified or accepted.')
-  expect(pending.text).toContain('Provider outcome is pending')
+  expect(pending.text).toContain('Delegation state: admitted.')
+  expect(pending.text).toContain('Provider report: not recorded; opening the Activity does not wait for the child Session.')
   expect(pending.text).toContain('Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.')
 
   release.resolve(undefined)
   await waitForReported(ctx, initialRecord!.id)
   const reportedSuccess = await run(ctx, parent, ` open ${activity.id}`)
-  expect(reportedSuccess.text).toContain('Status: provider reported; not verified or accepted.')
+  expect(reportedSuccess.text).toContain('Delegation state: reported.')
+  expect(reportedSuccess.text).toContain('Provider report: received; DSH has not independently verified it.')
   expect(reportedSuccess.text).toContain('Provider-reported output: The migration section needs one upgrade command.')
   expect(reportedSuccess.text).toContain(`Child Session: ${initialRecord!.admission!.childSessionId}`)
   expect(reportedSuccess.text).toContain(`Activation run: ${initialRecord!.admission!.runId}`)
@@ -235,7 +236,7 @@ it('starts the real DSH spawn provider from `/activity`, then records success an
   await waitForReported(ctx, failureRequestId!)
   const reportedFailure = await run(ctx, parent, ` open ${activity.id}`)
   expect(reportedFailure.text).toContain('Provider stop reason: error')
-  expect(reportedFailure.text).toContain('not verified or accepted')
+  expect(reportedFailure.text).toContain('DSH has not independently verified it.')
   expect(adapter.requests).toHaveLength(2)
   expect(parent.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toEqual([])
   expect(parent.session.snapshotEvents().filter(event => event.type.startsWith('goal/'))).toEqual([])
@@ -362,7 +363,7 @@ it('renders every saved delegation state with the right uncertainty and fact ref
     parentSessionId: parent.session.id,
   })
   const admitted = await ctx.homeActivityDelegations.recordAdmitted(admittedRequest.id, admission)
-  expect(renderActivityDelegation(admitted).join('\n')).toContain('Provider outcome is pending')
+  expect(renderActivityDelegation(admitted).join('\n')).toContain('Provider report: not recorded; opening the Activity does not wait for the child Session.')
 
   const missingAdmission: ActivityDelegation = {
     ...requested,
@@ -438,7 +439,7 @@ it('records child and run references and clips a separately attributed provider 
   expect(opened.text).toContain('Additional provider output blocks: reasoning')
   expect(opened.text).toContain('Provider-reported text was clipped at 16384 UTF-8 bytes.')
   expect(opened.text).toContain('Provider diagnostic: Provider-authored diagnostic.')
-  expect(opened.text).toContain('not verified or accepted')
+  expect(opened.text).toContain('DSH has not independently verified it.')
 })
 
 it('renders admitted results without a run id and leaves restart recovery unconfirmed', async () => {
@@ -504,7 +505,7 @@ it('records an unknown settled result and contains persistence and observer fail
   })
   let opened = await run(ctx, parent, ` open ${activity.id}`)
   expect(opened.text).toContain('accepted activation did not provide a usable report')
-  expect(opened.text).toContain('The provider report is not verified or accepted.')
+  expect(opened.text).toContain('The provider report is unconfirmed; DSH has not independently verified it, and user disposition is shown separately.')
 
   const failingResult = Promise.withResolvers<SubagentResult>()
   vi.spyOn(ctx.subagents, 'startActivation')
@@ -556,7 +557,7 @@ it('records an unknown settled result and contains persistence and observer fail
   if (openedText === undefined) throw new Error('Reopened Activity did not return its detail text.')
   const malformedRecord = openedText.split(`Delegation ${fourthId}: provider spawn`)[1]?.split('\n\nDelegation ')[0] ?? ''
   expect(malformedRecord).toContain('accepted activation did not provide a usable report')
-  expect(malformedRecord).not.toContain('Provider outcome is pending')
+  expect(malformedRecord).not.toContain('Provider report: not recorded')
 
   const malformedObserver = Promise.withResolvers<SubagentResult>()
   vi.spyOn(ctx.subagents, 'startActivation')
