@@ -156,10 +156,16 @@ describe('web e2e: Home Activity delegation', () => {
     await page.getByRole('button', { name: /Activity: Release readiness/u }).last().click()
     await page.getByText(/Provider-reported output: The checklist contains two unverified migration steps\./u)
       .last().waitFor({ timeout: 10_000 })
-    const delegationId = /Delegation ([0-9a-f-]{36}): provider spawn/u
-      .exec(await page.locator('pre').filter({ hasText: 'Provider-reported output:' }).last().textContent() ?? '')?.[1]
+    const providerReportText = await page.locator('pre').filter({ hasText: 'Provider-reported output:' }).last().textContent() ?? ''
+    const delegationId = /Delegation ([0-9a-f-]{36}): provider spawn/u.exec(providerReportText)?.[1]
     if (delegationId === undefined) throw new Error('Rendered Activity report omitted its stable delegation identity.')
-    const reportReplacements = [...replacements, [delegationId, '{{delegation-id}}']] as const
+    const reportObservedAt = /Provider report observed at: (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)/u.exec(providerReportText)?.[1]
+    if (reportObservedAt === undefined) throw new Error('Rendered Activity report omitted its observation time.')
+    const reportReplacements = [
+      ...replacements,
+      [delegationId, '{{delegation-id}}'],
+      [reportObservedAt, '{{provider-report-observed-at}}'],
+    ] as const
     await page.screenshot({ path: REPORTED_SCREENSHOT, fullPage: true })
     const reportedSnapshot = await captureStableAria(
       page, '[class*="centerCol"]', scaffold.workspaceCwd, { replacements: reportReplacements },
@@ -167,6 +173,10 @@ describe('web e2e: Home Activity delegation', () => {
     await compareOrRefreshGolden(REPORTED_EXPECTED, reportedSnapshot, MODE)
     expect(reportedSnapshot).toContain('Delegation state: reported.')
     expect(reportedSnapshot).toContain('Provider report: received; DSH has not independently verified it.')
+    expect(reportedSnapshot).toContain('Reported outcome: provider-reported completion; not independently verified.')
+    expect(reportedSnapshot).toContain('Provider report source: subagent-activation-result.')
+    expect(reportedSnapshot).toContain('Provider report observed at: {{provider-report-observed-at}}.')
+    expect(reportedSnapshot).toContain('Freshness: unknown; DSH has no freshness check for this saved report, so it may be stale.')
     expect(reportedSnapshot).toContain('Provider-reported output: The checklist contains two unverified migration steps.')
     expect(reportedSnapshot).toContain('DSH profile: scaffold; bundle-set classification: unavailable')
     expect(reportedSnapshot).not.toContain('Status: accepted.')
@@ -253,13 +263,22 @@ describe('web e2e: Home Activity delegation', () => {
     expect(codexReport).toContain('Runtime profile and preset: unavailable (the native Codex provider does not expose DSH composition).')
     expect(codexReport).toContain('Delegation state: reported.')
     expect(codexReport).toContain('Provider report: received; DSH has not independently verified it.')
+    expect(codexReport).toContain('Reported outcome: provider-reported completion; not independently verified.')
+    expect(codexReport).toContain('Provider report source: subagent-activation-result.')
+    expect(codexReport).toContain('Freshness: unknown; DSH has no freshness check for this saved report, so it may be stale.')
+    const codexReportObservedAt = /Provider report observed at: (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)/u.exec(codexReport)?.[1]
+    if (codexReportObservedAt === undefined) throw new Error('Rendered Codex report omitted its observation time.')
+    const codexReportReplacements = [
+      ...codexReplacements,
+      [codexReportObservedAt, '{{provider-report-observed-at}}'],
+    ] as const
     expect(codexReport).toContain('User disposition: pending; no review has been recorded.')
     expect(codexReport).toContain('Verification evidence: none recorded.')
     expect(codexReport).not.toContain('Child Session: codex-provider-run-1')
     await compareOrRefreshGolden(
       CODEX_REPORTED_EXPECTED,
       await captureStableAria(page, '[class*="centerCol"] pre:has-text("Codex-reported output:")', scaffold.workspaceCwd,
-        { replacements: codexReplacements }),
+        { replacements: codexReportReplacements }),
       MODE,
     )
 
@@ -316,6 +335,13 @@ describe('web e2e: Home Activity delegation', () => {
     await page.getByRole('button', { name: /Activity: Codex startup uncertainty/u }).last().click()
     await page.getByText(/do not repeat the task unless you independently confirm it did not start/u)
       .last().waitFor({ timeout: 10_000 })
+    const uncertaintyText = await page.locator('pre')
+      .filter({ hasText: 'Outcome: unknown; no provider result was recorded.' }).last().textContent() ?? ''
+    const uncertaintyObservedAt = /Uncertainty observed at: (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)/u.exec(uncertaintyText)?.[1]
+    if (uncertaintyObservedAt === undefined) throw new Error('Rendered uncertainty omitted its observation time.')
+    expect(uncertaintyText).toContain('Outcome: unknown; no provider result was recorded.')
+    expect(uncertaintyText).toContain('Uncertainty source: native Codex start response.')
+    expect(uncertaintyText).toContain(`Uncertainty observed at: ${uncertaintyObservedAt}.`)
     expect(codexProviderStarts).toBe(1)
     await compareOrRefreshGolden(
       CODEX_UNCONFIRMED_EXPECTED,
@@ -325,6 +351,7 @@ describe('web e2e: Home Activity delegation', () => {
             [uncertainActivity.id, '{{activity-id}}'],
             [parentSessionId, '{{parent-session-id}}'],
             [uncertainActivity.createdAt, '{{activity-created-at}}'],
+            [uncertaintyObservedAt, '{{uncertainty-observed-at}}'],
             ...(uncertainRecord === undefined ? [] : [[uncertainRecord.id, '{{delegation-id}}'] as const]),
           ],
         }),

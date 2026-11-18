@@ -600,6 +600,84 @@ it('keeps a successful provider report separate from failed verification and the
   expect(startActivation).not.toHaveBeenCalled()
 })
 
+it('classifies known provider stop reasons and shows report source and freshness', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Provider outcome review', objective: 'Inspect outcome source fields.',
+    boundaries: { inScope: ['Compare provider status with its report.'], outOfScope: ['Do not retry work.'] },
+  })
+  const cases = [
+    ['completed', 'provider-reported completion; not independently verified'],
+    ['error', 'provider-reported failure; output may be partial'],
+    ['aborted', 'provider-reported interruption; output may be partial'],
+    ['max-tokens', 'partial output; the provider reached its token limit'],
+    ['refusal', 'provider refusal; the requested task was not completed'],
+    ['provider-specific-stop', 'unknown; the provider stop reason is not classified'],
+  ] as const
+  for (const [index, [stopReason]] of cases.entries()) {
+    const delegation = await test.ctx.homeActivityDelegations.createRequest({
+      activityId: activity.id,
+      provider: 'spawn',
+      task: `Inspect outcome ${stopReason}.`,
+      parentSessionId: test.session.id,
+    })
+    const admission = {
+      childSessionId: SessionId(`outcome-child-${index}`),
+      activationName: 'activity-outcome-review',
+      admittedAt: `2026-11-18T12:00:${String(index).padStart(2, '0')}.000Z`,
+      source: 'subagents.startActivation' as const,
+    }
+    await test.ctx.homeActivityDelegations.recordAdmitted(delegation.id, admission)
+    await test.ctx.homeActivityDelegations.recordReported(delegation.id, admission, {
+      stopReason,
+      outputText: `Provider output for ${stopReason}.`,
+      nonTextBlockTypes: [],
+      outputTruncated: false,
+      reportedAt: `2026-11-18T12:01:${String(index).padStart(2, '0')}.000Z`,
+      source: 'subagent-activation-result',
+    })
+  }
+  const startActivation = vi.spyOn(test.ctx.subagents, 'startActivation')
+
+  const opened = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+
+  for (const [, expected] of cases) expect(opened.text).toContain(`Reported outcome: ${expected}.`)
+  expect(opened.text).toContain('Provider report source: subagent-activation-result.')
+  expect(opened.text).toContain('Provider report observed at: 2026-11-18T12:01:00.000Z.')
+  expect(opened.text).toContain('Freshness: unknown; DSH has no freshness check for this saved report, so it may be stale.')
+  expect(opened.text).toContain('Provider stop reason: provider-specific-stop')
+  expect(opened.text).toContain('Provider report: received; DSH has not independently verified it.')
+  expect(startActivation).not.toHaveBeenCalled()
+})
+
+it('distinguishes rejected startup from unknown recovery and records available source times', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Recovered outcomes', objective: 'Inspect unresolved execution facts.',
+    boundaries: { inScope: ['Inspect saved outcome facts.'], outOfScope: ['Do not restart them.'] },
+  })
+  const failed = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id, provider: 'spawn', task: 'Record a rejected start.', parentSessionId: test.session.id,
+  })
+  await test.ctx.homeActivityDelegations.markNotAdmitted(failed.id, 'The selected provider is unavailable.')
+  const uncertain = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id, provider: 'spawn', task: 'Record an uncertain start.', parentSessionId: test.session.id,
+  })
+  await test.ctx.homeActivityDelegations.markUnconfirmed(uncertain.id, undefined, 'restart-before-admission-recorded')
+  const startActivation = vi.spyOn(test.ctx.subagents, 'startActivation')
+
+  const opened = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+
+  expect(opened.text).toContain('Outcome: startup failed before DSH admission; no activation was published.')
+  expect(opened.text).toContain('Failure source: subagents.startActivation.')
+  expect(opened.text).toContain('Failure observed at: unavailable (the failure time was not recorded).')
+  expect(opened.text).toContain('Outcome: unknown; no provider result was recorded.')
+  expect(opened.text).toContain('Uncertainty source: application restart recovery.')
+  expect(opened.text).toMatch(/Uncertainty observed at: 2026-\d\d-\d\dT/u)
+  expect(opened.text).toContain('Opening an Activity displays saved intent and reported facts; it does not start work or activate a Goal.')
+  expect(startActivation).not.toHaveBeenCalled()
+})
+
 it('does not imply verification evidence exists when recording a disposition alone', async () => {
   const test = await harness()
   const activity = await test.ctx.homeActivities.create({

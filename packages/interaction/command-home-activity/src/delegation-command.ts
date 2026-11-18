@@ -219,6 +219,7 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
   ]
   if (delegation.status === 'requested') {
     lines.push(`Status: request saved; ${isCodex ? 'Codex' : 'provider'} admission has not been confirmed.`)
+    lines.push('Outcome: unknown; the saved request does not establish provider admission or a result.')
     if (delegation.request.provider === 'spawn') {
       lines.push(`Requested child Session id (not admission evidence): ${delegation.request.requestedChildSessionId}`)
     } else {
@@ -228,6 +229,9 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
   }
   if (delegation.status === 'not-admitted') {
     lines.push(`Status: not admitted. ${delegation.failure?.message ?? 'The DSH API did not publish an activation.'}`)
+    lines.push('Outcome: startup failed before DSH admission; no activation was published.')
+    lines.push(`Failure source: ${delegation.failure?.source ?? 'unavailable'}.`)
+    lines.push('Failure observed at: unavailable (the failure time was not recorded).')
     return lines
   }
   if (delegation.status === 'unconfirmed') {
@@ -249,8 +253,14 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
         ? 'This Codex run is one-shot. Activity does not inspect its transcript, resume it, or roll back its effects; its report is unconfirmed, and user disposition is shown separately.'
         : 'Inspect the child Session summary before retrying. The provider report is unconfirmed; DSH has not independently verified it, and user disposition is shown separately.')
     }
+    lines.push('Outcome: unknown; no provider result was recorded.')
     lines.push(`Reason: ${uncertaintyMessage(delegation.uncertainty?.reason)}`)
+    lines.push(`Uncertainty source: ${uncertaintySource(delegation.uncertainty?.reason)}.`)
+    lines.push(`Uncertainty observed at: ${delegation.uncertainty?.observedAt ?? 'unavailable'}.`)
     return lines
+  }
+  if (delegation.status === 'admitted') {
+    lines.push('Outcome: pending; DSH admission is recorded, but no provider report is available.')
   }
   lines.push(`Delegation state: ${delegation.status}.`)
   if (delegation.admission === undefined) {
@@ -260,6 +270,10 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
   }
   if (delegation.report !== undefined) {
     lines.push('Provider report: received; DSH has not independently verified it.')
+    lines.push(`Reported outcome: ${reportedOutcome(delegation.report.stopReason)}.`)
+    lines.push(`Provider report source: ${delegation.report.source}.`)
+    lines.push(`Provider report observed at: ${delegation.report.reportedAt}.`)
+    lines.push('Freshness: unknown; DSH has no freshness check for this saved report, so it may be stale.')
     lines.push(`Provider stop reason: ${delegation.report.stopReason}`)
     lines.push(`${isCodex ? 'Codex-reported' : 'Provider-reported'} output: ${delegation.report.outputText || '(no text output)'}`)
     if (delegation.report.nonTextBlockTypes.length > 0) {
@@ -273,6 +287,37 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
       : 'Provider report: not recorded; opening the Activity does not wait for the child Session.')
   }
   return lines
+}
+
+/** Describe only the provider stop reasons whose semantics are defined by the subagent API.
+ * @param stopReason - Provider-authored terminal reason retained in the report.
+ * @returns A conservative user-facing classification that does not imply verification.
+ */
+function reportedOutcome(stopReason: string): string {
+  switch (stopReason) {
+    case 'completed': return 'provider-reported completion; not independently verified'
+    case 'error': return 'provider-reported failure; output may be partial'
+    case 'aborted': return 'provider-reported interruption; output may be partial'
+    case 'max-tokens': return 'partial output; the provider reached its token limit'
+    case 'refusal': return 'provider refusal; the requested task was not completed'
+    default: return 'unknown; the provider stop reason is not classified'
+  }
+}
+
+/** Identify the recorded source category for an unconfirmed Activity fact.
+ * @param reason - Persisted reason for the uncertainty, if it was retained.
+ * @returns The lifecycle source category or an explicit unavailable label.
+ */
+function uncertaintySource(reason: ActivityDelegationUncertainty['reason'] | undefined): string {
+  if (reason === undefined) return 'unavailable'
+  switch (reason) {
+    case 'restart-before-admission-recorded':
+    case 'restart-before-report-recorded': return 'application restart recovery'
+    case 'admission-write-failed':
+    case 'report-write-failed': return 'Activity persistence'
+    case 'startup-result-rejected': return 'activation result observer'
+    case 'codex-start-outcome-unknown': return 'native Codex start response'
+  }
 }
 
 /** Render saved DSH profile and preset facts without implying permission or capability guarantees.

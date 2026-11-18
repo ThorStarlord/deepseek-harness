@@ -10,6 +10,10 @@ Home Activity 是由用户发起并持久保存的事务，包含稳定身份、
 
 `home_activities` 域使用格式版本 1。单独的 `home_activity_delegations` 域使用版本 4，并可读取版本 1、2 和 3 的记录。版本 3 首次加入 Codex 启动结果，严格的版本 2 读取器无法解码该结果；版本 4 会保存启动时选用的 profile 和 preset。新的 DSH `spawn` 请求会在启动前保存启动器提供的 profile 名称、有序 bundle 列表，以及活动 Agent preset id 和模块名称。只有 bundle 列表与已发布 profile 模板完全一致时才标为稳定；只有所选 bundle 带有明确的实验性元数据时才标为实验性。没有明确产品分类时，preset 稳定性仍显示为不可用。自定义 profile patch 和运行时 overlay 不参与分类。原生 Codex 的 DSH profile 和 preset 信息会标为不可用，因为该外部组合不由 DSH 管理。这些标签不代表沙箱隔离、权限强制执行或 Skill 资格，后续配置变化不会改写已保存的 profile 和 preset 快照。没有 profile 和 preset 快照的既有记录仍可读取，并会显示为不可用。现有 `spawn` 行仍按原字段读取。`spawn` 请求会在启动前保存拟请求的子级 Session id；Codex 请求不会虚构 DSH Session 身份。Codex 准入会保存其适配器的 `SubagentRun.id`，不是 DSH Session 或原生 Codex 线程 id。拟请求的 `spawn` id 不代表已获准入。应用重启时，缺少后续事实的请求或 admission 会变为 `unconfirmed`；不会重新启动 activation。若 Codex 启动调用在 dispatch 开始后拒绝，记录会保持 `unconfirmed`，因为外部运行可能已经启动；除非独立确认 Codex 未启动，否则不要重复该任务。若 `spawn` 准入状态不确定，可用 `/activity sessions` 检查拟请求的 id；Session 记录缺失不能证明启动失败。Activity 不提供继续、恢复、对话记录检查或回滚。Codex 遵循其原生配置和权限模式。提供方输出只是报告，不代表验证或用户接受。`spawn` 子级权限由 DSH 运行时策略控制；Activity 范围不是授权约束。不涉及 Session 格式版本变更。
 
+## 委派结果
+
+提供方报告会保留提供方停止原因。Activity 视图仅分类已知的 subagent 原因：`completed`、`error`、`aborted`、`max-tokens` 和 `refusal`；未知原因仍显示为未知。可用时，视图会显示报告来源和观察时间，以及不确定状态的来源类别和观察时间。DSH 不会检查已保存报告的新鲜度，也不会查询提供方后续状态，因此报告新鲜度未知并可能已过时。缺少报告时，会根据已保存的生命周期事实显示为 pending 或 unconfirmed；打开 Activity 永远不会重试工作。
+
 ## 上下文关联
 
 独立的版本 1 `home_activity_associations` 域会在 Activity 记录之外保存用户选定的 Workspace 和 DSH Session id，每种引用最多 256 个。两类 id 分别选择；共享 Activity 不会把 Session 分配给 Workspace，也不会从 Workspace 目录推断 Git 仓库根目录。删除引用只修改关联记录，不会重写 Workspace 记录或 Session 日志。
