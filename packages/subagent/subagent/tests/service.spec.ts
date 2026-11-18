@@ -310,7 +310,10 @@ describe('SubagentRuntime', () => {
       ...baseRequest(),
       signal: new AbortController().signal,
       delivery: 'caller',
-    })).rejects.toMatchObject({ code: 'CONTINUATION_UNAVAILABLE' })
+    })).rejects.toMatchObject({
+      code: 'NOT_DISPATCHED',
+      cause: expect.objectContaining({ code: 'CONTINUATION_UNAVAILABLE' }),
+    })
     expect(provider.startCount).toBe(0)
   })
 
@@ -735,6 +738,9 @@ it('rejects a disposed parent before starting provider execution', async () => {
   await expect(subagents.startActivation({
     provider: provider.name, label: 'work', delivery: 'caller', signal: new AbortController().signal,
     parent: handle.agent, prompt: [],
-  })).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+  })).rejects.toMatchObject({
+    code: 'NOT_DISPATCHED',
+    cause: expect.objectContaining({ code: 'UNAUTHORIZED' }),
+  })
   expect(provider.startCount).toBe(0)
 })
