@@ -48,7 +48,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 |---|---|
 | `/activity create <JSON>` | 保存名称、目标，以及包含 `inScope` 和 `outOfScope` 字符串数组的 `boundaries` 对象。至少需要一项 `inScope` 内容。 |
 | `/activity list` | 按创建时间从新到旧列出已保存 Activity 的名称和稳定 id。 |
-| `/activity open <activity-id>` | 显示已保存目标、描述性边界、上下文引用、委派记录、用户关联的产物指针和外部交接。 |
+| `/activity open <activity-id>` | 显示已保存的目标、描述性边界、上下文引用、委派记录、用户关联的产物指针和用户提供的外部交接。 |
 | `/activity workspaces` | 列出可以关联的注册 Workspace 上下文。 |
 | `/activity sessions` | 列出已存储的 DSH Session 及可用摘要元数据。 |
 | `/activity link <activity-id> workspace <workspace-id>` | 添加 Workspace 引用，不修改 Workspace 记录。 |

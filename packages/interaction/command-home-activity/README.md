@@ -49,7 +49,7 @@ A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activit
 |---|---|
 | `/activity create <JSON>` | Save a name, objective, and `boundaries` object with `inScope` and `outOfScope` string arrays. At least one `inScope` item is required. |
 | `/activity list` | List saved Activities newest first, with their names and stable ids. |
-| `/activity open <activity-id>` | Show the saved objective, descriptive boundaries, context references, delegation records, and user-linked artifact pointers. |
+| `/activity open <activity-id>` | Show the saved objective, descriptive boundaries, context references, delegation records, user-linked artifact pointers, and user-supplied external handoffs. |
 | `/activity workspaces` | List registered Workspace contexts that can be linked. |
 | `/activity sessions` | List stored DSH Sessions and their available summary metadata. |
 | `/activity link <activity-id> workspace <workspace-id>` | Record a selected Workspace reference without changing the Workspace record. |
