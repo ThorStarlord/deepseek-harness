@@ -97,7 +97,7 @@ describe('web e2e: Claude Code Activity delegation', () => {
       /Delegation admitted: provider claude-code/u,
     )
     expect(providerStarts).toBe(1)
-    expect(admissionText).toContain('Claude Code provider run id (not a DSH Session or native Claude Code conversation id): claude-code-test-run-1')
+    expect(admissionText).toContain('Claude Code adapter run id (not a DSH Session or native Claude Code conversation id): claude-code-test-run-1')
     expect(admissionText).toContain(PERMISSION_CAVEAT)
     expect(admissionText).toContain('Activity does not expose transcript inspection, continuation, resume, or rollback.')
 
@@ -121,6 +121,7 @@ describe('web e2e: Claude Code Activity delegation', () => {
       ['claude-code-test-run-1', '{{provider-run-id}}'],
       [reportedRecord.id, '{{delegation-id}}'],
       [reportedActivity.createdAt, '{{activity-created-at}}'],
+      [reportedRecord.report?.reportedAt ?? '', '{{reported-at}}'],
     ] as const
     await mkdir(EXPECTED_DIR, { recursive: true })
     await mkdir(SCREENSHOT_DIR, { recursive: true })
@@ -129,11 +130,15 @@ describe('web e2e: Claude Code Activity delegation', () => {
     await compareOrRefreshGolden(REPORTED_EXPECTED, reportedSnapshot, MODE)
     expect(reportedSnapshot).toContain('provider claude-code (native Claude Code, external one-shot)')
     expect(reportedSnapshot).toContain(`Requested task: ${requestedTask}`)
-    expect(reportedSnapshot).toContain('Status: Claude Code reported; not verified or accepted.')
-    expect(reportedSnapshot).toContain('Claude Code provider run id (not a DSH Session or native Claude Code conversation id): {{provider-run-id}}')
+    expect(reportedSnapshot).toContain('Delegation state: reported.')
+    expect(reportedSnapshot).toContain('Provider report: received; DSH has not independently verified it.')
+    expect(reportedSnapshot).toContain('Reported outcome: provider-reported completion; not independently verified.')
+    expect(reportedSnapshot).toContain('Provider report source: subagent-activation-result.')
+    expect(reportedSnapshot).toContain('Claude Code adapter run id (not a DSH Session or native Claude Code conversation id): {{provider-run-id}}')
     expect(reportedSnapshot).toContain(PERMISSION_CAVEAT)
     expect(reportedSnapshot).toContain('Claude Code-reported output: The checklist has one unverified migration step.')
-    expect(reportedSnapshot).not.toContain('Status: accepted.')
+    expect(reportedSnapshot).toContain('User disposition: pending; no review has been recorded.')
+    expect(reportedSnapshot).not.toContain('User disposition: accepted.')
     await page.setViewportSize({ width: 1024, height: 900 })
     await page.screenshot({ path: join(SCREENSHOT_DIR, 'home-activity-claude-reported.png'), fullPage: true })
     await scrollTextIntoView(reportDetails, PERMISSION_CAVEAT)
@@ -181,13 +186,14 @@ describe('web e2e: Claude Code Activity delegation', () => {
           [parentSessionId, '{{parent-session-id}}'],
           [uncertainRecord.id, '{{delegation-id}}'],
           [uncertainActivity.createdAt, '{{activity-created-at}}'],
+          [uncertainRecord.uncertainty?.observedAt ?? '', '{{uncertainty-observed-at}}'],
         ],
       })
     await compareOrRefreshGolden(UNCONFIRMED_EXPECTED, uncertainSnapshot, MODE)
     expect(uncertainSnapshot).toContain('native Claude Code, external one-shot')
     expect(uncertainSnapshot).toContain(PERMISSION_CAVEAT)
     expect(uncertainSnapshot).toContain('do not repeat the task unless you independently confirm it did not start')
-    expect(uncertainSnapshot).not.toContain('Claude Code provider run id')
+    expect(uncertainSnapshot).not.toContain('Claude Code adapter run id')
     expect(providerStarts).toBe(2)
     disposeProvider()
     expect(tripwire.pageErrors).toEqual([])
@@ -197,7 +203,6 @@ describe('web e2e: Claude Code Activity delegation', () => {
 
 /** Scroll an Activity detail until the requested caveat is visible in the browser viewport. */
 async function scrollTextIntoView(container: Locator, text: string): Promise<void> {
-  await container.evaluate((element) => { element.scrollTop = element.scrollHeight })
   const visible = await container.evaluate((element, expectedText) => {
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
     let node = walker.nextNode()
@@ -207,10 +212,13 @@ async function scrollTextIntoView(container: Locator, text: string): Promise<voi
         const range = document.createRange()
         range.setStart(node, start)
         range.setEnd(node, start + expectedText.length)
-        const rect = range.getBoundingClientRect()
         const containerRect = element.getBoundingClientRect()
-        return rect.top >= Math.max(0, containerRect.top)
-          && rect.bottom <= Math.min(window.innerHeight, containerRect.bottom)
+        const rect = range.getBoundingClientRect()
+        if (rect.top < containerRect.top) element.scrollTop -= containerRect.top - rect.top
+        else if (rect.bottom > containerRect.bottom) element.scrollTop += rect.bottom - containerRect.bottom
+        const visibleRect = range.getBoundingClientRect()
+        return visibleRect.top >= Math.max(0, containerRect.top)
+          && visibleRect.bottom <= Math.min(window.innerHeight, containerRect.bottom)
       }
       node = walker.nextNode()
     }
