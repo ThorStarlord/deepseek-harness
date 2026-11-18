@@ -442,6 +442,40 @@ it('records a Codex provider replacement before dispatch as not admitted', async
   }
 })
 
+it('records Codex startup preparation failure before provider invocation as not admitted', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  let providerStarts = 0
+  ctx.subagents.registerProvider({
+    name: 'codex',
+    capabilities: NO_START_CAPABILITIES,
+    inheritsParentContext: false,
+    async start(): Promise<SubagentRun> {
+      providerStarts += 1
+      throw new Error('provider must not be called')
+    },
+  })
+  vi.spyOn(ctx.workingDirectory, 'ensure').mockRejectedValue(new Error('directory unavailable'))
+  const activity = await ctx.homeActivities.create({
+    name: 'Codex startup preparation failure',
+    objective: 'Record that DSH did not call the provider when setup failed.',
+    boundaries: { inScope: ['Keep the result safe to retry explicitly.'], outOfScope: ['Retry automatically.'] },
+  })
+
+  const rejected = await run(ctx, parent, ` delegate ${activity.id} codex Review the release checklist once.`)
+  expect(rejected.kind).toBe('error')
+  expect(rejected.text).toContain('DSH could not complete startup preparation and did not call the Codex provider.')
+  expect(rejected.text).not.toContain('do not repeat this task')
+  const saved = ctx.homeActivityDelegations.list(activity.id)[0]
+  expect(saved).toMatchObject({ status: 'not-admitted', request: { provider: 'codex' } })
+  expect(saved?.failure?.message).toContain('did not call the Codex provider')
+  expect(providerStarts).toBe(0)
+
+  const reopened = await run(ctx, parent, ` open ${activity.id}`)
+  expect(reopened.text).toContain('Status: not admitted.')
+  expect(reopened.text).toContain('did not call the Codex provider')
+  expect(providerStarts).toBe(0)
+})
+
 it('keeps a possibly-started Codex rejection unconfirmed and never retries on reopen', async () => {
   const { ctx, parent } = await harness(new DelegationAdapter([]))
   const activity = await ctx.homeActivities.create({

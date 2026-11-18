@@ -263,6 +263,7 @@ export class SubagentRuntime extends TypertRemoteService {
    * @returns identities, execution result, and exact-activation disposal. A reserved
    * childId requires a local backend and guarantees an accepted messageId.
    * @throws PROVIDER_CHANGED if the selected provider is removed or replaced before dispatch.
+   * @throws NOT_DISPATCHED if external startup fails before the provider is invoked.
    */
   async startActivation(spec: SubagentActivationSpec): Promise<SubagentActivation> {
     const provider = this.expectProvider(spec.provider)
@@ -285,10 +286,19 @@ export class SubagentRuntime extends TypertRemoteService {
     }
     // oxlint-disable-next-line typescript/no-non-null-assertion -- registerProvider requires start when prepareContinuable is absent.
     const start = provider.start!.bind(provider)
-    return manager.startExternal(spec, (request) => {
-      this.assertProviderCurrent(provider)
-      return start(request)
-    })
+    let providerInvoked = false
+    try {
+      return await manager.startExternal(spec, (request) => {
+        this.assertProviderCurrent(provider)
+        providerInvoked = true
+        return start(request)
+      })
+    } catch (error: unknown) {
+      if (!providerInvoked && !(error instanceof SubagentError && error.code === 'PROVIDER_CHANGED')) {
+        throw new SubagentError('external provider was not invoked before startup failed', 'NOT_DISPATCHED', { cause: error })
+      }
+      throw error
+    }
   }
 
   /**

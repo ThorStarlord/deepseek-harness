@@ -103,21 +103,23 @@ export async function executeActivityDelegation(
     })
   } catch (error: unknown) {
     stopObservingStart()
-    if (error instanceof SubagentError && error.code === 'PROVIDER_CHANGED') {
+    if (error instanceof SubagentError && (error.code === 'PROVIDER_CHANGED' || error.code === 'NOT_DISPATCHED')) {
       const providerLabel = request.request.provider === 'spawn'
         ? 'DSH spawn'
         : 'Codex'
-      const message = `The ${providerLabel} provider changed before dispatch, so DSH did not start this task. Check the provider, then explicitly submit a new request if you still want it run. Opening the Activity will not retry it.`
+      const message = error.code === 'PROVIDER_CHANGED'
+        ? `The ${providerLabel} provider changed before dispatch, so DSH did not start this task. Check the provider, then explicitly submit a new request if you still want it run. Opening the Activity will not retry it.`
+        : `DSH could not complete startup preparation and did not call the ${providerLabel} provider. Check the Activity and provider, then explicitly submit a new request if you still want it run. Opening the Activity will not retry it.`
       try {
         await ctx.homeActivityDelegations.markNotAdmitted(request.id, message)
       } catch (recordError: unknown) {
-        ctx.logger.warn('command-home-activity: provider-change outcome could not be saved: %o', recordError)
+        ctx.logger.warn('command-home-activity: pre-dispatch outcome could not be saved: %o', recordError)
         return {
           kind: 'error',
           text: `${message} Saving this Activity status failed; check the Activity before submitting another request.`,
         }
       }
-      ctx.logger.warn('command-home-activity: provider changed before activation dispatch: %o', error)
+      ctx.logger.warn('command-home-activity: activation was not dispatched: %o', error)
       return { kind: 'error', text: `${message} Request ID: ${request.id}` }
     }
     if (request.request.provider === 'codex') {

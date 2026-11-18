@@ -172,6 +172,20 @@ describe('SubagentRuntime', () => {
     }
   })
 
+  it('reports external preparation failure before provider invocation', async () => {
+    const { ctx, subagents } = await service()
+    const provider = new StubProvider('external')
+    subagents.registerProvider(provider)
+    vi.spyOn(ctx.workingDirectory, 'ensure').mockRejectedValue(new Error('directory unavailable'))
+
+    await expect(start(subagents, 'external', baseRequest()))
+      .rejects.toMatchObject({
+        code: 'NOT_DISPATCHED',
+        cause: expect.objectContaining({ message: 'directory unavailable' }),
+      })
+    expect(provider.startCount).toBe(0)
+  })
+
   it('has no owned child work before the Agent service is mounted', async () => {
     const { subagents } = await service(false)
     await expect(subagents.waitForTreeWork(fakeParent())).resolves.toBe(false)
