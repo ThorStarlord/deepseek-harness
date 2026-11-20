@@ -14,6 +14,8 @@ The `home_activities` domain uses format version 1. The separate `home_activity_
 
 Provider reports preserve the provider stop reason. Activity views classify only known subagent reasons: `completed`, `error`, `aborted`, `max-tokens`, and `refusal`; unknown reasons remain unknown. They show the report source and observation time, and the uncertainty source category and observation time when available. DSH has no freshness check or later provider-status query for a saved report, so its freshness is unknown and it may be stale. Missing reports remain pending or unconfirmed according to the saved lifecycle facts; opening an Activity never retries work.
 
+For degraded outcomes, opening an Activity shows inspection guidance for pending or uncertain starts. It offers a separate, explicit new request only when saved facts support new work and the selected provider route is registered; registration does not establish credential readiness, consent, native permission, or admission. Activity has no stop action, and external one-shot runs have no Activity status query, transcript inspection, or resume action. Unclassified outcomes remain unresolved, and opening an Activity never starts or resumes execution.
+
 ## Context references
 
 The separate version-1 `home_activity_associations` domain stores selected Workspace and DSH Session ids apart from the Activity record. It permits up to 256 references of each kind. The ids are selected independently: sharing an Activity does not assign a Session to a Workspace or infer a Git repository root from a Workspace directory. Removing a reference changes only the association record; it never rewrites a Workspace record or Session log.

@@ -49,7 +49,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity、关联和备
 |---|---|
 | `/activity create <JSON>` | 保存名称、目标，以及包含 `inScope` 和 `outOfScope` 字符串数组的 `boundaries` 对象。至少需要一项 `inScope` 内容。 |
 | `/activity list` | 按创建时间从新到旧列出已保存 Activity 的名称和稳定 id。 |
-| `/activity open <activity-id>` | 显示已保存的目标、描述性范围、当前用户备注和最近修订、上下文引用、委派记录，以及已捕获的 profile 和 preset 选择。 |
+| `/activity open <activity-id>` | 显示已保存的目标、描述性范围、当前用户备注和最近修订、上下文引用、委派记录、已捕获的 profile 和 preset 选择，以及根据已保存生命周期事实和当前已注册提供方路由支持的只读后续操作。路由注册不代表凭据可用或权限已获准。 |
 | `/activity annotate <activity-id> <JSON>` | 追加一条用户撰写的协调备注或更正，不修改提供方报告或专家断言。JSON 必须包含 `text`；`/activity open` 会单独显示当前备注和保留的修订历史。 |
 | `/activity workspaces` | 列出可以关联的注册 Workspace 上下文。 |
 | `/activity sessions` | 列出已存储的 DSH Session 及可用摘要元数据。 |
@@ -83,6 +83,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity、关联和备
 |---|---|
 | [`src/index.ts`](src/index.ts) | 命令注册、输入校验与用户可见结果 |
 | [`src/delegation-command.ts`](src/delegation-command.ts) | 委派解析、生命周期与用户可见结果 |
+| [`src/next-actions.ts`](src/next-actions.ts) | 根据已保存结果和已注册提供方路由生成只读恢复提示 |
 | [`src/execution-selection.ts`](src/execution-selection.ts) | 捕获 DSH profile 和 preset，并进行保守的产品分类 |
 | [`src/association-command.ts`](src/association-command.ts) | Workspace 和 Session 目录、引用命令与解析 |
 | [`src/artifact-command.ts`](src/artifact-command.ts) | 用户关联的产物指针命令与显示 |
@@ -122,6 +123,7 @@ Activity 范围说明描述请求的工作；它们不会更改提供方权限�
 - 创建输入为 JSON 文本，且此命令不支持编辑或删除 Activity。Codex 和 Claude Code 委派均为显式的一次性执行；Activity 不提供继续、恢复、查看转录或回滚功能。Session 目录只显示摘要元数据，不检查子级对话或证明提供方已准入。
 - 审核证据及其报告结果由用户提供，DSH 不会检查。用户更改处置前，当前状态保持待处理；报告执行成功不会自动接受结果。
 - `/activity open` 会把已知的提供方停止原因显示为提供方报告的完成、失败、部分输出或拒绝；无法识别的原因仍显示为未知。可用时会显示报告来源和时间，以及不确定状态的来源类别和观察时间。DSH 不会检查已保存报告的新鲜度，因此报告可能已过时；打开 Activity 不会查询提供方后续状态，也不会重试工作。
+- 对于待处理或状态不确定的启动，恢复提示只提供检查操作。只有已保存结果支持新工作且提供方路由已注册时，才会提示用户单独、明确地发起新请求；路由注册不代表凭据可用、用户同意、原生权限或已获准入。Activity 不提供停止操作，外部一次性运行没有 Activity 状态查询、转录检查或恢复操作。未知结果会继续保持未解决状态。
 - 产品分类仅使用捕获的 bundle 列表或活动 preset 模块，以及产品提供的元数据。profile patch 和运行时 overlay 不参与分类；稳定标签仅适用于与已发布 profile 模板的 bundle 列表完全相同的情况，未分类的 preset 会显示为不可用。这些标签不代表沙箱隔离、权限强制执行或 Skill 资格。
 - 产物位置、修订版和 Workspace 选择由用户提供。命令不会检查被引用的文件，也不会从 Workspace 目录推断 Git 根目录；缺少的修订版保持未知，指针不验证执行上下文或提供方输出。
 
