@@ -410,33 +410,33 @@ it('creates and reopens a named Activity from a new Session after a Web process 
     expect(linked.result.kind).toBe('success')
   }
 
-  const dshAdmission = await execute(first, originalSessionId,
+  const dshAdmission = await executeActivityCommand(first, originalSessionId,
     `/activity delegate ${activityId} spawn Summarize the release checklist once for recovery.`)
   expect(dshAdmission.result.kind).toBe('success')
   expect(dshAdmission.result.text).toContain('Delegation admitted: provider spawn')
   let beforeRestartOverview = ''
   await expect.poll(async () => {
-    const opened = await execute(first, originalSessionId, `/activity open ${activityId}`)
+    const opened = await executeActivityCommand(first, originalSessionId, `/activity open ${activityId}`)
     beforeRestartOverview = opened.result.text ?? ''
     return beforeRestartOverview
   }, { timeout: 30_000 }).toContain('Provider-reported output: The DSH child reported a saved recovery summary.')
   const dshDelegationId = /Delegation ([0-9a-f-]{36}): provider spawn/u.exec(beforeRestartOverview)?.[1]
   if (dshDelegationId === undefined) throw new Error('The DSH result did not preserve its delegation identity')
-  const artifact = await execute(first, originalSessionId,
+  const artifact = await executeActivityCommand(first, originalSessionId,
     `/activity artifact add ${activityId} ${dshDelegationId} ${firstWorkspace.workspaceId} {"label":"Recovery summary","location":"reports/recovery.md"}`)
   expect(artifact.result.kind).toBe('success')
   expect(artifact.result.text).toContain('Artifact reference recorded: Recovery summary')
 
-  const codexReport = await execute(first, originalSessionId,
+  const codexReport = await executeActivityCommand(first, originalSessionId,
     `/activity delegate ${activityId} codex Review the release checklist once for recovery.`)
   expect(codexReport.result.kind, codexReport.result.text).toBe('success')
   expect(codexReport.result.text).toContain('Delegation admitted: provider codex')
   await expect.poll(async () => {
-    const opened = await execute(first, originalSessionId, `/activity open ${activityId}`)
+    const opened = await executeActivityCommand(first, originalSessionId, `/activity open ${activityId}`)
     beforeRestartOverview = opened.result.text ?? ''
     return beforeRestartOverview
   }, { timeout: 15_000 }).toContain('Codex-reported output: The external one-shot report was saved.')
-  const codexUnconfirmed = await execute(first, originalSessionId,
+  const codexUnconfirmed = await executeActivityCommand(first, originalSessionId,
     `/activity delegate ${activityId} codex Review the release checklist once for recovery.`)
   expect(codexUnconfirmed.result.kind).toBe('error')
   expect(codexUnconfirmed.result.text).toContain('DSH could not confirm whether Codex started')
