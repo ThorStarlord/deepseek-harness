@@ -10,6 +10,7 @@ import { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { ActivityError, ActivityId, createActivityRequestSchema } from '@deepseek-ai/dsh-home-activity'
 import { executeActivityDelegation, renderActivityDelegation } from './delegation-command.ts'
+import { executeActivityContinuation } from './continuation-command.ts'
 import { renderActivityNextActions } from './next-actions.ts'
 import { executeAssociationCommand, renderActivityAssociations } from './association-command.ts'
 import { executeActivityAnnotationCommand, renderActivityAnnotations } from './annotation-command.ts'
@@ -29,7 +30,7 @@ export const inject = [
   'sessionPersistence',
 ]
 
-const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task>'
+const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>'
 const MAX_INPUT_BYTES = 16_384
 
 type ActivityCommand =
@@ -37,6 +38,7 @@ type ActivityCommand =
   | { readonly kind: 'create'; readonly input: string }
   | { readonly kind: 'open'; readonly id: string }
   | { readonly kind: 'delegate'; readonly input: string }
+  | { readonly kind: 'continue'; readonly input: string }
   | { readonly kind: 'invalid'; readonly message: string }
 
 /** Parse only the grammar owned by `/activity`. */
@@ -52,6 +54,8 @@ function parseCommand(rawInput: string): ActivityCommand {
   if (open?.[1] !== undefined) return { kind: 'open', id: open[1] }
   const delegate = /^delegate\s+([\s\S]+)$/u.exec(input)
   if (delegate?.[1] !== undefined) return { kind: 'delegate', input: delegate[1] }
+  const continuation = /^continue\s+([\s\S]+)$/u.exec(input)
+  if (continuation?.[1] !== undefined) return { kind: 'continue', input: continuation[1] }
   return { kind: 'invalid', message: USAGE }
 }
 
@@ -60,8 +64,8 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.commands.register({
     definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-home-activity'),
     name: 'activity',
-    description: 'Create, list, reopen, and associate saved Activities; correct user-owned coordination notes; record artifact pointers and outcome reviews; or explicitly delegate one DSH-native task or one-shot Codex or Claude Code task',
-    input: { hint: 'create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task>' },
+    description: 'Create, list, reopen, and associate saved Activities; correct user-owned coordination notes; record artifact pointers and outcome reviews; explicitly delegate one DSH-native task or one-shot Codex or Claude Code task, or start a new provider request under the saved objective and a selected in-scope statement',
+    input: { hint: 'create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>' },
     recordInput: false,
     handler: invocation => execute(ctx, invocation),
   }))
@@ -77,6 +81,7 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
   const command = parseCommand(invocation.rawInput)
   if (command.kind === 'invalid') return { kind: 'error', text: command.message }
   if (command.kind === 'delegate') return executeActivityDelegation(ctx, invocation, command.input)
+  if (command.kind === 'continue') return executeActivityContinuation(ctx, invocation, command.input)
   if (command.kind === 'create') {
     let value: unknown
     try {
@@ -131,7 +136,7 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
         `Created: ${activity.createdAt}`,
         `Objective: ${activity.objective}`,
         'Boundaries (descriptive only; runtime permissions are unchanged):',
-        ...activity.boundaries.inScope.map(item => `In scope: ${item}`),
+        ...activity.boundaries.inScope.map((item, index) => `In scope ${index + 1}: ${item}`),
         ...activity.boundaries.outOfScope.map(item => `Out of scope: ${item}`),
         '',
         ...renderActivityAnnotations(ctx, activity.id),
