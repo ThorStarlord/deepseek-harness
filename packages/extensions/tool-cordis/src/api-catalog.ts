@@ -5718,6 +5718,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ActivityBoundaries {\n    readonly inScope: readonly string[];\n    readonly outOfScope: readonly string[];\n}',
   },
   {
+    name: 'ActivityConfigurationClassification',
+    declaration: 'export type ActivityConfigurationClassification = \'stable\' | \'experimental\' | \'unavailable\';',
+  },
+  {
     name: 'ActivityDelegation',
     declaration: 'export interface ActivityDelegation {\n    readonly id: ActivityDelegationId;\n    readonly activityId: ActivityId;\n    readonly request: ActivityDelegationRequest;\n    readonly status: ActivityDelegationStatus;\n    readonly admission?: ActivityDelegationAdmission | undefined;\n    readonly report?: ActivityDelegationReport | undefined;\n    readonly failure?: ActivityDelegationFailure | undefined;\n    readonly uncertainty?: ActivityDelegationUncertainty | undefined;\n}',
   },
@@ -5732,6 +5736,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ActivityDelegationId',
     declaration: 'export type ActivityDelegationId = Branded<\'ActivityDelegationId\'>;',
+  },
+  {
+    name: 'ActivityDelegationPresetSelectionSnapshot',
+    declaration: 'export type ActivityDelegationPresetSelectionSnapshot = {\n    readonly status: \'none\';\n} | {\n    readonly status: \'selected\';\n    readonly id: string;\n    readonly activeModules: readonly string[] | null;\n    readonly classification: \'experimental\' | \'unavailable\';\n    readonly classificationSource: \'experimental-package-metadata\' | \'unavailable\';\n} | {\n    readonly status: \'unavailable\';\n    readonly reason: \'agent-preset-registry-unavailable\' | \'preset-identity-exceeds-persistence-limit\' | \'preset-module-list-exceeds-persistence-limit\';\n};',
+  },
+  {
+    name: 'ActivityDelegationProfileSelectionSnapshot',
+    declaration: 'export type ActivityDelegationProfileSelectionSnapshot = {\n    readonly status: \'available\';\n    readonly name: string;\n    readonly startedBundles: readonly string[] | null;\n    readonly classification: ActivityConfigurationClassification;\n    readonly classificationSource: \'shipped-profile-template\' | \'experimental-package-metadata\' | \'unavailable\';\n} | {\n    readonly status: \'unavailable\';\n    readonly reason: \'runtime-profile-unavailable\' | \'profile-identity-exceeds-persistence-limit\';\n};',
   },
   {
     name: 'ActivityDelegationReport',
@@ -6391,7 +6403,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CreateActivityDelegationRequest',
-    declaration: 'export interface CreateActivityDelegationRequest {\n    readonly activityId: ActivityId;\n    readonly provider: \'spawn\' | \'codex\';\n    readonly task: string;\n    readonly parentSessionId: SessionId;\n}',
+    declaration: 'export interface CreateActivityDelegationRequest {\n    readonly activityId: ActivityId;\n    readonly provider: \'spawn\' | \'codex\';\n    readonly task: string;\n    readonly parentSessionId: SessionId;\n    readonly executionSelection?: DshActivityDelegationExecutionSelectionSnapshot | undefined;\n}',
   },
   {
     name: 'CreateActivityRequest',
@@ -6604,6 +6616,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DomainTableSpec',
     declaration: 'export interface DomainTableSpec<K extends string = string, V = unknown> {\n    readonly valueSchema: ZodType<V>;\n    readonly __key?: K;\n}',
+  },
+  {
+    name: 'DshActivityDelegationExecutionSelectionSnapshot',
+    declaration: 'export interface DshActivityDelegationExecutionSelectionSnapshot {\n    readonly provider: \'spawn\';\n    readonly profile: ActivityDelegationProfileSelectionSnapshot;\n    readonly preset: ActivityDelegationPresetSelectionSnapshot;\n}',
   },
   {
     name: 'DshEnvironment',

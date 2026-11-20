@@ -53,7 +53,7 @@ describe.skipIf(MODE === 'record')('web e2e: Home Activity annotation correction
     const activity = scaffold.ctx.homeActivities.list().find(candidate => String(candidate.id) === activityId)
     if (activity === undefined) throw new Error('The created Activity could not be reopened from persistence')
 
-    // Seed a deterministic report for provenance display; this does not call a provider or claim live execution.
+    // Seed a deterministic report for source attribution display; this does not call a provider or claim live execution.
     const delegation = await scaffold.ctx.homeActivityDelegations.createRequest({
       activityId: activity.id,
       provider: 'spawn',

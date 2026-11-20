@@ -419,6 +419,7 @@
       "@deepseek-ai/dsh-home-activity/associations": ["./packages/home/activity/src/associations.ts"],
       "@deepseek-ai/dsh-home-activity/artifacts": ["./packages/home/activity/src/artifacts.ts"],
       "@deepseek-ai/dsh-home-activity/reviews": ["./packages/home/activity/src/reviews.ts"],
+      "@deepseek-ai/dsh-home-activity/annotations": ["./packages/home/activity/src/annotations.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],

@@ -31,6 +31,8 @@ import HomeActivityReviewService, {
   ActivityReviewError,
   ActivityReviewStorageError,
 } from '@deepseek-ai/dsh-home-activity/reviews'
+import HomeActivityAnnotationService, { ActivityAnnotationError } from '@deepseek-ai/dsh-home-activity/annotations'
+import type { ActivityAnnotation, ActivityAnnotationId } from '@deepseek-ai/dsh-home-activity/annotations'
 import * as commandHomeActivity from '../src/index.ts'
 
 const roots: string[] = []
@@ -97,6 +99,7 @@ async function harness() {
   await ctx.plugin(HomeActivityAssociationService)
   await ctx.plugin(HomeActivityArtifactService)
   await ctx.plugin(HomeActivityReviewService)
+  await ctx.plugin(HomeActivityAnnotationService)
   const commandFiber = await ctx.plugin(commandHomeActivity)
   const primary = createAgent(ctx, SessionId(`home-activity-${randomUUID()}`))
   const secondary = createAgent(ctx, SessionId(`home-activity-coordinator-${randomUUID()}`))
@@ -165,7 +168,8 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   const test = await harness()
   expect(commandHomeActivity.inject).toEqual([
     'commands', 'homeActivities', 'homeActivityDelegations', 'subagents',
-    'homeActivityAssociations', 'homeActivityArtifacts', 'homeActivityReviews', 'workspaceRegistry', 'sessionPersistence',
+    'homeActivityAssociations', 'homeActivityArtifacts', 'homeActivityReviews', 'homeActivityAnnotations',
+    'workspaceRegistry', 'sessionPersistence',
   ])
   const descriptor = test.ctx.commands.list(test.agent).find(command =>
     command.definitionId === '@deepseek-ai/dsh-command-home-activity',
@@ -256,7 +260,7 @@ it('corrects only the user annotation and shows its history beside the unchanged
   expect(opened.text).toContain('The release appears ready based on the provider report.')
   expect(opened.text).toContain('supersedes')
   expect(opened.text).toContain('Provider-reported output: The build is ready for release.')
-  expect(opened.text).toContain('Status: provider reported; not verified or accepted.')
+  expect(opened.text).toContain('Provider report: received; DSH has not independently verified it.')
   expect(test.ctx.homeActivityDelegations.get(delegation.id)).toEqual(report)
   expect(test.ctx.homeActivityAnnotations.list(activity.id)).toHaveLength(2)
   expect(startActivation).not.toHaveBeenCalled()
