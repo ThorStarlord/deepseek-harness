@@ -3,14 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/interaction/command-home-activity/README.md
 /:
-  en: 19e6206db882297e
-  zh: 35e3747940c76dd8
+  en: de603b9c4003a9e9
+  zh: d798f36025e561d1
 /deepseek-ai-dsh-command-home-activity:
   en: 251e2acd658c5ac6
   zh: b46ef2c005b78dfd
 /deepseek-ai-dsh-command-home-activity/summary:
-  en: 2b3a76a8fa1895f2
-  zh: 7a1cfe5e9fe22f99
+  en: 7284b9e3c7aacaf3
+  zh: f4c17af96ac858df
 /deepseek-ai-dsh-command-home-activity/table-of-contents:
   en: d152484eb41ac6b4
   zh: f57bb7dc06808f11
@@ -24,23 +24,23 @@
   en: 8f21f85368d14704
   zh: f012135e48fbee96
 /deepseek-ai-dsh-command-home-activity/use-this-package/command-reference:
-  en: 4a34d12b6dc1b4c8
-  zh: 753057c4e628bd75
+  en: 11e35a4d0d0a8f62
+  zh: 2e3cce7705c22c86
 /deepseek-ai-dsh-command-home-activity/understand-the-implementation:
-  en: 0378592ed25f24e2
-  zh: 377a80758615b504
+  en: 3da1df1551cb43b8
+  zh: b031b9b2bfaa3396
 /deepseek-ai-dsh-command-home-activity/further-exploration:
   en: e89aa63964ea6671
   zh: a10f4ffc8ad5a604
 /deepseek-ai-dsh-command-home-activity/model-experience:
-  en: fa84fa910f3bd18a
-  zh: 3b58dc2d17b08333
+  en: c454a4a56fdaec70
+  zh: 2dd6b3d94f50cd02
 /deepseek-ai-dsh-command-home-activity/model-experience/kv-cache-effect:
   en: 7aff46b3efcd0311
   zh: 8d591bb7719db63c
 /deepseek-ai-dsh-command-home-activity/known-limitations-and-deferred-work:
-  en: 5c63add3428cbdf2
-  zh: 3bf49bf0e1dd7ec1
+  en: db6b2b245e13c0fa
+  zh: 3a5f0f96d0a00de9
 /deepseek-ai-dsh-command-home-activity/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 8ec3e73528ddb1a6

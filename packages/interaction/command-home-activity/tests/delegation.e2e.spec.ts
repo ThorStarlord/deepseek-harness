@@ -35,6 +35,7 @@ import HomeActivityAssociationService from '@deepseek-ai/dsh-home-activity/assoc
 import HomeActivityArtifactService from '@deepseek-ai/dsh-home-activity/artifacts'
 import HomeActivityDelegations, { ActivityDelegationError } from '@deepseek-ai/dsh-home-activity/delegations'
 import HomeActivityReviewService from '@deepseek-ai/dsh-home-activity/reviews'
+import HomeActivityAnnotationService from '@deepseek-ai/dsh-home-activity/annotations'
 import type { ActivityDelegation, ActivityDelegationUncertainty } from '@deepseek-ai/dsh-home-activity/delegations'
 import * as commandHomeActivity from '../src/index.ts'
 import { executeActivityDelegation, renderActivityDelegation } from '../src/delegation-command.ts'
@@ -124,8 +125,9 @@ function textResponse(text: string, reason: 'stop' | 'max-tokens' = 'stop'): Str
   ]
 }
 
-async function harness(adapter: DelegationAdapter) {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-delegation-e2e-')); roots.push(root)
+async function harness(adapter: DelegationAdapter, existingRoot?: string) {
+  const root = existingRoot ?? await mkdtemp(join(tmpdir(), 'dsh-home-activity-delegation-e2e-'))
+  if (existingRoot === undefined) roots.push(root)
   const ctx = new Context(); contexts.push(ctx)
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(SessionPersistenceJsonl, { root: join(root, 'sessions'), compression: 'none' })
@@ -144,6 +146,7 @@ async function harness(adapter: DelegationAdapter) {
   await ctx.plugin(HomeActivityAssociationService)
   await ctx.plugin(HomeActivityArtifactService)
   await ctx.plugin(HomeActivityReviewService)
+  await ctx.plugin(HomeActivityAnnotationService)
   await ctx.plugin(commandHomeActivity)
   ctx.llm.registerAdapter(['mock'], adapter)
   const parent = await ctx.agentLoop.create(SessionId(`activity-parent-${randomUUID()}`), {
@@ -259,6 +262,59 @@ it('starts the real DSH spawn provider from `/activity`, then records success an
   expect(adapter.requests).toHaveLength(2)
   expect(parent.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toEqual([])
   expect(parent.session.snapshotEvents().filter(event => event.type.startsWith('goal/'))).toEqual([])
+})
+
+it('requires an explicit in-scope continuation and does not rearm it after restart', async () => {
+  const adapter = new DelegationAdapter([
+    { chunks: textResponse('The checklist now has a recorded verification step.') },
+  ])
+  const { ctx, parent, root } = await harness(adapter)
+  const activity = await ctx.homeActivities.create({
+    name: 'Release readiness',
+    objective: 'Prepare the next release for review.',
+    boundaries: { inScope: ['Review the release checklist.'], outOfScope: ['Do not publish the release.'] },
+  })
+  const start = vi.spyOn(ctx.subagents, 'startActivation')
+
+  const unrelated = await run(ctx, parent, ` continue ${activity.id} spawn out-of-scope:1 Publish the release.`)
+  const unavailableScope = await run(ctx, parent, ` continue ${activity.id} spawn in-scope:2 Publish the release.`)
+  expect(unrelated.kind).toBe('error')
+  expect(unavailableScope.kind).toBe('error')
+  expect(unavailableScope.text).toContain('Choose an existing in-scope statement numbered 1–1')
+  expect(start).not.toHaveBeenCalled()
+  expect(ctx.homeActivityDelegations.list(activity.id)).toEqual([])
+
+  const admitted = await run(ctx, parent, ` continue ${activity.id} spawn in-scope:1 Record the checklist verification step.`)
+  expect(admitted.kind).toBe('success')
+  expect(admitted.text).toContain('This is a new explicit provider request, not a resume of prior execution.')
+  expect(admitted.text).toContain('Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.')
+  expect(start).toHaveBeenCalledTimes(1)
+  const spec = start.mock.calls[0]?.[0]
+  expect(spec?.prompt).toEqual([{
+    type: 'text',
+    text: [
+      'Continue the saved Activity objective: "Prepare the next release for review."',
+      'Selected in-scope statement 1: "Review the release checklist."',
+      'User-requested bounded next step: "Record the checklist verification step."',
+      'Do not start an unrelated objective. If the requested step needs a different objective, stop and ask the user.',
+      'Activity scope is descriptive context; it does not grant or restrict the provider’s native permissions or DSH runtime policy.',
+    ].join('\n'),
+  }])
+  const saved = ctx.homeActivityDelegations.list(activity.id)[0]
+  if (saved === undefined) throw new Error('The explicit continuation request was not saved.')
+  expect(saved.request.task).toContain('Selected in-scope statement 1: "Review the release checklist."')
+  expect(saved.request.task).toContain('User-requested bounded next step: "Record the checklist verification step."')
+  await waitForReported(ctx, saved.id)
+
+  await ctx.fiber.dispose()
+  contexts.splice(contexts.indexOf(ctx), 1)
+  const restarted = await harness(new DelegationAdapter([]), root)
+  const restartStart = vi.spyOn(restarted.ctx.subagents, 'startActivation')
+  const reopened = await run(restarted.ctx, restarted.parent, ` open ${activity.id}`)
+  expect(reopened.text).toContain('Provider report: received; DSH has not independently verified it.')
+  expect(reopened.text).toContain('The checklist now has a recorded verification step.')
+  expect(restartStart).not.toHaveBeenCalled()
+  expect(restarted.parent.session.snapshotEvents().filter(event => event.type.startsWith('goal/'))).toEqual([])
 })
 
 it('rejects malformed delegation commands before saving or starting work', async () => {

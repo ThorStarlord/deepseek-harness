@@ -508,7 +508,7 @@ it('creates and reopens a named Activity from a new Session after a Web process 
   if (dshChildSessionId === undefined) throw new Error('The recovered Activity omitted its DSH child Session link')
   expect(overview).toContain(`ID: ${activityId}`)
   expect(overview).toContain('Objective: Prepare the next release for review.')
-  expect(overview).toContain('In scope: Review release notes and focused check results.')
+  expect(overview).toContain('In scope 1: Review release notes and focused check results.')
   expect(overview).toContain('Out of scope: Do not publish or deploy.')
   expect(overview).toContain(`Workspace: ${basename(firstWorkspacePath)} — ${firstWorkspace.workspaceId}`)
   expect(overview).toContain(`Workspace: ${basename(secondWorkspacePath)} — ${secondWorkspace.workspaceId}`)

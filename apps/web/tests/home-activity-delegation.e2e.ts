@@ -22,6 +22,7 @@ const PENDING_EXPECTED = join(SNAPSHOT_DIR, 'activity-delegation-pending.expecte
 const REPORTED_EXPECTED = join(SNAPSHOT_DIR, 'activity-delegation-reported.expected.md')
 const CODEX_EXPECTED_DIR = fileURLToPath(new URL('./expected/home-activity-delegation/', import.meta.url))
 const CODEX_ADMISSION_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-admission.expected.md')
+const CONTINUATION_ADMISSION_EXPECTED = join(CODEX_EXPECTED_DIR, 'continuation-admission.expected.md')
 const CODEX_PENDING_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-pending.expected.md')
 const CODEX_REPORTED_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-reported.expected.md')
 const CODEX_UNAVAILABLE_EXPECTED = join(CODEX_EXPECTED_DIR, 'codex-unavailable.expected.md')
@@ -31,6 +32,7 @@ const SCREENSHOT_DIR = fileURLToPath(new URL('../../../.artifacts/ui-review', im
 const PENDING_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation-pending.png')
 const PENDING_SCROLLED_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation-pending-scrolled.png')
 const REPORTED_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-delegation.png')
+const CONTINUATION_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-continuation.png')
 const SELECTION_CLASSIFICATION_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-selection-classification.png')
 const SELECTION_CLASSIFICATION_SCROLLED_SCREENSHOT = join(SCREENSHOT_DIR, 'home-activity-selection-classification-scrolled.png')
 const MODE = webSnapshotMode()
@@ -126,6 +128,7 @@ describe('web e2e: Home Activity delegation', () => {
     )
     await compareOrRefreshGolden(PENDING_EXPECTED, pendingSnapshot, MODE)
     expect(pendingSnapshot).toContain('Delegation state: admitted.')
+    expect(pendingSnapshot).toContain('In scope 1: Inspect the release checklist.')
     expect(pendingSnapshot).toContain('Provider report: not recorded; opening the Activity does not wait for the child Session.')
     expect(pendingSnapshot).toContain('User disposition: pending; no review has been recorded.')
     expect(pendingSnapshot).toContain('Verification evidence: none recorded.')
@@ -180,6 +183,59 @@ describe('web e2e: Home Activity delegation', () => {
     expect(reportedSnapshot).toContain('Provider-reported output: The checklist contains two unverified migration steps.')
     expect(reportedSnapshot).toContain('DSH profile: scaffold; bundle-set classification: unavailable')
     expect(reportedSnapshot).not.toContain('Status: accepted.')
+
+    const continuationResult = Promise.withResolvers<SubagentResult>()
+    start.mockImplementation(async (spec) => {
+      if (spec.childId === undefined) throw new Error('A DSH continuation must use a DSH child Session.')
+      return {
+        childId: spec.childId,
+        name: 'activity-continuation',
+        result: continuationResult.promise,
+        dispose: async () => {},
+      }
+    })
+    const continuationText = await submit(
+      `/activity continue ${activity.id} spawn in-scope:1 Record the checklist verification step.`,
+      /This is a new explicit provider request, not a resume of prior execution\./u,
+    )
+    expect(start).toHaveBeenCalledTimes(2)
+    const continuationSpec = start.mock.calls[1]?.[0]
+    if (continuationSpec === undefined) throw new Error('The DSH continuation provider was not invoked.')
+    expect(continuationSpec?.provider).toBe('spawn')
+    const continuationPrompt = continuationSpec.prompt[0]
+    if (continuationPrompt?.type !== 'text') throw new Error('The DSH continuation prompt was not text.')
+    expect(continuationPrompt.text).toContain('Continue the saved Activity objective: "Prepare the next release for review."')
+    expect(continuationPrompt.text).toContain('Selected in-scope statement 1: "Inspect the release checklist."')
+    expect(continuationText).toContain('Selected in-scope statement 1: "Inspect the release checklist."')
+    expect(continuationText).toContain('User-requested bounded next step: "Record the checklist verification step."')
+    expect(continuationText).toContain('Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.')
+    const continuationChildSessionId = /Child Session: (\S+)/u.exec(continuationText)?.[1]
+    if (continuationChildSessionId === undefined) throw new Error('Rendered continuation admission omitted its DSH child Session identity.')
+    const stableContinuationText = continuationText
+      .replaceAll(activity.id, '{{activity-id}}')
+      .replaceAll(parentSessionId, '{{parent-session-id}}')
+      .replaceAll(continuationChildSessionId, '{{continuation-child-session-id}}')
+    await compareOrRefreshGolden(CONTINUATION_ADMISSION_EXPECTED, stableContinuationText, MODE)
+    await page.getByText(/This is a new explicit provider request, not a resume of prior execution\./u).last().click()
+    await page.getByText(/Requested task: Continue the saved Activity objective/u).last().waitFor({ timeout: 10_000 })
+    await mkdir(SCREENSHOT_DIR, { recursive: true })
+    await page.screenshot({ path: CONTINUATION_SCREENSHOT, fullPage: true })
+
+    continuationResult.resolve({
+      stopReason: 'completed',
+      output: [{ type: 'text', text: 'The requested verification step is recorded.' }],
+    })
+    const continuationRequest = scaffold.ctx.homeActivityDelegations.list(activity.id)
+      .find(item => item.request.task.includes('User-requested bounded next step:'))
+    if (continuationRequest === undefined) throw new Error('The continuation request was not persisted.')
+    await vi.waitFor(() => {
+      expect(scaffold.ctx.homeActivityDelegations.get(continuationRequest.id)?.status).toBe('reported')
+    })
+    const reopenedContinuation = await submit(`/activity open ${activity.id}`, /Activity: Release readiness/u)
+    expect(reopenedContinuation).toContain('Requested task: Continue the saved Activity objective: "Prepare the next release for review."')
+    await page.getByRole('button', { name: /Activity: Release readiness/u }).last().click()
+    await page.getByText(/The requested verification step is recorded\./u).last().waitFor({ timeout: 10_000 })
+    expect(start).toHaveBeenCalledTimes(2)
 
     start.mockRestore()
     let codexProviderStarts = 0
