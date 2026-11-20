@@ -11,6 +11,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import { ActivityError, ActivityId, createActivityRequestSchema } from '@deepseek-ai/dsh-home-activity'
 import { executeActivityDelegation, renderActivityDelegation } from './delegation-command.ts'
 import { executeActivityContinuation } from './continuation-command.ts'
+import { renderActivityNextActions } from './next-actions.ts'
 import { executeAssociationCommand, renderActivityAssociations } from './association-command.ts'
 import { executeActivityAnnotationCommand, renderActivityAnnotations } from './annotation-command.ts'
 import { executeActivityReviewCommand, renderActivityReview } from './review-command.ts'
@@ -146,6 +147,7 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
           : delegations.flatMap((delegation, index) => [
             ...(index === 0 ? [] : ['']),
             ...renderActivityDelegation(delegation),
+            ...renderActivityNextActions(delegation, provider => ctx.subagents.getProvider(provider) !== undefined),
             ...renderActivityReview(ctx, activity.id, delegation.id),
           ])),
         '',

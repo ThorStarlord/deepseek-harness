@@ -49,7 +49,7 @@ A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activit
 |---|---|
 | `/activity create <JSON>` | Save a name, objective, and `boundaries` object with `inScope` and `outOfScope` string arrays. At least one `inScope` item is required. |
 | `/activity list` | List saved Activities newest first, with their names and stable ids. |
-| `/activity open <activity-id>` | Show the saved objective, descriptive boundaries (in-scope statements are numbered from 1 for the continuation command), the current user annotation and latest revisions, context references, delegation records, and captured profile and preset selection. |
+| `/activity open <activity-id>` | Show the saved objective, descriptive boundaries (in-scope statements are numbered for the continuation command), the current user annotation and latest revisions, context references, delegation records, the captured profile and preset selection, and read-only next actions supported by saved lifecycle facts and currently registered provider routes. Route registration does not establish credential readiness, user consent, native permission, or provider admission. |
 | `/activity annotate <activity-id> <JSON>` | Append a user-authored coordination note or correction without changing provider reports or specialist assertions. JSON requires `text`; `/activity open` shows the current note and retained revision history separately. |
 | `/activity workspaces` | List registered Workspace contexts that can be linked. |
 | `/activity sessions` | List stored DSH Sessions and their available summary metadata. |
@@ -82,6 +82,7 @@ The command is registered for explicit human invocation, not as a model tool. Sa
 |---|---|
 | [`src/index.ts`](src/index.ts) | Command registration and dispatch |
 | [`src/delegation-command.ts`](src/delegation-command.ts) | Delegation parsing, lifecycle, and user-facing results |
+| [`src/next-actions.ts`](src/next-actions.ts) | Read-only recovery guidance from saved outcomes and registered provider routes |
 | [`src/continuation-command.ts`](src/continuation-command.ts) | Explicit continuation parsing and delegation through the existing provider path |
 | [`src/execution-selection.ts`](src/execution-selection.ts) | DSH profile and preset snapshot and conservative product classification |
 | [`src/association-command.ts`](src/association-command.ts) | Workspace and Session catalogs, reference commands, and resolution |
@@ -123,6 +124,7 @@ Activity scope statements describe requested work; they do not change provider p
 - Review evidence and its reported result are user supplied and not checked by DSH. The current disposition remains pending until the user changes it; reporting execution success does not accept the outcome.
 - `/activity open` labels known provider stop reasons as reported completion, failure, partial output, or refusal; unrecognized reasons remain unknown. It shows report source and time, and uncertainty source category and observation time when available. DSH has no freshness check for a saved report, so it may be stale; opening an Activity does not query later provider state or retry work.
 - Product classification uses only the captured bundle list or active preset modules using product-supplied metadata. Profile patches and runtime overlays are not classified; a stable label is limited to an exact shipped profile-template bundle list, and an unclassified preset remains unavailable. These labels do not establish sandbox isolation, permission enforcement, or Skill qualification.
+- Recovery guidance offers inspection for pending or uncertain starts. It offers a separately and explicitly initiated request only when the saved outcome supports new work and a provider route is registered; registration does not establish credential readiness, consent, native permission, or admission. Activity exposes no stop action, and external one-shot runs have no Activity status query, transcript inspection, or resume action. Unclassified outcomes remain unresolved.
 - Artifact locations, revisions, and Workspace selection are user supplied. The command does not inspect referenced files or infer a Git root from a Workspace directory; missing revisions remain unknown, and pointers do not verify execution context or provider output.
 
 <a id="dev-note"></a>

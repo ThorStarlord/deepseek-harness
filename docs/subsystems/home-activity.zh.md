@@ -14,6 +14,8 @@ Home Activity 是由用户发起并持久保存的事务，具有稳定身份、
 
 提供方报告会保留提供方停止原因。Activity 视图仅分类已知的 subagent 原因：`completed`、`error`、`aborted`、`max-tokens` 和 `refusal`；未知原因仍显示为未知。可用时，视图会显示报告来源和观察时间，以及不确定状态的来源类别和观察时间。DSH 不会检查已保存报告的新鲜度，也不会查询提供方后续状态，因此报告新鲜度未知并可能已过时。缺少报告时，会根据已保存的生命周期事实显示为 pending 或 unconfirmed；打开 Activity 永远不会重试工作。
 
+对于降级结果，打开 Activity 时会为待处理或不确定的启动显示检查提示。只有已保存事实支持新工作且所选提供方路由已注册时，才会提示用户单独、明确地发起新请求；路由注册不代表凭据可用、用户同意、原生权限或已获准入。Activity 不提供停止操作，外部一次性运行没有 Activity 状态查询、转录检查或恢复操作。未知结果会继续保持未解决状态，打开 Activity 不会启动或恢复执行。
+
 ## 上下文关联
 
 独立的版本 1 `home_activity_associations` 域会在 Activity 记录之外保存用户选定的 Workspace 和 DSH Session id，每种引用最多 256 个。两类 id 分别选择；共享 Activity 不会把 Session 分配给 Workspace，也不会从 Workspace 目录推断 Git 仓库根目录。删除引用只修改关联记录，不会重写 Workspace 记录或 Session 日志。
