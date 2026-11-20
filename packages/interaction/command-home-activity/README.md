@@ -1,5 +1,5 @@
 ---
-description: "Create, list, reopen, associate, and explicitly delegate saved Home Activities through the Web composer or SDK session.run()."
+description: "Create, list, reopen, associate, and explicitly delegate or continue saved Home Activities through the Web composer or SDK session.run()."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use /activity in Web or SDK session.run() to create, reopen, associate, annotate, and review Activities; link output pointers; or explicitly delegate bounded work through DSH spawn, Codex, or Claude Code. Annotations and reviews remain separate from provider reports and specialist assertions. Saving or reopening never starts work. Codex and Claude Code use native authentication and permission handling; they are one-shot and cannot continue, resume, expose transcripts, or roll back through Activity. Mount the command with its required Home Activity services.
+Use /activity in Web or SDK session.run() to create, reopen, associate, annotate, and review Activities; link output pointers; and delegate bounded work through DSH spawn, Codex, or Claude Code. `/activity continue` starts a new user-requested delegation under the saved objective and selected in-scope statement; it does not resume a provider process. Annotations and reviews remain separate from provider reports and specialist assertions. Saving or reopening never starts work. Codex and Claude Code retain native authentication and permissions and remain one-shot; Activity cannot resume them, expose their transcripts, or roll them back.
 
 ## Table of Contents
 
@@ -49,7 +49,7 @@ A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activit
 |---|---|
 | `/activity create <JSON>` | Save a name, objective, and `boundaries` object with `inScope` and `outOfScope` string arrays. At least one `inScope` item is required. |
 | `/activity list` | List saved Activities newest first, with their names and stable ids. |
-| `/activity open <activity-id>` | Show the saved objective, descriptive boundaries, the current user annotation and latest revisions, context references, delegation records, and captured profile and preset selection. |
+| `/activity open <activity-id>` | Show the saved objective, descriptive boundaries (in-scope statements are numbered from 1 for the continuation command), the current user annotation and latest revisions, context references, delegation records, and captured profile and preset selection. |
 | `/activity annotate <activity-id> <JSON>` | Append a user-authored coordination note or correction without changing provider reports or specialist assertions. JSON requires `text`; `/activity open` shows the current note and retained revision history separately. |
 | `/activity workspaces` | List registered Workspace contexts that can be linked. |
 | `/activity sessions` | List stored DSH Sessions and their available summary metadata. |
@@ -61,6 +61,7 @@ A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activit
 | `/activity delegate <activity-id> spawn <task>` | Save the request, explicitly start one DSH-native child activation, and report the provider outcome separately. The task is limited to 4,096 UTF-8 bytes. |
 | `/activity delegate <activity-id> codex <task>` | Save the request, explicitly start one native Codex execution, and report its outcome separately. It is one-shot and does not create a DSH Session. The task is limited to 4,096 UTF-8 bytes. |
 | `/activity delegate <activity-id> claude-code <task>` | Save the request, explicitly start one native Claude Code execution, and report its outcome separately. It is one-shot and does not create a DSH Session. The task is limited to 4,096 UTF-8 bytes. |
+| `/activity continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>` | Explicitly start a new delegation with the saved objective, the selected one-based in-scope statement, and the user's next step. This does not resume prior provider execution. Activity scope is descriptive; native provider permissions remain unchanged. |
 | `/activity review set <activity-id> <delegation-id> <JSON>` | Record an explicit user disposition and optional user-supplied evidence for a saved provider report without changing the report; the command rejects reviews until that report is saved. JSON requires `disposition` (`pending`, `accepted`, `declined`, or `requires-investigation`); optional `evidence` contains `source`, `result` (`passed`, `failed`, `inconclusive`, or `unavailable`), and `summary`, with optional `reference` and `observedAt`. Its response distinguishes new evidence, retained evidence, and no evidence recorded. |
 
 Annotation JSON is limited to 16,384 UTF-8 bytes, and note text to 4,000 characters. Note text must stay on one line and rejects control, format, line, and paragraph separators. Each Activity retains at most 256 user-command revisions; `/activity open` shows the current note and latest 8 while earlier revisions remain saved. A rejected annotation write does not confirm whether the revision was persisted or rolled back. Because JSON storage may report an error after file replacement, restart DSH and open the Activity to inspect saved history before deciding whether to retry.
@@ -81,6 +82,7 @@ The command is registered for explicit human invocation, not as a model tool. Sa
 |---|---|
 | [`src/index.ts`](src/index.ts) | Command registration and dispatch |
 | [`src/delegation-command.ts`](src/delegation-command.ts) | Delegation parsing, lifecycle, and user-facing results |
+| [`src/continuation-command.ts`](src/continuation-command.ts) | Explicit continuation parsing and delegation through the existing provider path |
 | [`src/execution-selection.ts`](src/execution-selection.ts) | DSH profile and preset snapshot and conservative product classification |
 | [`src/association-command.ts`](src/association-command.ts) | Workspace and Session catalogs, reference commands, and resolution |
 | [`src/artifact-command.ts`](src/artifact-command.ts) | User-linked artifact pointer commands and rendering |
@@ -105,7 +107,7 @@ The command is registered for explicit human invocation, not as a model tool. Sa
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through the explicit `/activity delegate` command, which starts one execution through the selected provider and records the request, DSH admission, and provider report separately without implying verification or user acceptance.
+Indirectly, through explicit `/activity delegate` or `/activity continue` commands, which start one provider execution and record the request, DSH admission, and provider report separately without implying verification or user acceptance. Continuation creates a new request from the saved objective, selected descriptive scope statement, and user's next step; it does not resume prior provider execution.
 
 #### KV Cache effect
 
@@ -117,7 +119,7 @@ None; delegated work runs separately from the parent context. Only `spawn` creat
 Activity scope statements describe requested work; they do not change provider permissions. DSH runtime policy controls `spawn`; native Codex configuration and its configured permission mode control `codex`; native Claude Code configuration and permission handling control `claude-code`.
 
 - The Web composer and SDK session.run() are the supported interaction surfaces; there is no standalone Activity browser or native Desktop command. SDK support requires a profile that mounts the Home Activity plugins.
-- Create input is JSON text, and Activities cannot be edited or deleted through this command. `spawn`, Codex, and Claude Code delegation are explicit one-shot operations; Activity does not expose continuation, resume, transcript inspection, or rollback for external providers. The Session catalog shows summary metadata only; it does not inspect child conversations or prove provider admission.
+- Create input is JSON text, and Activities cannot be edited or deleted through this command. `/activity continue` records a new explicit request; selecting a descriptive scope statement does not semantically prove the next step fits it or restrict provider permissions. Codex and Claude Code executions remain one-shot and cannot be resumed, inspected, or rolled back through Activity. The Session catalog shows summary metadata only; it does not inspect child conversations or prove provider admission.
 - Review evidence and its reported result are user supplied and not checked by DSH. The current disposition remains pending until the user changes it; reporting execution success does not accept the outcome.
 - `/activity open` labels known provider stop reasons as reported completion, failure, partial output, or refusal; unrecognized reasons remain unknown. It shows report source and time, and uncertainty source category and observation time when available. DSH has no freshness check for a saved report, so it may be stale; opening an Activity does not query later provider state or retry work.
 - Product classification uses only the captured bundle list or active preset modules using product-supplied metadata. Profile patches and runtime overlays are not classified; a stable label is limited to an exact shipped profile-template bundle list, and an unclassified preset remains unavailable. These labels do not establish sandbox isolation, permission enforcement, or Skill qualification.

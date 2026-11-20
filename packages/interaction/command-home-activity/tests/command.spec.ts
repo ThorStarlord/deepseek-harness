@@ -183,6 +183,7 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   expect(descriptor.description).toContain('coordination notes')
   expect(descriptor.description).toContain('one-shot Codex or Claude Code task')
   expect(descriptor.input?.hint).toContain('artifact add <activity-id> <delegation-id> <workspace-id> <JSON>')
+  expect(descriptor.input?.hint).toContain('continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>')
   expect(descriptor.input?.hint).toContain('review set <activity-id> <delegation-id> <JSON>')
 
   const create = await run(test, ' create {"name":"Release readiness","objective":"Prepare the next release for review.","boundaries":{"inScope":["Review release notes"],"outOfScope":["Do not publish"]}}')
@@ -196,13 +197,37 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   const opened = await run(test, ` open ${id}`)
   expect(opened).toMatchObject({ kind: 'success' })
   expect(opened.text).toContain('Objective: Prepare the next release for review.')
-  expect(opened.text).toContain('In scope: Review release notes')
+  expect(opened.text).toContain('In scope 1: Review release notes')
   expect(opened.text).toContain('Out of scope: Do not publish')
   expect(opened.text).toContain('runtime permissions are unchanged')
   expect(test.session.snapshotEvents().filter(event => event.type.startsWith('goal/'))).toEqual([])
   expect(test.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toEqual([])
   await test.commandFiber.dispose()
   expect(test.ctx.commands.find(test.agent, 'activity')).toBeUndefined()
+})
+
+it('rejects continuation without an explicit existing in-scope selection before starting work', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Release readiness',
+    objective: 'Prepare the next release for review.',
+    boundaries: { inScope: ['Review the release checklist.'], outOfScope: ['Do not publish.'] },
+  })
+  const start = vi.spyOn(test.ctx.subagents, 'startActivation')
+
+  const omittedSelection = await run(test, ` continue ${activity.id} spawn Review the release checklist.`)
+  const unrelatedSelection = await run(test, ` continue ${activity.id} spawn out-of-scope:1 Publish the release.`)
+  const unknownSelection = await run(test, ` continue ${activity.id} spawn in-scope:2 Publish the release.`)
+
+  expect(omittedSelection).toMatchObject({ kind: 'error' })
+  expect(omittedSelection.text).toContain('Usage: /activity continue')
+  expect(unrelatedSelection).toMatchObject({ kind: 'error' })
+  expect(unrelatedSelection.text).toContain('An out-of-scope statement cannot be continued.')
+  expect(unknownSelection).toMatchObject({ kind: 'error' })
+  expect(unknownSelection.text).toContain('Choose an existing in-scope statement numbered 1–1')
+  expect(unknownSelection.text).toContain(`run /activity open ${activity.id} to see the numbered statements`)
+  expect(test.ctx.homeActivityDelegations.list(activity.id)).toEqual([])
+  expect(start).not.toHaveBeenCalled()
 })
 
 it('rejects invalid JSON, missing scope, malformed ids, and unknown Activities clearly', async () => {
