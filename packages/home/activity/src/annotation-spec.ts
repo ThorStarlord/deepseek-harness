@@ -8,7 +8,7 @@ import type { ActivityId } from './types.ts'
 
 const annotationIdSchema = z.uuid().transform(value => brandString<ActivityAnnotationId>(value))
 const activityIdSchema = z.uuid().transform(value => brandString<ActivityId>(value))
-const noteSchema = z.string().trim().min(1).max(4_000).regex(/^[^\p{Cc}]+$/u)
+const noteSchema = z.string().trim().min(1).max(4_000).regex(/^[^\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+$/u)
 
 /** Maximum immutable annotation revisions stored for one Activity. */
 export const MAX_HOME_ACTIVITY_ANNOTATIONS_PER_ACTIVITY = 256

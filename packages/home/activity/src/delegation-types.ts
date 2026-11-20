@@ -71,10 +71,10 @@ export interface DshActivityDelegationExecutionSelectionSnapshot {
   readonly preset: ActivityDelegationPresetSelectionSnapshot
 }
 
-/** Codex owns its external composition and does not expose DSH profile or preset facts. */
+/** Native external providers own their composition and do not expose DSH profile or preset facts. */
 export interface ExternalActivityDelegationExecutionSelectionSnapshot {
   /** The selected provider owns a runtime outside DSH's profile and preset registry. */
-  readonly provider: 'codex'
+  readonly provider: 'codex' | 'claude-code'
   /** Reason DSH cannot report that provider's selected configuration. */
   readonly unavailableReason: 'external-provider-does-not-expose-dsh-composition'
 }
@@ -111,10 +111,17 @@ export interface CodexActivityDelegationRequest extends ActivityDelegationReques
   readonly provider: 'codex'
 }
 
+/** Request persisted before one external native Claude Code run starts. */
+export interface ClaudeCodeActivityDelegationRequest extends ActivityDelegationRequestBase {
+  /** External native Claude Code provider selected by the user. */
+  readonly provider: 'claude-code'
+}
+
 /** The explicit user request persisted before provider startup. */
 export type ActivityDelegationRequest =
   | SpawnActivityDelegationRequest
   | CodexActivityDelegationRequest
+  | ClaudeCodeActivityDelegationRequest
 
 interface ActivityDelegationAdmissionBase {
   /** Matched `subagent/start` identity when the lifecycle event was observed. */
@@ -143,10 +150,19 @@ export interface CodexActivityDelegationAdmission extends ActivityDelegationAdmi
   readonly providerRunId: string
 }
 
+/** External native Claude Code admission through its one-shot SubagentRun adapter. */
+export interface ClaudeCodeActivityDelegationAdmission extends ActivityDelegationAdmissionBase {
+  /** The external native Claude Code route accepted this one-shot execution. */
+  readonly provider: 'claude-code'
+  /** SubagentRun adapter id, not a DSH Session id or native Claude Code conversation id. */
+  readonly providerRunId: string
+}
+
 /** The DSH activation accepted by `ctx.subagents.startActivation`. */
 export type ActivityDelegationAdmission =
   | SpawnActivityDelegationAdmission
   | CodexActivityDelegationAdmission
+  | ClaudeCodeActivityDelegationAdmission
 
 /** A provider-authored report, without verification or user-acceptance claims. */
 export interface ActivityDelegationReport {
@@ -184,11 +200,12 @@ export interface ActivityDelegationUncertainty {
     | 'report-write-failed'
     | 'startup-result-rejected'
     | 'codex-start-outcome-unknown'
+    | 'claude-code-start-outcome-unknown'
   /** Time this uncertainty was recorded or recovered. */
   readonly observedAt: string
 }
 
-/** Version-4 delegation sidecar entry; Activity v1 remains unchanged. */
+/** Version-5 delegation sidecar entry; Activity v1 remains unchanged. */
 export interface ActivityDelegation {
   /** Stable delegation identity. */
   readonly id: ActivityDelegationId
@@ -213,11 +230,11 @@ export interface CreateActivityDelegationRequest {
   /** Existing saved Activity. */
   readonly activityId: ActivityId
   /** Supported provider explicitly selected by the user. */
-  readonly provider: 'spawn' | 'codex'
+  readonly provider: 'spawn' | 'codex' | 'claude-code'
   /** One bounded task. */
   readonly task: string
   /** Exact live Session that owns the command invocation. */
   readonly parentSessionId: SessionId
-  /** DSH composition snapshot for `spawn`; omitted data is recorded as unavailable. Ignored for `codex`. */
+  /** DSH composition snapshot for `spawn`; omitted data is recorded as unavailable. Ignored for external providers. */
   readonly executionSelection?: DshActivityDelegationExecutionSelectionSnapshot | undefined
 }

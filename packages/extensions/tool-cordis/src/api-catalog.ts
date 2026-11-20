@@ -5727,7 +5727,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ActivityDelegationAdmission',
-    declaration: 'export type ActivityDelegationAdmission = SpawnActivityDelegationAdmission | CodexActivityDelegationAdmission;',
+    declaration: 'export type ActivityDelegationAdmission = SpawnActivityDelegationAdmission | CodexActivityDelegationAdmission | ClaudeCodeActivityDelegationAdmission;',
   },
   {
     name: 'ActivityDelegationFailure',
@@ -5751,7 +5751,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ActivityDelegationRequest',
-    declaration: 'export type ActivityDelegationRequest = SpawnActivityDelegationRequest | CodexActivityDelegationRequest;',
+    declaration: 'export type ActivityDelegationRequest = SpawnActivityDelegationRequest | CodexActivityDelegationRequest | ClaudeCodeActivityDelegationRequest;',
   },
   {
     name: 'ActivityDelegationStatus',
@@ -5759,7 +5759,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ActivityDelegationUncertainty',
-    declaration: 'export interface ActivityDelegationUncertainty {\n    readonly reason: \'restart-before-admission-recorded\' | \'restart-before-report-recorded\' | \'admission-write-failed\' | \'report-write-failed\' | \'startup-result-rejected\' | \'codex-start-outcome-unknown\';\n    readonly observedAt: string;\n}',
+    declaration: 'export interface ActivityDelegationUncertainty {\n    readonly reason: \'restart-before-admission-recorded\' | \'restart-before-report-recorded\' | \'admission-write-failed\' | \'report-write-failed\' | \'startup-result-rejected\' | \'codex-start-outcome-unknown\' | \'claude-code-start-outcome-unknown\';\n    readonly observedAt: string;\n}',
   },
   {
     name: 'ActivityReview',
@@ -6130,6 +6130,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ClaimOutcome {\n    readonly claimed: number;\n    readonly skipped: number;\n}',
   },
   {
+    name: 'ClaudeCodeActivityDelegationAdmission',
+    declaration: 'export interface ClaudeCodeActivityDelegationAdmission extends ActivityDelegationAdmissionBase {\n    readonly provider: \'claude-code\';\n    readonly providerRunId: string;\n}',
+  },
+  {
+    name: 'ClaudeCodeActivityDelegationRequest',
+    declaration: 'export interface ClaudeCodeActivityDelegationRequest extends ActivityDelegationRequestBase {\n    readonly provider: \'claude-code\';\n}',
+  },
+  {
     name: 'ClientArtifactBaseline',
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly ctimeMs: number;\n    readonly size: number;\n}',
   },
@@ -6403,7 +6411,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CreateActivityDelegationRequest',
-    declaration: 'export interface CreateActivityDelegationRequest {\n    readonly activityId: ActivityId;\n    readonly provider: \'spawn\' | \'codex\';\n    readonly task: string;\n    readonly parentSessionId: SessionId;\n    readonly executionSelection?: DshActivityDelegationExecutionSelectionSnapshot | undefined;\n}',
+    declaration: 'export interface CreateActivityDelegationRequest {\n    readonly activityId: ActivityId;\n    readonly provider: \'spawn\' | \'codex\' | \'claude-code\';\n    readonly task: string;\n    readonly parentSessionId: SessionId;\n    readonly executionSelection?: DshActivityDelegationExecutionSelectionSnapshot | undefined;\n}',
   },
   {
     name: 'CreateActivityRequest',

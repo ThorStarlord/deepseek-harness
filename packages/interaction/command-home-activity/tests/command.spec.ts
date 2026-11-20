@@ -31,7 +31,10 @@ import HomeActivityReviewService, {
   ActivityReviewError,
   ActivityReviewStorageError,
 } from '@deepseek-ai/dsh-home-activity/reviews'
-import HomeActivityAnnotationService, { ActivityAnnotationError } from '@deepseek-ai/dsh-home-activity/annotations'
+import HomeActivityAnnotationService, {
+  ActivityAnnotationError,
+  ActivityAnnotationStorageError,
+} from '@deepseek-ai/dsh-home-activity/annotations'
 import type { ActivityAnnotation, ActivityAnnotationId } from '@deepseek-ai/dsh-home-activity/annotations'
 import * as commandHomeActivity from '../src/index.ts'
 
@@ -178,6 +181,7 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   expect(descriptor.name).toBe('activity')
   expect(descriptor.description).toContain('DSH-native task')
   expect(descriptor.description).toContain('coordination notes')
+  expect(descriptor.description).toContain('one-shot Codex or Claude Code task')
   expect(descriptor.input?.hint).toContain('artifact add <activity-id> <delegation-id> <workspace-id> <JSON>')
   expect(descriptor.input?.hint).toContain('review set <activity-id> <delegation-id> <JSON>')
 
@@ -266,6 +270,24 @@ it('corrects only the user annotation and shows its history beside the unchanged
   expect(startActivation).not.toHaveBeenCalled()
   expect(test.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end'))
     .toEqual(beforeCommandEvents)
+})
+
+it('requires a DSH restart before inspecting annotation history after a write failure', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Write recovery', objective: 'Inspect annotation state after a storage failure.',
+    boundaries: { inScope: ['Preserve the saved note.'], outOfScope: ['Do not retry automatically.'] },
+  })
+  vi.spyOn(test.ctx.homeActivityAnnotations, 'correct').mockRejectedValue(
+    new ActivityAnnotationStorageError(new Error('injected storage failure')),
+  )
+
+  const result = await run(test, ` annotate ${activity.id} {"text":"A correction."}`)
+
+  expect(result.kind).toBe('error')
+  expect(result.text).toContain('persistence may be uncertain')
+  expect(result.text).toContain(`Restart DSH, then run /activity open ${activity.id}`)
+  expect(result.text).toContain('before deciding whether to retry')
 })
 
 it('bounds opened annotation history while retaining the full saved revision list', async () => {

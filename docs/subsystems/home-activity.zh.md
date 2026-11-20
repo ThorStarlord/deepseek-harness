@@ -2,13 +2,13 @@
 
 [English](home-activity.md) | 中文
 
-Home Activity 是由用户发起并持久保存的事务，包含稳定身份、名称、目标、描述性范围说明和创建时间。它独立于任何 Session；创建或打开 Activity 不会启动其目标。`home-activity` 包会通过独立的 [StorageDomain](storage.zh.md) 记录保存 Activity、上下文引用、明确请求的委派事实、用户关联的产物指针，以及带来源信息的用户处置和验证证据。Web [`/activity` 命令](../../packages/interaction/command-home-activity/README.zh.md) 可创建、列出、打开、关联上下文、记录指针与审核，并明确委派有界任务。
+Home Activity 是由用户发起并持久保存的事务，具有稳定身份、名称、目标、描述性范围和创建时间。它独立于任何 Session；创建或打开 Activity 不会启动目标。StorageDomain 记录将 Activity 与上下文关联、明确请求的委派事实、用户关联的输出指针、用户审核及证据、仅追加的用户备注历史分开保存。Web /activity 命令可创建、列出、打开、关联、备注、关联输出、记录审核，并显式委派有界任务。
 
 ## 已保存意图
 
 `ActivityId` 是生成的 UUID。`ActivityBoundaries.inScope` 和 `outOfScope` 是用户撰写的描述，不会更改 sandbox 根目录、工具策略或仓库访问权限。打开 Activity 会显示已保存意图和单独记录的委派。Activity 记录本身没有状态、Session 关联、执行或继续执行语义。
 
-`home_activities` 域使用格式版本 1。单独的 `home_activity_delegations` 域使用版本 4，并可读取版本 1、2 和 3 的记录。版本 3 首次加入 Codex 启动结果，严格的版本 2 读取器无法解码该结果；版本 4 会保存启动时选用的 profile 和 preset。新的 DSH `spawn` 请求会在启动前保存启动器提供的 profile 名称、有序 bundle 列表，以及活动 Agent preset id 和模块名称。只有 bundle 列表与已发布 profile 模板完全一致时才标为稳定；只有所选 bundle 带有明确的实验性元数据时才标为实验性。没有明确产品分类时，preset 稳定性仍显示为不可用。自定义 profile patch 和运行时 overlay 不参与分类。原生 Codex 的 DSH profile 和 preset 信息会标为不可用，因为该外部组合不由 DSH 管理。这些标签不代表沙箱隔离、权限强制执行或 Skill 资格，后续配置变化不会改写已保存的 profile 和 preset 快照。没有 profile 和 preset 快照的既有记录仍可读取，并会显示为不可用。现有 `spawn` 行仍按原字段读取。`spawn` 请求会在启动前保存拟请求的子级 Session id；Codex 请求不会虚构 DSH Session 身份。Codex 准入会保存其适配器的 `SubagentRun.id`，不是 DSH Session 或原生 Codex 线程 id。拟请求的 `spawn` id 不代表已获准入。应用重启时，缺少后续事实的请求或 admission 会变为 `unconfirmed`；不会重新启动 activation。若 Codex 启动调用在 dispatch 开始后拒绝，记录会保持 `unconfirmed`，因为外部运行可能已经启动；除非独立确认 Codex 未启动，否则不要重复该任务。若 `spawn` 准入状态不确定，可用 `/activity sessions` 检查拟请求的 id；Session 记录缺失不能证明启动失败。Activity 不提供继续、恢复、对话记录检查或回滚。Codex 遵循其原生配置和权限模式。提供方输出只是报告，不代表验证或用户接受。`spawn` 子级权限由 DSH 运行时策略控制；Activity 范围不是授权约束。不涉及 Session 格式版本变更。
+`home_activities` 域使用格式版本 1。单独的 `home_activity_delegations` 域使用版本 5，可读取版本 1 至 4 的记录。版本 3 首次加入 Codex 启动结果，严格的版本 2 读取器无法解码；版本 4 保存启动时的 profile 和 preset 选择；版本 5 加入原生 Claude Code 一次性委派事实。新的 DSH `spawn` 请求会在启动前捕获 profile 名称、有序 bundle，以及活动 Agent preset id 和模块名称。只有 bundle 列表与已发布模板完全一致时才标为稳定；只有所选 bundle 有明确实验性元数据时才标为实验性。没有明确产品分类时，preset 稳定性仍显示为不可用。自定义 profile patch 和运行时 overlay 不参与分类。原生 Codex 和 Claude Code 会将 DSH profile 与 preset 记录为不可用，因为 DSH 不管理其外部组合。这些标签不代表沙箱隔离、权限强制执行或 Skill 资格，后续配置变化也不会改写已保存快照。没有 profile 和 preset 快照的既有记录仍可读取，并显示为不可用。现有 `spawn` 行仍按原字段读取。`spawn` 请求会在启动前保存拟请求的子级 Session id；Codex 和 Claude Code 请求不会虚构 DSH Session 身份。拟请求的 `spawn` id 不代表已获准入。应用重启时，缺少后续事实的请求或 admission 会变为 `unconfirmed`，不会重新启动 activation。Codex 或 Claude Code 启动调用在 dispatch 开始后拒绝时也会变为 `unconfirmed`，因为外部运行可能已经启动；除非独立确认其未启动，否则不要重复任务。若 `spawn` 准入状态不确定，可用 `/activity sessions` 检查拟请求的 id；Session 记录缺失不能证明启动失败。外部准入会保存适配器的 `SubagentRun.id`，不是 DSH Session 或原生提供方会话 id。Activity 不为外部委派提供继续、恢复、对话记录检查或回滚。Codex 和 Claude Code 遵循各自的原生配置与权限处理。提供方输出只是报告，不代表验证或用户接受。`spawn` 子级权限由 DSH 运行时策略控制；Activity 范围不是授权约束。不涉及 Session 格式版本变更。
 
 ## 委派结果
 
@@ -31,6 +31,10 @@ Home Activity 是由用户发起并持久保存的事务，包含稳定身份、
 独立的版本 1 `home_activity_reviews` 域会为每项委派保存一条用户审核记录，并关联到其所属 Activity。没有审核记录表示用户处置仍为 pending。只有委派的提供方报告已保存后，服务才接受审核记录。用户可以将当前处置设为 pending、accepted、declined 或 requires investigation，并追加分别注明来源的证据，记录用户填写的来源和报告结果。打开 Activity 时会将处置及各条证据与提供方报告分别显示。
 
 证据及其结果由用户提供，DSH 不会检查。相互冲突的记录会分别显示，不会合并为单一验证状态。更新处置会保留证据，也不会修改委派请求、准入或报告。审核 Activity 不会启动或重试委派。
+
+## 用户备注
+
+独立的版本 1 home_activity_annotations 域会保存用户撰写的不可变 user-command 修订，并将每条修订关联到同一 Activity 的上一条修订。更正只更新当前协调备注，不会编辑 Activity 字段、提供方报告或专家断言。每个 Activity 最多保留 256 条修订；/activity open 显示当前备注和最近八条。备注文本不接受控制、格式、行分隔或段落分隔字符，以便历史记录保持单行。写入被拒绝后，持久化状态可能不确定；请重启 DSH 并检查已保存历史，再决定是否重试。
 
 ## Cordis API
 

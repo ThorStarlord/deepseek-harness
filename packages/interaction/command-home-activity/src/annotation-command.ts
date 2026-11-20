@@ -66,7 +66,10 @@ export async function executeActivityAnnotationCommand(
     }
     if (error instanceof ActivityAnnotationStorageError || error instanceof StorageError) {
       ctx.logger.warn('command-home-activity: annotation persistence failed: %o', error)
-      return { kind: 'error', text: `Activity annotation storage failed; no correction was confirmed. Run /activity open ${activityId.data} before retrying.` }
+      return {
+        kind: 'error',
+        text: `Activity annotation storage failed; persistence may be uncertain. Restart DSH, then run /activity open ${activityId.data} to inspect saved history before deciding whether to retry.`,
+      }
     }
     ctx.logger.warn('command-home-activity: annotation could not be recorded: %o', error)
     return { kind: 'error', text: 'The Activity could not be confirmed; no annotation was recorded.' }
@@ -84,7 +87,9 @@ export function renderActivityAnnotations(ctx: Context, activityId: ReturnType<t
     annotations = ctx.homeActivityAnnotations.list(activityId)
   } catch (error: unknown) {
     ctx.logger.warn('command-home-activity: annotation history read failed: %o', error)
-    return Object.freeze(['User annotations could not be read; no current note was confirmed.'])
+    return Object.freeze([
+      'User annotations could not be read; restart DSH before reopening this Activity to inspect saved history.',
+    ])
   }
   if (annotations.length === 0) {
     return Object.freeze([
