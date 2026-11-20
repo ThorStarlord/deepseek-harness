@@ -106,7 +106,8 @@ describe.skipIf(MODE === 'record')('web e2e: Home Activity annotation correction
     expect(rendered).toContain('Correction: migration validation is still failing; keep the release blocked.')
     expect(rendered).toContain('The provider report says the build is ready for release.')
     expect(rendered).toContain('Provider-reported output: The build is ready for release.')
-    expect(rendered).toContain('Status: provider reported; not verified or accepted.')
+    expect(rendered).toContain('Provider report: received; DSH has not independently verified it.')
+    expect(rendered).toContain('User disposition: pending; no review has been recorded.')
 
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd, {
       replacements: [
