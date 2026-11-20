@@ -34,6 +34,14 @@
       "types": "./lib/types/handoffs.d.ts",
       "default": "./lib/types/handoffs.js"
     },
+    "./reviews": {
+      "types": "./lib/types/reviews.d.ts",
+      "default": "./lib/types/reviews.js"
+    },
+    "./annotations": {
+      "types": "./lib/types/annotations.d.ts",
+      "default": "./lib/types/annotations.js"
+    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"

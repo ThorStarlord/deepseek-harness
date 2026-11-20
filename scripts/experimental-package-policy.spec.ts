@@ -1,6 +1,7 @@
 /** Unprefixed and legacy prefixed package names keep experimental isolation and persisted record namespaces. */
 
 import { describe, expect, it } from 'vitest'
+import { EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS as PRODUCT_EXPERIMENTAL_PACKAGE_NAMES } from '@deepseek-ai/dsh-official-bundles'
 import {
   EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS,
   experimentalPackageRecordNamespace,
@@ -11,6 +12,11 @@ import {
 const names = Object.values(EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS)
 
 describe('experimental package identities', () => {
+  it('keeps the runtime classification metadata aligned with the repository package policy', () => {
+    expect([...PRODUCT_EXPERIMENTAL_PACKAGE_NAMES].sort())
+      .toEqual([...names].sort())
+  })
+
   it.each([...names, '@deepseek-ai/dsh-experimental-terminal-bundle'])('recognizes %s independently of installation layout', (name) => {
     expect(isExperimentalPackageName(name)).toBe(true)
     for (const reference of [name, `${name}/client`, `${name}@1.2.3`, `npm:${name}@1.2.3`, `workspace:${name}@*`,

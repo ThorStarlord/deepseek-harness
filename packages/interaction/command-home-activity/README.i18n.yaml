@@ -3,44 +3,44 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/interaction/command-home-activity/README.md
 /:
-  en: 19e6206db882297e
-  zh: 35e3747940c76dd8
+  en: de603b9c4003a9e9
+  zh: d798f36025e561d1
 /deepseek-ai-dsh-command-home-activity:
   en: 251e2acd658c5ac6
   zh: b46ef2c005b78dfd
 /deepseek-ai-dsh-command-home-activity/summary:
-  en: c9181bff6cd208b4
-  zh: d3df836cf2fa6271
+  en: ece89308b5ed622c
+  zh: fcadfbc7dae27b32
 /deepseek-ai-dsh-command-home-activity/table-of-contents:
   en: d152484eb41ac6b4
   zh: f57bb7dc06808f11
 /deepseek-ai-dsh-command-home-activity/use-this-package:
-  en: 5da3fea8fff6ac29
-  zh: b0946bd11768314e
+  en: b19279deab3d9f43
+  zh: cec882b8868dd765
 /deepseek-ai-dsh-command-home-activity/use-this-package/when-to-choose-it:
   en: 4af7c2be6be83c87
   zh: f4da5a59a6fcdc87
 /deepseek-ai-dsh-command-home-activity/use-this-package/minimal-configuration:
-  en: 0437b8eda230aba4
-  zh: 2d6e46eba38aa9de
+  en: b5689cccc6615464
+  zh: 817519615295b3b6
 /deepseek-ai-dsh-command-home-activity/use-this-package/command-reference:
-  en: 60b860d6ccb6cf59
-  zh: c27e824f5d2e0ae8
+  en: 1edb739a2453043c
+  zh: 88dafd7987191371
 /deepseek-ai-dsh-command-home-activity/understand-the-implementation:
-  en: ccaa9f013ac64c93
-  zh: b6397bf63a9e3878
+  en: 57847d631a1370df
+  zh: 854874dfb8e2a026
 /deepseek-ai-dsh-command-home-activity/further-exploration:
   en: e89aa63964ea6671
   zh: a10f4ffc8ad5a604
 /deepseek-ai-dsh-command-home-activity/model-experience:
-  en: d7f52451ba344678
-  zh: 2ba7eb6f59ce9f16
+  en: c454a4a56fdaec70
+  zh: 2dd6b3d94f50cd02
 /deepseek-ai-dsh-command-home-activity/model-experience/kv-cache-effect:
-  en: d9d4247e82010040
-  zh: d924ee02bb9b7227
+  en: 7aff46b3efcd0311
+  zh: 8d591bb7719db63c
 /deepseek-ai-dsh-command-home-activity/known-limitations-and-deferred-work:
-  en: e05a5aedbdefb3af
-  zh: fbdda199b7b943d1
+  en: 4455722b2b790990
+  zh: 1332d35b53461c85
 /deepseek-ai-dsh-command-home-activity/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 8ec3e73528ddb1a6

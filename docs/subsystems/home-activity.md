@@ -2,13 +2,19 @@
 
 English | [中文](home-activity.zh.md)
 
-A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope statements, and creation time. It is independent of any Session; creating or opening one does not start its objective. The `home-activity` package stores Activity records, context references, explicitly requested delegation facts, user-linked artifact pointers, and user-supplied external handoffs in separate [StorageDomain](storage.md) records. The Web [`/activity` command](../../packages/interaction/command-home-activity/README.md) creates, lists, opens, associates contexts, records artifact pointers and external handoffs, and explicitly delegates a bounded task.
+A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope, and creation time. It is independent of any Session; creating or opening one does not start its objective. StorageDomain records keep Activity data separate from context links, requested delegation facts, user-linked output pointers, user reviews and evidence, and append-only user annotation history. The Web /activity command creates, lists, opens, associates, annotates, links outputs, records reviews, and explicitly delegates bounded tasks.
 
 ## Saved intent
 
 `ActivityId` is a generated UUID. `ActivityBoundaries.inScope` and `outOfScope` are user-authored descriptions. They do not change sandbox roots, tool policy, or repository access. Opening an Activity displays saved intent and separately recorded delegations. The Activity record itself has no status, Session association, execution, or continuation semantics.
 
-The `home_activities` domain uses format version 1. The separate `home_activity_delegations` version-1 domain stores the request and proposed child Session id before startup, then stores accepted DSH admission and provider report as distinct facts. The proposed id does not establish admission. On restart, a request or admission without its later fact becomes `unconfirmed`; no activation is rearmed. If admission is uncertain, `/activity sessions` can be checked for the proposed id; a missing Session record does not confirm startup failure. Provider output remains a report, not verification or user acceptance. DSH runtime policy controls child permissions; Activity scope is not an authorization constraint. No Session format version changes are involved.
+The `home_activities` domain uses format version 1. The separate `home_activity_delegations` domain uses version 5 and reads version-1 through version-4 records. Version 3 first added the Codex start outcome that the strict version-2 reader cannot decode; version 4 records the selected profile and preset at launch; version 5 adds native Claude Code one-shot delegation facts. New DSH `spawn` requests snapshot the launcher profile name and ordered bundle list plus the active Agent preset id and module names before startup. Profile bundle classification is stable only for an exact shipped template list and experimental only when a selected bundle has explicit experimental metadata; preset stability remains unavailable without explicit product classification. Custom profile patches and runtime overlays are not classified. Native Codex and Claude Code record the DSH profile and preset as unavailable because DSH does not own those external compositions. These labels do not establish sandbox isolation, permission enforcement, or Skill qualification, and later configuration changes do not rewrite the saved profile and preset snapshot. Existing records without a profile and preset snapshot remain readable and show those facts as unavailable. Existing `spawn` rows remain readable with their original fields. A `spawn` request stores a proposed child Session id before startup; Codex and Claude Code requests do not invent a DSH Session identity. The proposed `spawn` id does not establish admission. On restart, a request or admission without its later fact becomes `unconfirmed`; no activation is rearmed. A Codex or Claude Code start rejection after dispatch is also `unconfirmed`, because the external run may already have started; do not repeat the task unless you independently confirm it did not start. If `spawn` admission is uncertain, `/activity sessions` can be checked for the proposed id; a missing Session record does not confirm startup failure. An external admission stores its adapter's `SubagentRun.id`, not a DSH Session or native provider conversation id. Activity provides no continuation, resume, transcript inspection, or rollback for external providers. Codex and Claude Code follow their native configuration and permission handling. Provider output remains a report, not verification or user acceptance. DSH runtime policy controls `spawn` permissions; Activity scope is not an authorization constraint. No Session format version changes are involved.
+
+## Delegation outcomes
+
+Provider reports preserve the provider stop reason. Activity views classify only known subagent reasons: `completed`, `error`, `aborted`, `max-tokens`, and `refusal`; unknown reasons remain unknown. They show the report source and observation time, and the uncertainty source category and observation time when available. DSH has no freshness check or later provider-status query for a saved report, so its freshness is unknown and it may be stale. Missing reports remain pending or unconfirmed according to the saved lifecycle facts; opening an Activity never retries work.
+
+For degraded outcomes, opening an Activity shows inspection guidance for pending or uncertain starts. It offers a separate, explicit new request only when saved facts support new work and the selected provider route is registered; registration does not establish credential readiness, consent, native permission, or admission. Activity has no stop action, and external one-shot runs have no Activity status query, transcript inspection, or resume action. Unclassified outcomes remain unresolved, and opening an Activity never starts or resumes execution.
 
 ## Context references
 
@@ -21,6 +27,16 @@ Opening an Activity resolves each id against its owning registry. Removed contex
 The separate version-1 `home_activity_artifacts` domain stores user-linked pointers to outputs associated with a specific Activity delegation and a Workspace already linked to that Activity. Each pointer records a label, user-supplied source location, optional source revision, and recording time; missing revisions are displayed as unknown. The service rejects pointers whose delegation belongs to another Activity or whose Workspace is not linked to the Activity.
 
 Artifact pointers do not alter delegation requests, admissions, or reports. Opening an Activity displays the delegation's requesting Session and user-selected Workspace separately, and states that their relationship to the reported output is unverified. Workspace and Session links remain independent; the pointer does not imply one shared checkout, a Git root, or automatic cross-Workspace writes, merges, or releases.
+
+## Outcome reviews
+
+The separate version-1 `home_activity_reviews` domain stores one user review per delegation, linked to its owning Activity. No review row means the user disposition is pending. The service accepts a review only after the delegation has a saved provider report. A user can set the current disposition to pending, accepted, declined, or requires investigation, and append separately attributed evidence that records a user-entered source and reported result. Opening an Activity shows the disposition and each evidence entry separately from its provider report.
+
+Evidence and its result are user-supplied and are not checked by DSH. Conflicting entries remain visible rather than being collapsed into a verification status. Updating a disposition retains the evidence and does not modify delegation requests, admissions, or reports. Reviewing an Activity never starts or retries delegation.
+
+## User annotations
+
+The separate version-1 home_activity_annotations domain stores immutable, user-authored user-command revisions, each linked to the prior revision for that Activity. A correction changes only the current coordination note; it does not edit Activity fields, provider reports, or specialist assertions. Each Activity retains at most 256 revisions, and /activity open shows the current note and latest eight. Note text rejects control, format, line, and paragraph separators so history remains line-oriented. A rejected write may leave persistence uncertain; restart DSH and inspect the saved history before deciding whether to retry.
 
 ## External handoffs
 
@@ -65,6 +81,34 @@ get(id: ActivityId): Activity | undefined
 ```
 
 Source: [`packages/home/activity/src/index.ts`](../../packages/home/activity/src/index.ts)
+
+<a id="ctxhomeactivityannotations--homeactivityannotationservice"></a>
+
+### `ctx.homeActivityAnnotations` — `HomeActivityAnnotationService`
+
+Stores append-only user corrections independently from Activity and execution records.
+
+```ts cordis-catalog
+/**
+ * Append a new current-note revision while retaining each earlier user annotation.
+ * @param request - Saved Activity identity and replacement note text.
+ * @returns The saved revision with its predecessor and source attribution.
+ * @throws {ActivityAnnotationError} when the Activity is unknown, the note is invalid, or history is full.
+ * @throws {ActivityAnnotationStorageError} when annotation persistence fails.
+ */
+correct(request: CorrectActivityAnnotationRequest): Promise<ActivityAnnotation>
+
+/**
+ * List user-authored annotation revisions in original order.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached revisions for the Activity, oldest first.
+ * @throws {ActivityAnnotationError} when the Activity does not exist.
+ * @throws {ActivityAnnotationStorageError} when annotation storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityAnnotation[]
+```
+
+Source: [`packages/home/activity/src/annotations.ts`](../../packages/home/activity/src/annotations.ts)
 
 <a id="ctxhomeactivityartifacts--homeactivityartifactservice"></a>
 
@@ -186,7 +230,7 @@ async markNotAdmitted(id: ActivityDelegationId, message: string): Promise<Activi
 
 /** Persist the admission returned by `startActivation`.
  * @param id - Saved request identity.
- * @param admission - Child Session and activation references.
+ * @param admission - Local Session or external execution and activation references.
  * @returns The admitted record.
 */
 async recordAdmitted(id: ActivityDelegationId, admission: ActivityDelegationAdmission): Promise<ActivityDelegation>
@@ -199,13 +243,13 @@ async recordAdmitted(id: ActivityDelegationId, admission: ActivityDelegationAdmi
 */
 async recordReported( id: ActivityDelegationId, admission: ActivityDelegationAdmission, report: ActivityDelegationReport, ): Promise<ActivityDelegation>
 
-/** Record a result that the activation API could not return as a provider report.
+/** Record a startup or report outcome that cannot be confirmed.
  * @param id - Saved request identity.
- * @param admission - Accepted activation references.
+ * @param admission - New activation references, or undefined to preserve an existing reference or when startup outcome is unknown.
  * @param reason - Why its result is unknown.
  * @returns The unconfirmed record.
 */
-async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAdmission, reason: ActivityDelegationUncertainty['reason'], ): Promise<ActivityDelegation>
+async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAdmission | undefined, reason: ActivityDelegationUncertainty['reason'], ): Promise<ActivityDelegation>
 ```
 
 Source: [`packages/home/activity/src/delegations.ts`](../../packages/home/activity/src/delegations.ts)
@@ -237,4 +281,42 @@ list(activityId: ActivityId): readonly ActivityHandoff[]
 ```
 
 Source: [`packages/home/activity/src/handoffs.ts`](../../packages/home/activity/src/handoffs.ts)
+
+<a id="ctxhomeactivityreviews--homeactivityreviewservice"></a>
+
+### `ctx.homeActivityReviews` — `HomeActivityReviewService`
+
+User dispositions and verification evidence stored independently from delegation reports.
+
+```ts cordis-catalog
+/**
+ * Record a user disposition and optionally append one user-supplied evidence entry.
+ * @param request - Activity, owned delegation, disposition, and optional evidence.
+ * @returns The durable review, without changing the delegation report.
+ * @throws {ActivityReviewError} when an identity is invalid, no report is saved, or the evidence limit is reached.
+ * @throws {ActivityReviewStorageError} when review persistence fails.
+ */
+record(request: RecordActivityReviewRequest): Promise<ActivityReview>
+
+/**
+ * Read a review for one delegation, returning no row when its disposition is still pending.
+ * @param activityId - Saved Activity that owns the delegation.
+ * @param delegationId - Delegation identity selected for review.
+ * @returns The saved review, or `undefined` when the user has not recorded one.
+ * @throws {ActivityReviewError} when either identity is unavailable or mismatched.
+ * @throws {ActivityReviewStorageError} when review storage cannot be read.
+ */
+get(activityId: ActivityId, delegationId: ActivityDelegationId): ActivityReview | undefined
+
+/**
+ * List user reviews belonging to one saved Activity.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached reviews, newest update first.
+ * @throws {ActivityReviewError} when the Activity does not exist.
+ * @throws {ActivityReviewStorageError} when review storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityReview[]
+```
+
+Source: [`packages/home/activity/src/reviews.ts`](../../packages/home/activity/src/reviews.ts)
 <!-- END GENERATED cordis-surface -->

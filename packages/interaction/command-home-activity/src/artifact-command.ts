@@ -24,7 +24,12 @@ type ParsedCommand =
   | { readonly kind: 'add'; readonly activityId: string; readonly delegationId: string; readonly workspaceId: string; readonly input: string }
   | { readonly kind: 'invalid'; readonly message: string }
 
-/** Execute artifact-pointer commands owned by the existing `/activity` command. */
+/**
+ * Execute artifact-pointer commands owned by the existing `/activity` command.
+ * @param ctx - Plugin context for saved Activity, delegation, and artifact data.
+ * @param invocation - The command invocation from the current DSH Session.
+ * @returns The command result when this handler recognized the input, otherwise `undefined`.
+ */
 export async function executeActivityArtifactCommand(
   ctx: Context,
   invocation: CommandInvocation,

@@ -171,6 +171,9 @@ flowchart LR
   svc_homeActivityDelegations["ctx.homeActivityDelegations<br/>Recorded Home Activity delegations"]
   svc_homeActivityAssociations["ctx.homeActivityAssociations<br/>Activity Workspace and Session references"]
   svc_homeActivityArtifacts["ctx.homeActivityArtifacts<br/>User-linked Activity artifact pointers"]
+  svc_homeActivityHandoffs["ctx.homeActivityHandoffs<br/>User-supplied external Activity handoffs"]
+  svc_homeActivityReviews["ctx.homeActivityReviews<br/>User Activity outcome reviews"]
+  svc_homeActivityAnnotations["ctx.homeActivityAnnotations<br/>Activity coordination annotation history"]
   svc_sessionQuery["ctx.sessionQuery<br/>Session reads, traces, filters, and search"]
   pkg_session_reference["session-reference"]
   pkg_tool_session_query["tool-session-query"]
@@ -394,9 +397,12 @@ flowchart LR
   pkg_headless --> svc_headlessStartup
   pkg_hmr --> svc_hmr
   pkg_home_activity --> svc_homeActivities
+  pkg_home_activity --> svc_homeActivityAnnotations
   pkg_home_activity --> svc_homeActivityArtifacts
   pkg_home_activity --> svc_homeActivityAssociations
   pkg_home_activity --> svc_homeActivityDelegations
+  pkg_home_activity --> svc_homeActivityHandoffs
+  pkg_home_activity --> svc_homeActivityReviews
   pkg_host_directory_picker --> svc_directoryPicker
   pkg_host_directory_picker_browse --> svc_directoryPicker
   pkg_host_directory_picker_native --> svc_directoryPicker
@@ -539,9 +545,12 @@ flowchart LR
   svc_headlessStartup --> pkg_headless
   svc_hmr --> pkg_app_boot
   svc_homeActivities --> pkg_command_home_activity
+  svc_homeActivityAnnotations --> pkg_command_home_activity
   svc_homeActivityArtifacts --> pkg_command_home_activity
   svc_homeActivityAssociations --> pkg_command_home_activity
   svc_homeActivityDelegations --> pkg_command_home_activity
+  svc_homeActivityHandoffs --> pkg_command_home_activity
+  svc_homeActivityReviews --> pkg_command_home_activity
   svc_jobs --> pkg_api_job_controller
   svc_jobs --> pkg_tool_bash
   svc_jobs --> pkg_tool_jobs
@@ -727,6 +736,9 @@ flowchart LR
 | `ctx.homeActivityDelegations` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | Persists explicit requests, accepted DSH activation references, and provider reports as separate facts; the human command uses the existing subagent runtime and does not claim verification or acceptance. |
 | `ctx.homeActivityAssociations` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | Stores separately selected Workspace registry identities and DSH Session identities without changing either source record or inferring a relationship between them. |
 | `ctx.homeActivityArtifacts` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | Stores user-supplied output locations and optional revisions linked to one Activity delegation and one of its selected Workspaces, separately from provider-authored reports. |
+| `ctx.homeActivityHandoffs` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | Stores user-supplied external summaries and artifact references with the recording DSH Session; it does not import transcripts or assert execution, verification, or acceptance. |
+| `ctx.homeActivityReviews` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | Stores user dispositions and separately attributed, user-entered evidence for Activity delegations; missing review remains pending, and review records do not alter provider reports or start work. |
+| `ctx.homeActivityAnnotations` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | Appends user-authored corrections to Home Harness coordination notes and preserves earlier revisions separately from provider reports and specialist assertions. |
 | `ctx.sessionQuery` | `seam` | [`session-query`](../packages/session-query/session-query) | [`session-query-sqlite`](../packages/session-query/session-query-sqlite) | [`session-reference`](../packages/context/session-reference), [`tool-session-query`](../packages/experimental/tool-session-query) | - | The interface supplies exact reads, filters, and traces; its concrete backend adds full-text reconciliation, ranking, snippets, and cursor generations, while the model consumer owns workspace authority and cursor-free rendering. |
 | `ctx.fileReferences` | `seam` | [`file-reference`](../packages/context/file-reference) | [`file-reference-local`](../packages/context/file-reference-local) | [`api-session-controller`](../packages/api/session-controller) | - | The interface returns path-only completion candidates within an Agent cwd; providers own namespace access and ranking without reading file contents. |
 | `ctx.sessionReferenceResolver` | `core` | [`session-reference`](../packages/context/session-reference) | - | - | - | Projects bounded current-surface conversation snapshots into durable untrusted message context; host adapters own mention syntax. |

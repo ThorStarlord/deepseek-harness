@@ -22,6 +22,7 @@ export {
   type FixtureTurnOptions,
   type FixtureTurnResult,
 } from './agent-turn.ts'
+export { bootProductionProfile, type ProductionProfileOptions } from './production-profile.ts'
 
 const DEFAULT_PROCESS_TIMEOUT_MS = 30_000
 

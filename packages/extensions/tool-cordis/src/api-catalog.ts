@@ -1756,6 +1756,27 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'homeActivityAnnotations',
+    summary: 'Stores append-only user corrections independently from Activity and execution records.',
+    description: 'Stores append-only user corrections independently from Activity and execution records.',
+    methods: [
+      {
+        signature: 'correct(request: CorrectActivityAnnotationRequest): Promise<ActivityAnnotation>',
+        description: 'Append a new current-note revision while retaining each earlier user annotation.',
+        parameters: [{ name: 'request', description: 'Saved Activity identity and replacement note text.' }],
+        returns: 'The saved revision with its predecessor and source attribution.',
+        throws: ['{ActivityAnnotationError} when the Activity is unknown, the note is invalid, or history is full.', '{ActivityAnnotationStorageError} when annotation persistence fails.'],
+      },
+      {
+        signature: 'list(activityId: ActivityId): readonly ActivityAnnotation[]',
+        description: 'List user-authored annotation revisions in original order.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Detached revisions for the Activity, oldest first.',
+        throws: ['{ActivityAnnotationError} when the Activity does not exist.', '{ActivityAnnotationStorageError} when annotation storage cannot be read.'],
+      },
+    ],
+  },
+  {
     key: 'homeActivityArtifacts',
     summary: 'Stores user-linked artifact pointers independently from delegation lifecycle facts.',
     description: 'Stores user-linked artifact pointers independently from delegation lifecycle facts.',
@@ -1850,7 +1871,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'async recordAdmitted(id: ActivityDelegationId, admission: ActivityDelegationAdmission): Promise<ActivityDelegation>',
         description: 'Persist the admission returned by `startActivation`.',
-        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'admission', description: 'Child Session and activation references.' }],
+        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'admission', description: 'Local Session or external execution and activation references.' }],
         returns: 'The admitted record.',
       },
       {
@@ -1860,9 +1881,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The completed fact record.',
       },
       {
-        signature: 'async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAdmission, reason: ActivityDelegationUncertainty[\'reason\'], ): Promise<ActivityDelegation>',
-        description: 'Record a result that the activation API could not return as a provider report.',
-        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'admission', description: 'Accepted activation references.' }, { name: 'reason', description: 'Why its result is unknown.' }],
+        signature: 'async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAdmission | undefined, reason: ActivityDelegationUncertainty[\'reason\'], ): Promise<ActivityDelegation>',
+        description: 'Record a startup or report outcome that cannot be confirmed.',
+        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'admission', description: 'New activation references, or undefined to preserve an existing reference or when startup outcome is unknown.' }, { name: 'reason', description: 'Why its result is unknown.' }],
         returns: 'The unconfirmed record.',
       },
     ],
@@ -1885,6 +1906,34 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
         returns: 'Detached handoff records.',
         throws: ['{ActivityHandoffError} when the Activity does not exist.', '{ActivityHandoffStorageError} when handoff storage cannot be read.'],
+      },
+    ],
+  },
+  {
+    key: 'homeActivityReviews',
+    summary: 'User dispositions and verification evidence stored independently from delegation reports.',
+    description: 'User dispositions and verification evidence stored independently from delegation reports.',
+    methods: [
+      {
+        signature: 'record(request: RecordActivityReviewRequest): Promise<ActivityReview>',
+        description: 'Record a user disposition and optionally append one user-supplied evidence entry.',
+        parameters: [{ name: 'request', description: 'Activity, owned delegation, disposition, and optional evidence.' }],
+        returns: 'The durable review, without changing the delegation report.',
+        throws: ['{ActivityReviewError} when an identity is invalid, no report is saved, or the evidence limit is reached.', '{ActivityReviewStorageError} when review persistence fails.'],
+      },
+      {
+        signature: 'get(activityId: ActivityId, delegationId: ActivityDelegationId): ActivityReview | undefined',
+        description: 'Read a review for one delegation, returning no row when its disposition is still pending.',
+        parameters: [{ name: 'activityId', description: 'Saved Activity that owns the delegation.' }, { name: 'delegationId', description: 'Delegation identity selected for review.' }],
+        returns: 'The saved review, or `undefined` when the user has not recorded one.',
+        throws: ['{ActivityReviewError} when either identity is unavailable or mismatched.', '{ActivityReviewStorageError} when review storage cannot be read.'],
+      },
+      {
+        signature: 'list(activityId: ActivityId): readonly ActivityReview[]',
+        description: 'List user reviews belonging to one saved Activity.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Detached reviews, newest update first.',
+        throws: ['{ActivityReviewError} when the Activity does not exist.', '{ActivityReviewStorageError} when review storage cannot be read.'],
       },
     ],
   },
@@ -5670,6 +5719,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface Activity {\n    readonly id: ActivityId;\n    readonly name: string;\n    readonly objective: string;\n    readonly boundaries: ActivityBoundaries;\n    readonly createdAt: string;\n}',
   },
   {
+    name: 'ActivityAnnotation',
+    declaration: 'export interface ActivityAnnotation {\n    readonly id: ActivityAnnotationId;\n    readonly activityId: ActivityId;\n    readonly revision: number;\n    readonly text: string;\n    readonly supersedes?: ActivityAnnotationId | undefined;\n    readonly source: \'user-command\';\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'ActivityAnnotationId',
+    declaration: 'export type ActivityAnnotationId = Branded<\'ActivityAnnotationId\'>;',
+  },
+  {
     name: 'ActivityArtifactId',
     declaration: 'export type ActivityArtifactId = Branded<\'ActivityArtifactId\'>;',
   },
@@ -5682,12 +5739,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ActivityBoundaries {\n    readonly inScope: readonly string[];\n    readonly outOfScope: readonly string[];\n}',
   },
   {
+    name: 'ActivityConfigurationClassification',
+    declaration: 'export type ActivityConfigurationClassification = \'stable\' | \'experimental\' | \'unavailable\';',
+  },
+  {
     name: 'ActivityDelegation',
     declaration: 'export interface ActivityDelegation {\n    readonly id: ActivityDelegationId;\n    readonly activityId: ActivityId;\n    readonly request: ActivityDelegationRequest;\n    readonly status: ActivityDelegationStatus;\n    readonly admission?: ActivityDelegationAdmission | undefined;\n    readonly report?: ActivityDelegationReport | undefined;\n    readonly failure?: ActivityDelegationFailure | undefined;\n    readonly uncertainty?: ActivityDelegationUncertainty | undefined;\n}',
   },
   {
     name: 'ActivityDelegationAdmission',
-    declaration: 'export interface ActivityDelegationAdmission {\n    readonly childSessionId: SessionId;\n    readonly activationName: string;\n    readonly runId?: SubagentRunId | undefined;\n    readonly admittedAt: string;\n    readonly source: \'subagents.startActivation\';\n}',
+    declaration: 'export type ActivityDelegationAdmission = SpawnActivityDelegationAdmission | CodexActivityDelegationAdmission | ClaudeCodeActivityDelegationAdmission;',
   },
   {
     name: 'ActivityDelegationFailure',
@@ -5698,12 +5759,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ActivityDelegationId = Branded<\'ActivityDelegationId\'>;',
   },
   {
+    name: 'ActivityDelegationPresetSelectionSnapshot',
+    declaration: 'export type ActivityDelegationPresetSelectionSnapshot = {\n    readonly status: \'none\';\n} | {\n    readonly status: \'selected\';\n    readonly id: string;\n    readonly activeModules: readonly string[] | null;\n    readonly classification: \'experimental\' | \'unavailable\';\n    readonly classificationSource: \'experimental-package-metadata\' | \'unavailable\';\n} | {\n    readonly status: \'unavailable\';\n    readonly reason: \'agent-preset-registry-unavailable\' | \'preset-identity-exceeds-persistence-limit\' | \'preset-module-list-exceeds-persistence-limit\';\n};',
+  },
+  {
+    name: 'ActivityDelegationProfileSelectionSnapshot',
+    declaration: 'export type ActivityDelegationProfileSelectionSnapshot = {\n    readonly status: \'available\';\n    readonly name: string;\n    readonly startedBundles: readonly string[] | null;\n    readonly classification: ActivityConfigurationClassification;\n    readonly classificationSource: \'shipped-profile-template\' | \'experimental-package-metadata\' | \'unavailable\';\n} | {\n    readonly status: \'unavailable\';\n    readonly reason: \'runtime-profile-unavailable\' | \'profile-identity-exceeds-persistence-limit\';\n};',
+  },
+  {
     name: 'ActivityDelegationReport',
     declaration: 'export interface ActivityDelegationReport {\n    readonly stopReason: string;\n    readonly outputText: string;\n    readonly nonTextBlockTypes: readonly string[];\n    readonly outputTruncated: boolean;\n    readonly diagnostic?: string | undefined;\n    readonly reportedAt: string;\n    readonly source: \'subagent-activation-result\';\n}',
   },
   {
     name: 'ActivityDelegationRequest',
-    declaration: 'export interface ActivityDelegationRequest {\n    readonly provider: \'spawn\';\n    readonly task: string;\n    readonly parentSessionId: SessionId;\n    readonly requestedChildSessionId: SessionId;\n    readonly requestedAt: string;\n    readonly source: \'user-command\';\n}',
+    declaration: 'export type ActivityDelegationRequest = SpawnActivityDelegationRequest | CodexActivityDelegationRequest | ClaudeCodeActivityDelegationRequest;',
   },
   {
     name: 'ActivityDelegationStatus',
@@ -5711,7 +5780,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ActivityDelegationUncertainty',
-    declaration: 'export interface ActivityDelegationUncertainty {\n    readonly reason: \'restart-before-admission-recorded\' | \'restart-before-report-recorded\' | \'admission-write-failed\' | \'report-write-failed\' | \'startup-result-rejected\';\n    readonly observedAt: string;\n}',
+    declaration: 'export interface ActivityDelegationUncertainty {\n    readonly reason: \'restart-before-admission-recorded\' | \'restart-before-report-recorded\' | \'admission-write-failed\' | \'report-write-failed\' | \'startup-result-rejected\' | \'codex-start-outcome-unknown\' | \'claude-code-start-outcome-unknown\';\n    readonly observedAt: string;\n}',
   },
   {
     name: 'ActivityHandoff',
@@ -5724,6 +5793,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ActivityHandoffId',
     declaration: 'export type ActivityHandoffId = Branded<\'ActivityHandoffId\'>;',
+  },
+  {
+    name: 'ActivityReview',
+    declaration: 'export interface ActivityReview {\n    readonly activityId: ActivityId;\n    readonly delegationId: ActivityDelegationId;\n    readonly disposition: ActivityReviewDisposition;\n    readonly evidence: readonly ActivityReviewEvidence[];\n    readonly updatedAt: string;\n    readonly source: \'user-command\';\n}',
+  },
+  {
+    name: 'ActivityReviewDisposition',
+    declaration: 'export type ActivityReviewDisposition = \'pending\' | \'accepted\' | \'declined\' | \'requires-investigation\';',
+  },
+  {
+    name: 'ActivityReviewEvidence',
+    declaration: 'export interface ActivityReviewEvidence {\n    readonly id: ActivityReviewEvidenceId;\n    readonly source: string;\n    readonly result: ActivityReviewEvidenceResult;\n    readonly summary: string;\n    readonly reference?: string | undefined;\n    readonly observedAt?: string | undefined;\n    readonly recordedAt: string;\n    readonly origin: \'user-command\';\n}',
+  },
+  {
+    name: 'ActivityReviewEvidenceId',
+    declaration: 'export type ActivityReviewEvidenceId = Branded<\'ActivityReviewEvidenceId\'>;',
+  },
+  {
+    name: 'ActivityReviewEvidenceResult',
+    declaration: 'export type ActivityReviewEvidenceResult = \'passed\' | \'failed\' | \'inconclusive\' | \'unavailable\';',
   },
   {
     name: 'AdapterRegistrationHandle',
@@ -6074,8 +6163,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ClaimOutcome {\n    readonly claimed: number;\n    readonly skipped: number;\n}',
   },
   {
+    name: 'ClaudeCodeActivityDelegationAdmission',
+    declaration: 'export interface ClaudeCodeActivityDelegationAdmission extends ActivityDelegationAdmissionBase {\n    readonly provider: \'claude-code\';\n    readonly providerRunId: string;\n}',
+  },
+  {
+    name: 'ClaudeCodeActivityDelegationRequest',
+    declaration: 'export interface ClaudeCodeActivityDelegationRequest extends ActivityDelegationRequestBase {\n    readonly provider: \'claude-code\';\n}',
+  },
+  {
     name: 'ClientArtifactBaseline',
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly ctimeMs: number;\n    readonly size: number;\n}',
+  },
+  {
+    name: 'CodexActivityDelegationAdmission',
+    declaration: 'export interface CodexActivityDelegationAdmission extends ActivityDelegationAdmissionBase {\n    readonly provider: \'codex\';\n    readonly providerRunId: string;\n}',
+  },
+  {
+    name: 'CodexActivityDelegationRequest',
+    declaration: 'export interface CodexActivityDelegationRequest extends ActivityDelegationRequestBase {\n    readonly provider: \'codex\';\n}',
   },
   {
     name: 'CollectedOutput',
@@ -6322,6 +6427,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CordisRuntimeTreeReader {\n    getTree(): Promise<CordisRuntimeTree>;\n}',
   },
   {
+    name: 'CorrectActivityAnnotationRequest',
+    declaration: 'export type CorrectActivityAnnotationRequest = Pick<ActivityAnnotation, \'activityId\' | \'text\'>;',
+  },
+  {
     name: 'CotTranslationPreferences',
     declaration: 'export interface CotTranslationPreferences {\n    provider: TranslationProvider;\n    targetLanguage: string;\n}',
   },
@@ -6335,7 +6444,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CreateActivityDelegationRequest',
-    declaration: 'export interface CreateActivityDelegationRequest {\n    readonly activityId: ActivityId;\n    readonly provider: \'spawn\';\n    readonly task: string;\n    readonly parentSessionId: SessionId;\n}',
+    declaration: 'export interface CreateActivityDelegationRequest {\n    readonly activityId: ActivityId;\n    readonly provider: \'spawn\' | \'codex\' | \'claude-code\';\n    readonly task: string;\n    readonly parentSessionId: SessionId;\n    readonly executionSelection?: DshActivityDelegationExecutionSelectionSnapshot | undefined;\n}',
   },
   {
     name: 'CreateActivityHandoffRequest',
@@ -6552,6 +6661,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DomainTableSpec',
     declaration: 'export interface DomainTableSpec<K extends string = string, V = unknown> {\n    readonly valueSchema: ZodType<V>;\n    readonly __key?: K;\n}',
+  },
+  {
+    name: 'DshActivityDelegationExecutionSelectionSnapshot',
+    declaration: 'export interface DshActivityDelegationExecutionSelectionSnapshot {\n    readonly provider: \'spawn\';\n    readonly profile: ActivityDelegationProfileSelectionSnapshot;\n    readonly preset: ActivityDelegationPresetSelectionSnapshot;\n}',
   },
   {
     name: 'DshEnvironment',
@@ -8106,6 +8219,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type RecommendationDetails = {\n    readonly status: \'available\';\n    readonly title: LocalizedText;\n    readonly description: LocalizedText;\n    readonly enabled: boolean;\n} | {\n    readonly status: \'refused\';\n    readonly reason: \'unknown\' | \'unavailable\' | \'not-live-root\' | \'closing\';\n};',
   },
   {
+    name: 'RecordActivityReviewRequest',
+    declaration: 'export interface RecordActivityReviewRequest {\n    readonly activityId: ActivityId;\n    readonly delegationId: ActivityDelegationId;\n    readonly disposition: ActivityReviewDisposition;\n    readonly evidence?: Omit<ActivityReviewEvidence, \'id\' | \'recordedAt\' | \'origin\'> | undefined;\n}',
+  },
+  {
     name: 'RecurringScheduleRecord',
     declaration: 'export type RecurringScheduleRecord = EveryScheduleRecord | DailyScheduleRecord | WeeklyScheduleRecord | CronScheduleRecord | RRuleScheduleRecord;',
   },
@@ -9336,6 +9453,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SkillViewOptions',
     declaration: 'export interface SkillViewOptions extends SkillLookupOptions {\n    readonly scope?: ScopeKey | undefined;\n}',
+  },
+  {
+    name: 'SpawnActivityDelegationAdmission',
+    declaration: 'export interface SpawnActivityDelegationAdmission extends ActivityDelegationAdmissionBase {\n    readonly childSessionId: SessionId;\n    readonly activationName: string;\n    readonly provider?: \'spawn\' | undefined;\n}',
+  },
+  {
+    name: 'SpawnActivityDelegationRequest',
+    declaration: 'export interface SpawnActivityDelegationRequest extends ActivityDelegationRequestBase {\n    readonly provider: \'spawn\';\n    readonly requestedChildSessionId: SessionId;\n}',
   },
   {
     name: 'SpeechCatalog',

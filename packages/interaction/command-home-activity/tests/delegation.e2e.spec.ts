@@ -18,13 +18,24 @@ import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import CommandRuntime, { CommandId } from '@deepseek-ai/dsh-commands'
 import type { CommandInvocation } from '@deepseek-ai/dsh-commands'
 import Storage, { StorageError } from '@deepseek-ai/dsh-storage'
-import type { SubagentActivation, SubagentActivationSpec, SubagentResult } from '@deepseek-ai/dsh-subagent'
+import { NO_START_CAPABILITIES } from '@deepseek-ai/dsh-subagent'
+import type {
+  ResolvedSubagentStartRequest,
+  SubagentActivation,
+  SubagentActivationSpec,
+  SubagentProvider,
+  SubagentResult,
+  SubagentRun,
+} from '@deepseek-ai/dsh-subagent'
 import { SubagentRunId } from '@deepseek-ai/dsh-subagent'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import HomeActivityService from '@deepseek-ai/dsh-home-activity'
 import HomeActivityAssociationService from '@deepseek-ai/dsh-home-activity/associations'
+import HomeActivityArtifactService from '@deepseek-ai/dsh-home-activity/artifacts'
 import HomeActivityDelegations, { ActivityDelegationError } from '@deepseek-ai/dsh-home-activity/delegations'
+import HomeActivityReviewService from '@deepseek-ai/dsh-home-activity/reviews'
+import HomeActivityAnnotationService from '@deepseek-ai/dsh-home-activity/annotations'
 import type { ActivityDelegation, ActivityDelegationUncertainty } from '@deepseek-ai/dsh-home-activity/delegations'
 import * as commandHomeActivity from '../src/index.ts'
 import { executeActivityDelegation, renderActivityDelegation } from '../src/delegation-command.ts'
@@ -114,8 +125,9 @@ function textResponse(text: string, reason: 'stop' | 'max-tokens' = 'stop'): Str
   ]
 }
 
-async function harness(adapter: DelegationAdapter) {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-delegation-e2e-')); roots.push(root)
+async function harness(adapter: DelegationAdapter, existingRoot?: string) {
+  const root = existingRoot ?? await mkdtemp(join(tmpdir(), 'dsh-home-activity-delegation-e2e-'))
+  if (existingRoot === undefined) roots.push(root)
   const ctx = new Context(); contexts.push(ctx)
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(SessionPersistenceJsonl, { root: join(root, 'sessions'), compression: 'none' })
@@ -132,6 +144,9 @@ async function harness(adapter: DelegationAdapter) {
   await ctx.plugin(HomeActivityDelegations)
   ctx.provide('workspaceRegistry', { get: () => undefined, list: () => [] } as never)
   await ctx.plugin(HomeActivityAssociationService)
+  await ctx.plugin(HomeActivityArtifactService)
+  await ctx.plugin(HomeActivityReviewService)
+  await ctx.plugin(HomeActivityAnnotationService)
   await ctx.plugin(commandHomeActivity)
   ctx.llm.registerAdapter(['mock'], adapter)
   const parent = await ctx.agentLoop.create(SessionId(`activity-parent-${randomUUID()}`), {
@@ -196,31 +211,43 @@ it('starts the real DSH spawn provider from `/activity`, then records success an
 
   const admitted = await run(ctx, parent, ` delegate ${activity.id} spawn Review release notes for missing migration steps.`)
 
-  expect(admitted.kind).toBe('success')
+  expect(admitted.kind, admitted.text).toBe('success')
   expect(admitted.text).toContain('Delegation admitted: provider spawn')
   expect(admitted.text).toContain('Requested task: Review release notes for missing migration steps.')
   expect(admitted.text).toContain(`Requesting Session: ${parent.session.id}`)
+  expect(admitted.text).toContain('DSH profile: unavailable (the runtime did not provide profile metadata).')
+  expect(admitted.text).toContain('Active Agent preset: unavailable (the Agent preset registry is unavailable).')
+  expect(admitted.text).toContain('These classifications do not establish sandbox isolation, permission enforcement, or Skill qualification.')
   expect(admitted.text).toContain('Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.')
   expect(admitted.text).toContain('not yet available, verified, or accepted')
   await started.promise
 
   const initialRecord = ctx.homeActivityDelegations.list(activity.id)[0]
   expect(initialRecord).toMatchObject({ status: 'admitted', request: { provider: 'spawn' } })
-  expect(initialRecord?.admission?.childSessionId).toBeDefined()
-  expect(initialRecord?.admission?.activationName).toMatch(/^activity-[a-f0-9]{8}$/u)
-  expect(initialRecord?.admission?.runId).toBeDefined()
+  const initialAdmission = initialRecord?.admission
+  if (initialAdmission === undefined
+    || initialAdmission.provider === 'codex'
+    || initialAdmission.provider === 'claude-code') {
+    throw new Error('The spawn activation has no DSH child Session admission.')
+  }
+  expect(initialAdmission.childSessionId).toBeDefined()
+  expect(initialAdmission.activationName).toMatch(/^activity-[a-f0-9]{8}$/u)
+  expect(initialAdmission.runId).toBeDefined()
   const pending = await run(ctx, parent, ` open ${activity.id}`)
-  expect(pending.text).toContain('Status: admitted; not verified or accepted.')
-  expect(pending.text).toContain('Provider outcome is pending')
+  expect(pending.text).toContain('Delegation state: admitted.')
+  expect(pending.text).toContain('Provider report: not recorded; opening the Activity does not wait for the child Session.')
+  expect(pending.text).toContain('User disposition: pending; no review has been recorded.')
   expect(pending.text).toContain('Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.')
 
   release.resolve(undefined)
   await waitForReported(ctx, initialRecord!.id)
   const reportedSuccess = await run(ctx, parent, ` open ${activity.id}`)
-  expect(reportedSuccess.text).toContain('Status: provider reported; not verified or accepted.')
+  expect(reportedSuccess.text).toContain('Delegation state: reported.')
+  expect(reportedSuccess.text).toContain('Provider report: received; DSH has not independently verified it.')
+  expect(reportedSuccess.text).toContain('User disposition: pending; no review has been recorded.')
   expect(reportedSuccess.text).toContain('Provider-reported output: The migration section needs one upgrade command.')
-  expect(reportedSuccess.text).toContain(`Child Session: ${initialRecord!.admission!.childSessionId}`)
-  expect(reportedSuccess.text).toContain(`Activation run: ${initialRecord!.admission!.runId}`)
+  expect(reportedSuccess.text).toContain(`Child Session: ${initialAdmission.childSessionId}`)
+  expect(reportedSuccess.text).toContain(`Activation run: ${initialAdmission.runId}`)
 
   const failed = await run(ctx, parent, ` delegate ${activity.id} spawn Check the release checklist for missing verification.`)
   expect(failed.kind).toBe('success')
@@ -231,10 +258,63 @@ it('starts the real DSH spawn provider from `/activity`, then records success an
   await waitForReported(ctx, failureRequestId!)
   const reportedFailure = await run(ctx, parent, ` open ${activity.id}`)
   expect(reportedFailure.text).toContain('Provider stop reason: error')
-  expect(reportedFailure.text).toContain('not verified or accepted')
+  expect(reportedFailure.text).toContain('Provider report: received; DSH has not independently verified it.')
   expect(adapter.requests).toHaveLength(2)
   expect(parent.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toEqual([])
   expect(parent.session.snapshotEvents().filter(event => event.type.startsWith('goal/'))).toEqual([])
+})
+
+it('requires an explicit in-scope continuation and does not rearm it after restart', async () => {
+  const adapter = new DelegationAdapter([
+    { chunks: textResponse('The checklist now has a recorded verification step.') },
+  ])
+  const { ctx, parent, root } = await harness(adapter)
+  const activity = await ctx.homeActivities.create({
+    name: 'Release readiness',
+    objective: 'Prepare the next release for review.',
+    boundaries: { inScope: ['Review the release checklist.'], outOfScope: ['Do not publish the release.'] },
+  })
+  const start = vi.spyOn(ctx.subagents, 'startActivation')
+
+  const unrelated = await run(ctx, parent, ` continue ${activity.id} spawn out-of-scope:1 Publish the release.`)
+  const unavailableScope = await run(ctx, parent, ` continue ${activity.id} spawn in-scope:2 Publish the release.`)
+  expect(unrelated.kind).toBe('error')
+  expect(unavailableScope.kind).toBe('error')
+  expect(unavailableScope.text).toContain('Choose an existing in-scope statement numbered 1–1')
+  expect(start).not.toHaveBeenCalled()
+  expect(ctx.homeActivityDelegations.list(activity.id)).toEqual([])
+
+  const admitted = await run(ctx, parent, ` continue ${activity.id} spawn in-scope:1 Record the checklist verification step.`)
+  expect(admitted.kind).toBe('success')
+  expect(admitted.text).toContain('This is a new explicit provider request, not a resume of prior execution.')
+  expect(admitted.text).toContain('Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.')
+  expect(start).toHaveBeenCalledTimes(1)
+  const spec = start.mock.calls[0]?.[0]
+  expect(spec?.prompt).toEqual([{
+    type: 'text',
+    text: [
+      'Continue the saved Activity objective: "Prepare the next release for review."',
+      'Selected in-scope statement 1: "Review the release checklist."',
+      'User-requested bounded next step: "Record the checklist verification step."',
+      'Do not start an unrelated objective. If the requested step needs a different objective, stop and ask the user.',
+      'Activity scope is descriptive context; it does not grant or restrict the provider’s native permissions or DSH runtime policy.',
+    ].join('\n'),
+  }])
+  const saved = ctx.homeActivityDelegations.list(activity.id)[0]
+  if (saved === undefined) throw new Error('The explicit continuation request was not saved.')
+  expect(saved.request.task).toContain('Selected in-scope statement 1: "Review the release checklist."')
+  expect(saved.request.task).toContain('User-requested bounded next step: "Record the checklist verification step."')
+  await waitForReported(ctx, saved.id)
+
+  await ctx.fiber.dispose()
+  contexts.splice(contexts.indexOf(ctx), 1)
+  const restarted = await harness(new DelegationAdapter([]), root)
+  const restartStart = vi.spyOn(restarted.ctx.subagents, 'startActivation')
+  const reopened = await run(restarted.ctx, restarted.parent, ` open ${activity.id}`)
+  expect(reopened.text).toContain('Provider report: received; DSH has not independently verified it.')
+  expect(reopened.text).toContain('The checklist now has a recorded verification step.')
+  expect(restartStart).not.toHaveBeenCalled()
+  expect(restarted.parent.session.snapshotEvents().filter(event => event.type.startsWith('goal/'))).toEqual([])
 })
 
 it('rejects malformed delegation commands before saving or starting work', async () => {
@@ -264,12 +344,389 @@ it('rejects malformed delegation commands before saving or starting work', async
   expect(malformed.text).toContain('Usage: /activity create <JSON>')
   expect(invalidGrammar.text).toContain('Usage: /activity delegate')
   expect(invalidId.text).toContain('Activity id must be a UUID')
-  expect(unsupportedProvider.text).toContain('Choose spawn')
+  expect(unsupportedProvider.text).toContain('Choose spawn, codex, or claude-code')
   expect(emptyTask.text).toContain('Delegated task is invalid')
   expect(oversizedUtf8.text).toContain('UTF-8 bytes')
   expect(missingActivity.text).toContain('No saved Activity')
   expect(start).not.toHaveBeenCalled()
   expect(ctx.homeActivityDelegations.list(activity.id)).toEqual([])
+})
+
+it('runs Codex through the external provider seam and records a one-shot report without a DSH Session', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  const result = Promise.withResolvers<SubagentResult>()
+  const providerRequests: ResolvedSubagentStartRequest[] = []
+  const provider: SubagentProvider = {
+    name: 'codex',
+    capabilities: NO_START_CAPABILITIES,
+    inheritsParentContext: false,
+    async start(request): Promise<SubagentRun> {
+      providerRequests.push(request)
+      return {
+        id: SessionId('codex-provider-run-1'),
+        result: result.promise,
+        dispose: async () => {},
+      }
+    },
+  }
+  ctx.subagents.registerProvider(provider)
+  const start = vi.spyOn(ctx.subagents, 'startActivation')
+  const warnings = vi.spyOn(ctx.logger, 'warn')
+  const activity = await ctx.homeActivities.create({
+    name: 'Codex one-shot review',
+    objective: 'Receive a bounded Codex report.',
+    boundaries: { inScope: ['Review a checklist.'], outOfScope: ['Do not publish.'] },
+  })
+
+  const admitted = await run(ctx, parent, ` delegate ${activity.id} codex Review the release checklist once.`)
+  expect(admitted.kind, warnings.mock.calls.map(call => String(call[0])).join('\n')).toBe('success')
+  expect(admitted.text).toContain('provider codex (native Codex, external one-shot)')
+  expect(admitted.text).toContain('Runtime profile and preset: unavailable (the native Codex provider does not expose DSH composition).')
+  expect(admitted.text).not.toContain('record predates profile and preset capture')
+  expect(admitted.text).toContain('Codex adapter run id (not a DSH Session or native Codex conversation id): codex-provider-run-1')
+  expect(admitted.text).not.toContain('Child Session:')
+  expect(admitted.text).toContain('native Codex configuration and its configured permission mode govern this execution')
+  expect(admitted.text).toContain('Activity does not expose transcript inspection, continuation, resume, or rollback.')
+
+  const spec = start.mock.calls[0]?.[0]
+  expect(spec).toMatchObject({ provider: 'codex', delivery: 'caller' })
+  expect(spec?.childId).toBeUndefined()
+  expect(spec?.name).toBeUndefined()
+  expect(spec?.agentOptions).toBeUndefined()
+  expect(spec?.prompt).toEqual([{ type: 'text', text: 'Review the release checklist once.' }])
+  expect(providerRequests).toHaveLength(1)
+  expect(providerRequests[0]?.prompt).toEqual([{ type: 'text', text: 'Review the release checklist once.' }])
+  const request = ctx.homeActivityDelegations.list(activity.id)[0]
+  expect(request?.request).toMatchObject({ provider: 'codex', task: 'Review the release checklist once.' })
+  expect(request?.request).not.toHaveProperty('requestedChildSessionId')
+  expect(request?.admission).toMatchObject({
+    provider: 'codex',
+    providerRunId: 'codex-provider-run-1',
+  })
+  expect(request?.admission).not.toHaveProperty('childSessionId')
+
+  const pending = await run(ctx, parent, ` open ${activity.id}`)
+  expect(pending.text).toContain('Runtime profile and preset: unavailable (the native Codex provider does not expose DSH composition).')
+  expect(pending.text).not.toContain('record predates profile and preset capture')
+  expect(pending.text).toContain('Delegation state: admitted.')
+  expect(pending.text).toContain('User disposition: pending; no review has been recorded.')
+  expect(pending.text).toContain('Verification evidence: none recorded.')
+  expect(pending.text).toContain('Codex outcome is pending.')
+  expect(pending.text).not.toContain('Child Session: codex-provider-run-1')
+  result.resolve({
+    stopReason: 'completed',
+    output: [{ type: 'text', text: 'The checklist is missing a migration step.' }],
+  })
+  await waitForReported(ctx, request!.id)
+  const reported = await run(ctx, parent, ` open ${activity.id}`)
+  expect(reported.text).toContain('Runtime profile and preset: unavailable (the native Codex provider does not expose DSH composition).')
+  expect(reported.text).not.toContain('record predates profile and preset capture')
+  expect(reported.text).toContain('Delegation state: reported.')
+  expect(reported.text).toContain('Provider report: received; DSH has not independently verified it.')
+  expect(reported.text).toContain('User disposition: pending; no review has been recorded.')
+  expect(reported.text).toContain('Verification evidence: none recorded.')
+  expect(reported.text).toContain('Codex-reported output: The checklist is missing a migration step.')
+  expect(reported.text).toContain('Codex adapter run id (not a DSH Session or native Codex conversation id): codex-provider-run-1')
+  expect(reported.text).not.toContain('Child Session: codex-provider-run-1')
+  expect(start).toHaveBeenCalledTimes(1)
+  expect(parent.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toEqual([])
+  expect(parent.session.snapshotEvents().filter(event => event.type.startsWith('goal/'))).toEqual([])
+})
+
+it('runs Claude Code through the external provider seam and records its one-shot report without a DSH Session', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  const result = Promise.withResolvers<SubagentResult>()
+  const providerRequests: ResolvedSubagentStartRequest[] = []
+  ctx.subagents.registerProvider({
+    name: 'claude-code',
+    capabilities: NO_START_CAPABILITIES,
+    inheritsParentContext: false,
+    async start(request): Promise<SubagentRun> {
+      providerRequests.push(request)
+      return {
+        id: SessionId('claude-code-provider-run-1'),
+        result: result.promise,
+        dispose: async () => {},
+      }
+    },
+  })
+  const start = vi.spyOn(ctx.subagents, 'startActivation')
+  const activity = await ctx.homeActivities.create({
+    name: 'Claude Code one-shot review',
+    objective: 'Receive a bounded Claude Code report.',
+    boundaries: { inScope: ['Review a checklist.'], outOfScope: ['Do not publish.'] },
+  })
+
+  const admitted = await run(ctx, parent, ` delegate ${activity.id} claude-code Review the release checklist once.`)
+  expect(admitted).toMatchObject({ kind: 'success' })
+  expect(admitted.text).toContain('provider claude-code (native Claude Code, external one-shot)')
+  expect(admitted.text).toContain('Claude Code adapter run id (not a DSH Session or native Claude Code conversation id): claude-code-provider-run-1')
+  expect(admitted.text).toContain('Runtime profile and preset: unavailable (the native Claude Code provider does not expose DSH composition).')
+  expect(admitted.text).not.toContain('Child Session:')
+  expect(admitted.text).toContain('native Claude Code configuration and permission handling govern this one-shot execution')
+  expect(admitted.text).toContain('Activity does not expose transcript inspection, continuation, resume, or rollback.')
+
+  const spec = start.mock.calls[0]?.[0]
+  expect(spec).toMatchObject({ provider: 'claude-code', delivery: 'caller' })
+  expect(spec?.childId).toBeUndefined()
+  expect(spec?.name).toBeUndefined()
+  expect(spec?.agentOptions).toBeUndefined()
+  expect(spec?.prompt).toEqual([{ type: 'text', text: 'Review the release checklist once.' }])
+  expect(providerRequests).toHaveLength(1)
+  expect(providerRequests[0]?.prompt).toEqual([{ type: 'text', text: 'Review the release checklist once.' }])
+  const request = ctx.homeActivityDelegations.list(activity.id)[0]
+  expect(request?.request).toMatchObject({ provider: 'claude-code', task: 'Review the release checklist once.' })
+  expect(request?.request.executionSelection).toEqual({
+    provider: 'claude-code', unavailableReason: 'external-provider-does-not-expose-dsh-composition',
+  })
+  expect(request?.request).not.toHaveProperty('requestedChildSessionId')
+  expect(request?.admission).toMatchObject({
+    provider: 'claude-code',
+    providerRunId: 'claude-code-provider-run-1',
+  })
+  expect(request?.admission).not.toHaveProperty('childSessionId')
+
+  result.resolve({
+    stopReason: 'completed',
+    output: [{ type: 'text', text: 'The checklist needs one migration step.' }],
+  })
+  await waitForReported(ctx, request!.id)
+  const reopened = await run(ctx, parent, ` open ${activity.id}`)
+  expect(reopened.text).toContain('Delegation state: reported.')
+  expect(reopened.text).toContain('Provider report: received; DSH has not independently verified it.')
+  expect(reopened.text).toContain('Reported outcome: provider-reported completion; not independently verified.')
+  expect(reopened.text).toContain('Provider report source: subagent-activation-result.')
+  expect(reopened.text).toContain('Freshness: unknown; DSH has no freshness check for this saved report, so it may be stale.')
+  expect(reopened.text).toContain('Claude Code-reported output: The checklist needs one migration step.')
+  expect(reopened.text).toContain('Claude Code adapter run id (not a DSH Session or native Claude Code conversation id): claude-code-provider-run-1')
+  expect(reopened.text).not.toContain('Child Session: claude-code-provider-run-1')
+  expect(start).toHaveBeenCalledTimes(1)
+  expect(parent.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toEqual([])
+  expect(parent.session.snapshotEvents().filter(event => event.type.startsWith('goal/'))).toEqual([])
+})
+
+it('reports a missing native Claude Code provider without admitting or retrying work', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  const activity = await ctx.homeActivities.create({
+    name: 'Unavailable Claude Code route',
+    objective: 'Report a missing provider without execution.',
+    boundaries: { inScope: ['Show the provider error.'], outOfScope: ['Start another provider.'] },
+  })
+  const start = vi.spyOn(ctx.subagents, 'startActivation')
+
+  const rejected = await run(ctx, parent, ` delegate ${activity.id} claude-code Review the release checklist.`)
+
+  expect(rejected).toMatchObject({ kind: 'error' })
+  expect(rejected.text).toContain('The Claude Code provider is unavailable; DSH did not attempt activation.')
+  expect(ctx.homeActivityDelegations.list(activity.id)[0]).toMatchObject({
+    status: 'not-admitted',
+    request: { provider: 'claude-code' },
+    failure: { message: 'The Claude Code provider is unavailable; DSH did not attempt activation.' },
+  })
+  expect(start).not.toHaveBeenCalled()
+  const reopened = await run(ctx, parent, ` open ${activity.id}`)
+  expect(reopened.text).toContain('Status: not admitted.')
+  expect(reopened.text).toContain('The Claude Code provider is unavailable; DSH did not attempt activation.')
+})
+
+it('keeps a possibly-started Claude Code rejection unconfirmed and never retries on reopen', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  const activity = await ctx.homeActivities.create({
+    name: 'Claude Code startup uncertainty',
+    objective: 'Keep an ambiguous external start from being retried.',
+    boundaries: { inScope: ['Record whether startup is confirmed.'], outOfScope: ['Retry external work.'] },
+  })
+  let providerStartedTask = false
+  ctx.subagents.registerProvider({
+    name: 'claude-code',
+    capabilities: NO_START_CAPABILITIES,
+    inheritsParentContext: false,
+    async start(): Promise<SubagentRun> {
+      providerStartedTask = true
+      throw new Error('simulated transport loss after SDK dispatch')
+    },
+  })
+  const start = vi.spyOn(ctx.subagents, 'startActivation')
+
+  const rejected = await run(ctx, parent, ` delegate ${activity.id} claude-code Review the checklist once.`)
+  expect(rejected.kind).toBe('error')
+  expect(providerStartedTask).toBe(true)
+  expect(rejected.text).toContain('DSH could not confirm whether Claude Code started.')
+  expect(rejected.text).toContain('It may have started; do not repeat this task unless you have independently confirmed it did not start.')
+  expect(ctx.homeActivityDelegations.list(activity.id)[0]).toMatchObject({
+    status: 'unconfirmed',
+    request: { provider: 'claude-code' },
+    uncertainty: { reason: 'claude-code-start-outcome-unknown' },
+  })
+
+  const reopened = await run(ctx, parent, ` open ${activity.id}`)
+  expect(reopened.text).toContain('Status: unconfirmed; saved facts do not establish whether the external Claude Code run started.')
+  expect(reopened.text).toContain('No Claude Code execution id was saved.')
+  expect(reopened.text).toContain('do not repeat the task unless you independently confirm it did not start')
+  expect(reopened.text).toContain('Reason: DSH did not confirm whether the external Claude Code run started.')
+  expect(providerStartedTask).toBe(true)
+  expect(start).toHaveBeenCalledTimes(1)
+})
+
+it('reports a missing native Codex provider without admitting or retrying work', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  const activity = await ctx.homeActivities.create({
+    name: 'Unavailable Codex route',
+    objective: 'Report a missing provider without execution.',
+    boundaries: { inScope: ['Show the provider error.'], outOfScope: ['Start another provider.'] },
+  })
+  const start = vi.spyOn(ctx.subagents, 'startActivation')
+
+  const rejected = await run(ctx, parent, ` delegate ${activity.id} codex Review the release checklist.`)
+
+  expect(rejected).toMatchObject({ kind: 'error' })
+  expect(rejected.text).toContain('The Codex provider is unavailable; DSH did not attempt activation.')
+  expect(ctx.homeActivityDelegations.list(activity.id)[0]).toMatchObject({
+    status: 'not-admitted',
+    request: { provider: 'codex' },
+    failure: { message: 'The Codex provider is unavailable; DSH did not attempt activation.' },
+  })
+  expect(start).not.toHaveBeenCalled()
+  const reopened = await run(ctx, parent, ` open ${activity.id}`)
+  expect(reopened.text).toContain('Status: not admitted.')
+  expect(reopened.text).toContain('The Codex provider is unavailable; DSH did not attempt activation.')
+})
+
+it('records a Codex provider replacement before dispatch as not admitted', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  let originalStarts = 0
+  let replacementStarts = 0
+  const unregister = ctx.subagents.registerProvider({
+    name: 'codex',
+    capabilities: NO_START_CAPABILITIES,
+    inheritsParentContext: false,
+    async start(): Promise<SubagentRun> {
+      originalStarts += 1
+      throw new Error('provider start must not be called after replacement')
+    },
+  })
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const ensure = ctx.workingDirectory.ensure.bind(ctx.workingDirectory)
+  const directory = vi.spyOn(ctx.workingDirectory, 'ensure').mockImplementation(async (...args) => {
+    entered.resolve(undefined)
+    await release.promise
+    return ensure(...args)
+  })
+  const start = vi.spyOn(ctx.subagents, 'startActivation')
+  const activity = await ctx.homeActivities.create({
+    name: 'Codex provider replacement',
+    objective: 'Report that no task was dispatched when the provider changes.',
+    boundaries: { inScope: ['Record the pre-dispatch failure.'], outOfScope: ['Retry automatically.'] },
+  })
+  const pending = run(ctx, parent, ` delegate ${activity.id} codex Review the release checklist once.`)
+
+  try {
+    await entered.promise
+    unregister()
+    ctx.subagents.registerProvider({
+      name: 'codex',
+      capabilities: NO_START_CAPABILITIES,
+      inheritsParentContext: false,
+      async start(): Promise<SubagentRun> {
+        replacementStarts += 1
+        throw new Error('replacement provider start must not be called')
+      },
+    })
+    release.resolve(undefined)
+    const rejected = await pending
+    expect(rejected.kind).toBe('error')
+    expect(rejected.text).toContain('The Codex provider changed before dispatch, so DSH did not start this task.')
+    expect(rejected.text).not.toContain('do not repeat this task')
+    const saved = ctx.homeActivityDelegations.list(activity.id)[0]
+    expect(saved).toMatchObject({ status: 'not-admitted', request: { provider: 'codex' } })
+    expect(saved?.failure?.message).toContain('DSH did not start this task.')
+    const reopened = await run(ctx, parent, ` open ${activity.id}`)
+    expect(reopened.text).toContain('Status: not admitted.')
+    expect(reopened.text).not.toContain('do not repeat this task')
+    expect(originalStarts).toBe(0)
+    expect(replacementStarts).toBe(0)
+    expect(start).toHaveBeenCalledTimes(1)
+  } finally {
+    release.resolve(undefined)
+    await Promise.allSettled([pending])
+    directory.mockRestore()
+  }
+})
+
+it('records Codex startup preparation failure before provider invocation as not admitted', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  let providerStarts = 0
+  ctx.subagents.registerProvider({
+    name: 'codex',
+    capabilities: NO_START_CAPABILITIES,
+    inheritsParentContext: false,
+    async start(): Promise<SubagentRun> {
+      providerStarts += 1
+      throw new Error('provider must not be called')
+    },
+  })
+  vi.spyOn(ctx.workingDirectory, 'ensure').mockRejectedValue(new Error('directory unavailable'))
+  const activity = await ctx.homeActivities.create({
+    name: 'Codex startup preparation failure',
+    objective: 'Record that DSH did not call the provider when setup failed.',
+    boundaries: { inScope: ['Keep the result safe to retry explicitly.'], outOfScope: ['Retry automatically.'] },
+  })
+
+  const rejected = await run(ctx, parent, ` delegate ${activity.id} codex Review the release checklist once.`)
+  expect(rejected.kind).toBe('error')
+  expect(rejected.text).toContain('DSH could not complete startup preparation and did not call the Codex provider.')
+  expect(rejected.text).toContain('Check the DSH runtime, current Session, Activity, and provider')
+  expect(rejected.text).not.toContain('do not repeat this task')
+  const saved = ctx.homeActivityDelegations.list(activity.id)[0]
+  expect(saved).toMatchObject({ status: 'not-admitted', request: { provider: 'codex' } })
+  expect(saved?.failure?.message).toContain('did not call the Codex provider')
+  expect(providerStarts).toBe(0)
+
+  const reopened = await run(ctx, parent, ` open ${activity.id}`)
+  expect(reopened.text).toContain('Status: not admitted.')
+  expect(reopened.text).toContain('did not call the Codex provider')
+  expect(providerStarts).toBe(0)
+})
+
+it('keeps a possibly-started Codex rejection unconfirmed and never retries on reopen', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  const activity = await ctx.homeActivities.create({
+    name: 'Codex startup uncertainty',
+    objective: 'Keep an ambiguous external start from being retried.',
+    boundaries: { inScope: ['Record whether startup is confirmed.'], outOfScope: ['Retry external work.'] },
+  })
+  let providerStartedTask = false
+  ctx.subagents.registerProvider({
+    name: 'codex',
+    capabilities: NO_START_CAPABILITIES,
+    inheritsParentContext: false,
+    async start(): Promise<SubagentRun> {
+      providerStartedTask = true
+      throw new Error('simulated transport loss after turn/start')
+    },
+  })
+
+  const rejected = await run(ctx, parent, ` delegate ${activity.id} codex Review the checklist once.`)
+  expect(rejected.kind).toBe('error')
+  expect(providerStartedTask).toBe(true)
+  expect(rejected.text).toContain('DSH could not confirm whether Codex started.')
+  expect(rejected.text).toContain('It may have started; do not repeat this task unless you have independently confirmed it did not start.')
+  const saved = ctx.homeActivityDelegations.list(activity.id)[0]
+  expect(saved).toMatchObject({
+    status: 'unconfirmed',
+    request: { provider: 'codex' },
+    uncertainty: { reason: 'codex-start-outcome-unknown' },
+  })
+  expect(saved?.admission).toBeUndefined()
+  expect(saved?.failure).toBeUndefined()
+
+  const reopened = await run(ctx, parent, ` open ${activity.id}`)
+  expect(reopened.text).toContain('Status: unconfirmed; saved facts do not establish whether the external Codex run started.')
+  expect(reopened.text).toContain('No Codex execution id was saved.')
+  expect(reopened.text).toContain('do not repeat the task unless you independently confirm it did not start')
+  expect(reopened.text).toContain('Reason: DSH did not confirm whether the external Codex run started.')
+  expect(providerStartedTask).toBe(true)
 })
 
 it('stops before provider startup when a request cannot be durably saved', async () => {
@@ -330,9 +787,11 @@ it('renders every saved delegation state with the right uncertainty and fact ref
     task: 'Review the proposed release checklist.',
     parentSessionId: parent.session.id,
   })
+  if (requested.request.provider !== 'spawn') throw new Error('This rendering case must use a DSH spawn request.')
+  const requestedChildSessionId = requested.request.requestedChildSessionId
   const requestedText = renderActivityDelegation(requested).join('\n')
   expect(requestedText).toContain('request saved; provider admission has not been confirmed')
-  expect(requestedText).toContain(`Requested child Session id (not admission evidence): ${requested.request.requestedChildSessionId}`)
+  expect(requestedText).toContain(`Requested child Session id (not admission evidence): ${requestedChildSessionId}`)
 
   const notAdmitted = await ctx.homeActivityDelegations.createRequest({
     activityId: activity.id,
@@ -358,7 +817,7 @@ it('renders every saved delegation state with the right uncertainty and fact ref
     parentSessionId: parent.session.id,
   })
   const admitted = await ctx.homeActivityDelegations.recordAdmitted(admittedRequest.id, admission)
-  expect(renderActivityDelegation(admitted).join('\n')).toContain('Provider outcome is pending')
+  expect(renderActivityDelegation(admitted).join('\n')).toContain('Provider report: not recorded; opening the Activity does not wait for the child Session.')
 
   const missingAdmission: ActivityDelegation = {
     ...requested,
@@ -381,8 +840,8 @@ it('renders every saved delegation state with the right uncertainty and fact ref
   }
   const noAdmissionText = renderActivityDelegation(noAdmissionUncertainty).join('\n')
   expect(noAdmissionText).toContain('saved facts do not establish whether DSH admitted the request')
-  expect(noAdmissionText).toContain(`Requested child Session id (not admission evidence): ${requested.request.requestedChildSessionId}`)
-  expect(noAdmissionText).toContain('Check /activity sessions for this exact id and inspect that Session before deciding whether to retry.')
+  expect(noAdmissionText).toContain(`Requested child Session id (not admission evidence): ${requestedChildSessionId}`)
+  expect(noAdmissionText).toContain('Check /activity sessions for this exact id and its summary metadata before deciding whether to retry.')
   expect(noAdmissionText).toContain('A missing Session record does not confirm that admission failed.')
   const missingReason = renderActivityDelegation({ ...noAdmissionUncertainty, uncertainty: undefined }).join('\n')
   expect(missingReason).toContain('The persisted lifecycle state is incomplete.')
@@ -434,7 +893,8 @@ it('records child and run references and clips a separately attributed provider 
   expect(opened.text).toContain('Additional provider output blocks: reasoning')
   expect(opened.text).toContain('Provider-reported text was clipped at 16384 UTF-8 bytes.')
   expect(opened.text).toContain('Provider diagnostic: Provider-authored diagnostic.')
-  expect(opened.text).toContain('not verified or accepted')
+  expect(opened.text).toContain('Provider report: received; DSH has not independently verified it.')
+  expect(opened.text).toContain('User disposition: pending; no review has been recorded.')
 })
 
 it('renders admitted results without a run id and leaves restart recovery unconfirmed', async () => {
@@ -500,7 +960,7 @@ it('records an unknown settled result and contains persistence and observer fail
   })
   let opened = await run(ctx, parent, ` open ${activity.id}`)
   expect(opened.text).toContain('accepted activation did not provide a usable report')
-  expect(opened.text).toContain('The provider report is not verified or accepted.')
+  expect(opened.text).toContain('The provider report is unconfirmed; DSH has not independently verified it, and user disposition is shown separately.')
 
   const failingResult = Promise.withResolvers<SubagentResult>()
   vi.spyOn(ctx.subagents, 'startActivation')

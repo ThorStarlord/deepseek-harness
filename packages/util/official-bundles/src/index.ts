@@ -1,5 +1,5 @@
 /**
- * Installation-owned bundle lists and the plugin manager's protected and presented packages, kept apart from the code that applies them.
+ * Installation-owned bundle lists, explicit experimental package names, and the plugin manager's protected and presented packages.
  * @module @deepseek-ai/dsh-official-bundles
  */
 
@@ -10,6 +10,7 @@ export {
   RETIRED_BUNDLES, type ProfileTemplate,
 } from './bundles.ts'
 export { EXPERIMENTAL_BUNDLES, EXTENSION_BUNDLES, HIDDEN_BUNDLES, MORE_BUNDLES, PROTECTED_PLUGINS } from './plugin-manager.ts'
+export { EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS } from './experimental-packages.ts'
 
 /** Offline discovery metadata; installation state and the requested version belong to the running host. */
 export interface OfficialBundleCatalogEntry {

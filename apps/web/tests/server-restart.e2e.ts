@@ -2,13 +2,44 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { chromium } from 'playwright'
+import { dump } from 'js-yaml'
 import { expect, it, onTestFailed, onTestFinished } from 'vitest'
-import { REPO_ROOT, newEnglishPage, saveFailureShot, writeComposerDraft } from './support.ts'
+import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import { bundlePatchPaths, composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
+import {
+  connectFreshWorkspace, REPO_ROOT, newEnglishPage, saveFailureShot, writeComposerDraft,
+} from './support.ts'
+
+const BASE_PATCH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
+const WEB_BUNDLE = join(REPO_ROOT, 'packages/bundle/web-app')
+const WEB_BUNDLE_MANIFEST = (JSON.parse(readFileSync(join(WEB_BUNDLE, 'package.json'), 'utf8')) as {
+  dsh: { bundle: { patch: string[] } }
+}).dsh.bundle
+const WEB_PATCHES = bundlePatchPaths(WEB_BUNDLE, WEB_BUNDLE_MANIFEST)
+
+/** Add the deterministic external one-shot test provider to the shipped standard Agent preset. */
+async function writeActivityRecoveryOverlay(root: string): Promise<string> {
+  const layers = [
+    loadOverlayPatches('Activity recovery test overlay', BASE_PATCH),
+    ...WEB_PATCHES.map(file => loadOverlayPatches('Activity recovery test overlay', file)),
+  ]
+  const row = composeEntries(layers).find(entry => entry.id === 'preset-standard')
+  if (row === undefined) throw new Error('The Web bundle has no standard Agent preset')
+  const config = row.config as { readonly plugins: readonly Record<string, unknown>[] }
+  const fixture = pathToFileURL(fileURLToPath(new URL('./fixtures/restart-home-activity-codex.js', import.meta.url))).href
+  const patch = join(root, 'activity-recovery-test-preset.patch.yml')
+  await writeFile(patch, dump([{
+    id: 'preset-standard',
+    config: { ...config, plugins: [...config.plugins, { id: 'restart-home-activity-codex', name: fixture }] },
+  }], { schema: entryListSchema, noRefs: true, lineWidth: -1 }), 'utf8')
+  return patch
+}
 
 class RestartableServer {
   private child: ChildProcess | undefined
@@ -16,7 +47,11 @@ class RestartableServer {
   private output = ''
   readonly startupBlocked = Promise.withResolvers<undefined>()
 
-  constructor(private readonly world: string, private readonly modelUrl: string) {}
+  constructor(
+    private readonly world: string,
+    private readonly modelUrl: string,
+    private readonly extraPatches: readonly string[] = [],
+  ) {}
 
   async start(port: number, holdStartup = false): Promise<string> {
     if (this.child !== undefined) throw new Error('Server is already running')
@@ -26,6 +61,7 @@ class RestartableServer {
       join(REPO_ROOT, 'apps/cli/lib/bin.js'), '--profile', 'web',
       '--patch', fileURLToPath(new URL('./pin-browse-picker.overlay.yml', import.meta.url)),
       '--patch', fileURLToPath(new URL('./fixtures/restart-startup.overlay.yml', import.meta.url)),
+      ...this.extraPatches.flatMap(patch => ['--patch', patch]),
       '--no-open', '--port', String(port),
     ], {
       cwd: this.world,
@@ -79,6 +115,12 @@ class RestartableServer {
 
   resumeStartup(): void {
     if (this.child?.connected) this.child.send('resume-startup')
+  }
+
+  processState(): string {
+    const child = this.child
+    if (child === undefined) return 'no-child'
+    return `pid:${child.pid ?? 'none'},exit:${child.exitCode ?? 'running'},signal:${child.signalCode ?? 'none'}`
   }
 
   logs(): string { return this.output.replace(/([?&]token=)[A-Za-z0-9_-]+/gu, '$1<redacted>') }
@@ -276,10 +318,53 @@ it('keeps a live blank Session blank across a graceful server restart', async ()
 
 it('creates and reopens a named Activity from a new Session after a Web process restart', async () => {
   const world = await mkdtemp(join(tmpdir(), 'dsh-home-activity-restart-'))
-  const server = new RestartableServer(world, 'http://127.0.0.1:9')
+  let modelRequests = 0
+  const model = createServer((request, response) => {
+    request.resume()
+    request.once('end', () => {
+      modelRequests++
+      const outputText = modelRequests === 1
+        ? 'The DSH child reported a saved recovery summary.'
+        : 'The recovery parent Session is ready.'
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      const events = [
+        { type: 'message_start', message: { id: `activity-recovery-${String(modelRequests)}`, model: 'mock-model', usage: { input_tokens: 3, output_tokens: 0 } } },
+        { type: 'content_block_start', index: 0, content_block: { type: 'text', text: outputText } },
+        { type: 'content_block_stop', index: 0 },
+        { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 1 } },
+        { type: 'message_stop' },
+      ]
+      response.end(events.map(event => 'data: ' + JSON.stringify(event) + '\n\n').join(''))
+    })
+  })
+  await new Promise<void>((resolve, reject) => {
+    model.once('error', reject)
+    model.listen(0, '127.0.0.1', resolve)
+  })
+  const modelAddress = model.address()
+  if (modelAddress === null || typeof modelAddress === 'string') throw new Error('Model fixture did not listen')
+  const providerPatch = await writeActivityRecoveryOverlay(world)
+  const server = new RestartableServer(world, `http://127.0.0.1:${String(modelAddress.port)}`, [providerPatch])
+  const startServer = async (stage: string, port: number) => {
+    try {
+      return await server.start(port)
+    } catch (error: unknown) {
+      const output = server.logs()
+      const errorTypes = [...new Set([...output.matchAll(/\b[A-Z][A-Za-z0-9]*(?:Error|Exception)\b/gu)].map(match => match[0]))]
+      const errorName = error instanceof Error ? error.name : 'unknown'
+      const errorCode = typeof error === 'object' && error !== null && 'code' in error
+        ? String(error.code)
+        : 'none'
+      throw new Error(`${stage} Web startup did not reach readiness (${server.processState()}; startup error type: ${errorName}; code: ${errorCode}; output bytes: ${output.length}; mentions overlay: ${output.includes('activity-recovery-test-preset.patch.yml')}; mentions fixture: ${output.includes('restart-home-activity-codex')}; server error types: ${errorTypes.join(', ') || 'none'}).`)
+    }
+  }
   onTestFinished(async () => {
     const failures: unknown[] = []
     await server.stop().catch((error: unknown) => failures.push(error))
+    await new Promise<void>((resolve, reject) => {
+      model.close((error) => { if (error) reject(error); else resolve() })
+      model.closeAllConnections()
+    }).catch((error: unknown) => failures.push(error))
     await rm(world, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
     if (failures.length > 0) throw new AggregateError(failures, 'Home Activity restart test cleanup failed')
   })
@@ -288,7 +373,9 @@ it('creates and reopens a named Activity from a new Session after a Web process 
   await mkdir(firstWorkspacePath)
   await mkdir(secondWorkspacePath)
 
-  const first = await hostRpc(await server.start(0))
+  const firstUrl = await startServer('initial', 0)
+  const webPort = Number(new URL(firstUrl).port)
+  const first = await hostRpc(firstUrl)
   const { workspace: firstWorkspace } = await first<{ workspace: { workspaceId: string } }>('workspace/create', { request: { path: firstWorkspacePath } })
   const { workspace: secondWorkspace } = await first<{ workspace: { workspaceId: string } }>('workspace/create', { request: { path: secondWorkspacePath } })
   const { sessionId: originalSessionId } = await first<{ sessionId: string }>('session/create', {
@@ -297,6 +384,8 @@ it('creates and reopens a named Activity from a new Session after a Web process 
   const { sessionId: linkedSessionId } = await first<{ sessionId: string }>('session/create', {
     request: { workspaceId: secondWorkspace.workspaceId },
   })
+  const registrations = (await readFile(join(world, 'home', 'restart-activity-provider-registered.txt'), 'utf8')).trim().split(/\r?\n/u)
+  expect(registrations.length).toBeGreaterThanOrEqual(1)
   const created = await first<{ result: { kind: string; text?: string } }>('commands/execute', {
     agentId: originalSessionId,
     line: '/activity create {"name":"Release readiness","objective":"Prepare the next release for review.","boundaries":{"inScope":["Review release notes and focused check results."],"outOfScope":["Do not publish or deploy."]}}',
@@ -321,28 +410,149 @@ it('creates and reopens a named Activity from a new Session after a Web process 
     expect(linked.result.kind).toBe('success')
   }
 
+  const dshAdmission = await execute(first, originalSessionId,
+    `/activity delegate ${activityId} spawn Summarize the release checklist once for recovery.`)
+  expect(dshAdmission.result.kind).toBe('success')
+  expect(dshAdmission.result.text).toContain('Delegation admitted: provider spawn')
+  let beforeRestartOverview = ''
+  await expect.poll(async () => {
+    const opened = await execute(first, originalSessionId, `/activity open ${activityId}`)
+    beforeRestartOverview = opened.result.text ?? ''
+    return beforeRestartOverview
+  }, { timeout: 30_000 }).toContain('Provider-reported output: The DSH child reported a saved recovery summary.')
+  const dshDelegationId = /Delegation ([0-9a-f-]{36}): provider spawn/u.exec(beforeRestartOverview)?.[1]
+  if (dshDelegationId === undefined) throw new Error('The DSH result did not preserve its delegation identity')
+  const artifact = await execute(first, originalSessionId,
+    `/activity artifact add ${activityId} ${dshDelegationId} ${firstWorkspace.workspaceId} {"label":"Recovery summary","location":"reports/recovery.md"}`)
+  expect(artifact.result.kind).toBe('success')
+  expect(artifact.result.text).toContain('Artifact reference recorded: Recovery summary')
+
+  const codexReport = await execute(first, originalSessionId,
+    `/activity delegate ${activityId} codex Review the release checklist once for recovery.`)
+  expect(codexReport.result.kind, codexReport.result.text).toBe('success')
+  expect(codexReport.result.text).toContain('Delegation admitted: provider codex')
+  await expect.poll(async () => {
+    const opened = await execute(first, originalSessionId, `/activity open ${activityId}`)
+    beforeRestartOverview = opened.result.text ?? ''
+    return beforeRestartOverview
+  }, { timeout: 15_000 }).toContain('Codex-reported output: The external one-shot report was saved.')
+  const codexUnconfirmed = await execute(first, originalSessionId,
+    `/activity delegate ${activityId} codex Review the release checklist once for recovery.`)
+  expect(codexUnconfirmed.result.kind).toBe('error')
+  expect(codexUnconfirmed.result.text).toContain('DSH could not confirm whether Codex started')
+  expect(codexUnconfirmed.result.text).toContain('do not repeat this task unless you have independently confirmed it did not start')
+
+  const startsPath = join(world, 'home', 'restart-activity-provider-starts.txt')
+  const codexStartsPath = join(world, 'home', 'restart-activity-codex-starts.txt')
+  const providerStartsBeforeRestart = (await readFile(startsPath, 'utf8')).trim().split(/\r?\n/u)
+  const codexStartsBeforeRestart = (await readFile(codexStartsPath, 'utf8')).trim().split(/\r?\n/u)
+  const modelRequestsBeforeRestart = modelRequests
+  expect(providerStartsBeforeRestart).toEqual(['spawn', 'codex'])
+  expect(codexStartsBeforeRestart).toEqual(['start', 'start'])
+
   await server.stop()
-  const second = await hostRpc(await server.start(0))
+  const restartedUrl = await startServer('restarted', webPort)
+  const second = await hostRpc(restartedUrl)
   const sessions = await second<{ items: { sessionId: string; agentAvailable: boolean }[] }>('session/list', { _request: {} })
   expect(sessions.items.some(item => item.sessionId === originalSessionId && item.agentAvailable)).toBe(false)
-  const { sessionId: newSessionId } = await second<{ sessionId: string }>('session/create', {
-    request: { workspaceId: firstWorkspace.workspaceId },
-  })
-  expect(newSessionId).not.toBe(originalSessionId)
-  const secondList = await executeActivityCommand(second, newSessionId, '/activity list')
-  expect(secondList.result.text).toContain(activityId)
-  const reopened = await executeActivityCommand(second, newSessionId, `/activity open ${activityId}`)
-  expect(reopened.result.kind).toBe('success')
-  expect(reopened.result.text).toContain(`ID: ${activityId}`)
-  expect(reopened.result.text).toContain('Objective: Prepare the next release for review.')
-  expect(reopened.result.text).toContain('In scope: Review release notes and focused check results.')
-  expect(reopened.result.text).toContain('Out of scope: Do not publish or deploy.')
-  expect(reopened.result.text).toContain(`Workspace: ${basename(firstWorkspacePath)} — ${firstWorkspace.workspaceId}`)
-  expect(reopened.result.text).toContain(`Workspace: ${basename(secondWorkspacePath)} — ${secondWorkspace.workspaceId}`)
-  expect(reopened.result.text).toContain(`DSH Session: ${originalSessionId}`)
-  expect(reopened.result.text).toContain(`DSH Session: ${linkedSessionId}`)
-  expect(reopened.result.text).toContain('these links do not assign Sessions to Workspaces')
-  expect(reopened.result.text).toContain('does not start work or activate a Goal')
+  const browser = await chromium.launch({ headless: true })
+  onTestFinished(() => browser.close())
+  const page = await newEnglishPage(browser)
+  onTestFailed(() => saveFailureShot(page, 'web-e2e-home-activity-process-recovery'))
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => { pageErrors.push(String(error)) })
+  await page.goto(restartedUrl, { waitUntil: 'load' })
+  await page.locator('[data-slot="root"]').waitFor({ state: 'attached', timeout: 20_000 })
+  await page.getByRole('button', { name: 'Continue', exact: true }).click({ timeout: 15_000 })
+  await connectFreshWorkspace(page, world, 'workspace-recovery')
+  const recoveryWorkspaceRow = page.locator('[role="treeitem"][aria-expanded]')
+    .filter({ has: page.getByText('workspace-recovery', { exact: true }) })
+  await recoveryWorkspaceRow.getByText('workspace-recovery', { exact: true }).hover()
+  const createdParentResponse = page.waitForResponse('**/api/session/create')
+  await recoveryWorkspaceRow.getByRole('button', {
+    name: 'New session in workspace-recovery', exact: true,
+  }).click()
+  const createdParent = await createdParentResponse
+  const createdParentBody = await createdParent.json() as {
+    result: { ok: boolean; value: { sessionId: string } }
+  }
+  expect(createdParentBody.result.ok).toBe(true)
+  const newParentSessionId = createdParentBody.result.value.sessionId
+  expect(createdParent.request().postDataJSON()).toHaveProperty(
+    'payload.args.request.sessionId', newParentSessionId,
+  )
+  await page.locator(`[data-conversation-session="${newParentSessionId}"]`).waitFor({ timeout: 15_000 })
+  await expect.poll(async () => await page.evaluate(() => {
+    const selected = localStorage.getItem('dsh.sessions.current')
+    return selected === null ? undefined : (JSON.parse(selected) as { sessionId?: string }).sessionId
+  }), { timeout: 15_000 }).toBe(newParentSessionId)
+  expect(newParentSessionId).not.toBe(originalSessionId)
+  expect(newParentSessionId).not.toBe(linkedSessionId)
+  const recoveryConversation = page.locator(`[data-conversation-session="${newParentSessionId}"]`)
+  await recoveryConversation.waitFor({ timeout: 15_000 })
+  const composer = recoveryConversation.locator('[data-composer-input][contenteditable="true"]')
+  expect(modelRequests).toBe(modelRequestsBeforeRestart)
+  const modelRequestsBeforeRecoveryPrompt = modelRequests
+  await writeComposerDraft(page, composer, 'Start a fresh recovery Session and confirm it is ready.')
+  await composer.press('Enter')
+  await page.getByText('The recovery parent Session is ready.', { exact: true }).last().waitFor({ timeout: 15_000 })
+  const modelRequestsBeforeActivityOpen = modelRequests
+  expect(modelRequestsBeforeActivityOpen).toBeGreaterThan(modelRequestsBeforeRecoveryPrompt)
+  await composer.fill(`/activity open ${activityId}`)
+  await composer.press('Enter')
+  const activityCard = recoveryConversation.getByRole('button', { name: /Activity: Release readiness/u }).last()
+  await activityCard.waitFor({ timeout: 15_000 })
+  await activityCard.click()
+  const reopened = recoveryConversation.locator('pre').filter({ hasText: 'Activity: Release readiness' }).last()
+  await reopened.waitFor({ state: 'visible', timeout: 15_000 })
+  const overview = await reopened.textContent() ?? ''
+  const dshChildSessionId = /Child Session: ([^\s]+)/u.exec(overview)?.[1]
+  if (dshChildSessionId === undefined) throw new Error('The recovered Activity omitted its DSH child Session link')
+  expect(overview).toContain(`ID: ${activityId}`)
+  expect(overview).toContain('Objective: Prepare the next release for review.')
+  expect(overview).toContain('In scope 1: Review release notes and focused check results.')
+  expect(overview).toContain('Out of scope: Do not publish or deploy.')
+  expect(overview).toContain(`Workspace: ${basename(firstWorkspacePath)} — ${firstWorkspace.workspaceId}`)
+  expect(overview).toContain(`Workspace: ${basename(secondWorkspacePath)} — ${secondWorkspace.workspaceId}`)
+  expect(overview).toContain(`DSH Session: ${originalSessionId}`)
+  expect(overview).toContain(`DSH Session: ${linkedSessionId}`)
+  expect(overview).not.toContain(`DSH Session: ${newParentSessionId}`)
+  expect(overview).toContain('Provider-reported output: The DSH child reported a saved recovery summary.')
+  expect(overview).toContain('Codex-reported output: The external one-shot report was saved.')
+  expect(overview).toContain('Recovery summary')
+  expect(overview).toContain('Source location: reports/recovery.md')
+  expect(overview).toContain('Outcome: unknown; no provider result was recorded.')
+  expect(overview).toContain('do not repeat the task unless you independently confirm it did not start')
+  expect(overview).toContain('Activity does not expose a Codex transcript, resume the run, or retry it')
+  expect(overview).toContain('does not start work or activate a Goal')
+  expect(overview).not.toContain('Status: accepted.')
+
+  await composer.fill('/activity sessions')
+  await composer.press('Enter')
+  await expect.poll(() => composer.textContent(), { timeout: 10_000 }).toBe('')
+  const availableSessions = page.getByText(/Available DSH Sessions/u).filter({ visible: true }).last()
+  await availableSessions.waitFor({ state: 'visible', timeout: 15_000 })
+  expect(await availableSessions.evaluate(element =>
+    element.closest<HTMLElement>('[data-conversation-session]')?.dataset.conversationSession,
+  )).toBe(newParentSessionId)
+  const sessionListText = await availableSessions.textContent() ?? ''
+  expect(sessionListText).toContain(dshChildSessionId)
+  expect(sessionListText).toContain(newParentSessionId)
+  expect(sessionListText).toContain('Select an id with /activity link')
+
+  expect(pageErrors).toEqual([])
+  const reopenedFromHost = await executeActivityCommand(second, newParentSessionId, `/activity open ${activityId}`)
+  expect(reopenedFromHost.result.kind).toBe('success')
+  expect(reopenedFromHost.result.text).toContain(`ID: ${activityId}`)
+  expect(reopenedFromHost.result.text).toContain('Objective: Prepare the next release for review.')
+  expect(reopenedFromHost.result.text).toContain(`DSH Session: ${originalSessionId}`)
+  expect(reopenedFromHost.result.text).toContain(`DSH Session: ${linkedSessionId}`)
+  expect(reopenedFromHost.result.text).toContain('these links do not assign Sessions to Workspaces')
+  expect(reopenedFromHost.result.text).toContain('does not start work or activate a Goal')
+  expect((await readFile(startsPath, 'utf8')).trim().split(/\r?\n/u)).toEqual(providerStartsBeforeRestart)
+  expect((await readFile(codexStartsPath, 'utf8')).trim().split(/\r?\n/u)).toEqual(codexStartsBeforeRestart)
+  expect(modelRequests).toBe(modelRequestsBeforeActivityOpen)
+  expect(modelRequestsBeforeRestart).toBeGreaterThan(0)
 })
 
 it('reopens a user-supplied external handoff from a different DSH Session after a Web process restart', async () => {

@@ -13,6 +13,7 @@ import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence
 import type { SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Workspace } from '@deepseek-ai/dsh-workspace/types'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { Agent as DshAgent } from '@deepseek-ai/dsh-agent'
@@ -27,6 +28,15 @@ import HomeActivityAssociationService, {
 } from '@deepseek-ai/dsh-home-activity/associations'
 import HomeActivityArtifactService from '@deepseek-ai/dsh-home-activity/artifacts'
 import HomeActivityHandoffService from '@deepseek-ai/dsh-home-activity/handoffs'
+import HomeActivityReviewService, {
+  ActivityReviewError,
+  ActivityReviewStorageError,
+} from '@deepseek-ai/dsh-home-activity/reviews'
+import HomeActivityAnnotationService, {
+  ActivityAnnotationError,
+  ActivityAnnotationStorageError,
+} from '@deepseek-ai/dsh-home-activity/annotations'
+import type { ActivityAnnotation, ActivityAnnotationId } from '@deepseek-ai/dsh-home-activity/annotations'
 import * as commandHomeActivity from '../src/index.ts'
 
 const roots: string[] = []
@@ -93,6 +103,8 @@ async function harness() {
   await ctx.plugin(HomeActivityAssociationService)
   await ctx.plugin(HomeActivityArtifactService)
   await ctx.plugin(HomeActivityHandoffService)
+  await ctx.plugin(HomeActivityReviewService)
+  await ctx.plugin(HomeActivityAnnotationService)
   const commandFiber = await ctx.plugin(commandHomeActivity)
   const primary = createAgent(ctx, SessionId(`home-activity-${randomUUID()}`))
   const secondary = createAgent(ctx, SessionId(`home-activity-coordinator-${randomUUID()}`))
@@ -161,7 +173,9 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   const test = await harness()
   expect(commandHomeActivity.inject).toEqual([
     'commands', 'homeActivities', 'homeActivityDelegations', 'subagents',
-    'homeActivityAssociations', 'homeActivityArtifacts', 'homeActivityHandoffs', 'workspaceRegistry', 'sessionPersistence',
+    'homeActivityAssociations', 'homeActivityArtifacts', 'homeActivityHandoffs',
+    'homeActivityReviews', 'homeActivityAnnotations',
+    'workspaceRegistry', 'sessionPersistence',
   ])
   const descriptor = test.ctx.commands.list(test.agent).find(command =>
     command.definitionId === '@deepseek-ai/dsh-command-home-activity',
@@ -169,8 +183,12 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   if (descriptor === undefined) throw new Error('Activity command was not registered')
   expect(descriptor.name).toBe('activity')
   expect(descriptor.description).toContain('DSH-native task')
+  expect(descriptor.description).toContain('coordination notes')
+  expect(descriptor.description).toContain('one-shot Codex or Claude Code task')
   expect(descriptor.input?.hint).toContain('artifact add <activity-id> <delegation-id> <workspace-id> <JSON>')
   expect(descriptor.input?.hint).toContain('handoff add <activity-id> <JSON>')
+  expect(descriptor.input?.hint).toContain('continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>')
+  expect(descriptor.input?.hint).toContain('review set <activity-id> <delegation-id> <JSON>')
 
   const create = await run(test, ' create {"name":"Release readiness","objective":"Prepare the next release for review.","boundaries":{"inScope":["Review release notes"],"outOfScope":["Do not publish"]}}')
   expect(create.kind).toBe('success')
@@ -183,13 +201,37 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   const opened = await run(test, ` open ${id}`)
   expect(opened).toMatchObject({ kind: 'success' })
   expect(opened.text).toContain('Objective: Prepare the next release for review.')
-  expect(opened.text).toContain('In scope: Review release notes')
+  expect(opened.text).toContain('In scope 1: Review release notes')
   expect(opened.text).toContain('Out of scope: Do not publish')
   expect(opened.text).toContain('runtime permissions are unchanged')
   expect(test.session.snapshotEvents().filter(event => event.type.startsWith('goal/'))).toEqual([])
   expect(test.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toEqual([])
   await test.commandFiber.dispose()
   expect(test.ctx.commands.find(test.agent, 'activity')).toBeUndefined()
+})
+
+it('rejects continuation without an explicit existing in-scope selection before starting work', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Release readiness',
+    objective: 'Prepare the next release for review.',
+    boundaries: { inScope: ['Review the release checklist.'], outOfScope: ['Do not publish.'] },
+  })
+  const start = vi.spyOn(test.ctx.subagents, 'startActivation')
+
+  const omittedSelection = await run(test, ` continue ${activity.id} spawn Review the release checklist.`)
+  const unrelatedSelection = await run(test, ` continue ${activity.id} spawn out-of-scope:1 Publish the release.`)
+  const unknownSelection = await run(test, ` continue ${activity.id} spawn in-scope:2 Publish the release.`)
+
+  expect(omittedSelection).toMatchObject({ kind: 'error' })
+  expect(omittedSelection.text).toContain('Usage: /activity continue')
+  expect(unrelatedSelection).toMatchObject({ kind: 'error' })
+  expect(unrelatedSelection.text).toContain('An out-of-scope statement cannot be continued.')
+  expect(unknownSelection).toMatchObject({ kind: 'error' })
+  expect(unknownSelection.text).toContain('Choose an existing in-scope statement numbered 1–1')
+  expect(unknownSelection.text).toContain(`run /activity open ${activity.id} to see the numbered statements`)
+  expect(test.ctx.homeActivityDelegations.list(activity.id)).toEqual([])
+  expect(start).not.toHaveBeenCalled()
 })
 
 it('rejects invalid JSON, missing scope, malformed ids, and unknown Activities clearly', async () => {
@@ -241,6 +283,122 @@ it('records user-supplied external handoffs for discovery from another Session w
   expect(reopened.text).toContain('User-supplied artifact reference: Review notes — reports/review.md')
   expect(reopened.text).toContain('not been independently verified or accepted')
   expect(startActivation).not.toHaveBeenCalled()
+})
+
+it('corrects only the user annotation and shows its history beside the unchanged provider report', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Release review', objective: 'Review the reported release state.',
+    boundaries: { inScope: ['Compare provider results with current checks.'], outOfScope: ['Do not release.'] },
+  })
+  const delegation = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id, provider: 'spawn', task: 'Report release readiness.', parentSessionId: test.session.id,
+  })
+  const admission = {
+    childSessionId: SessionId('annotation-child-session'),
+    activationName: 'activity-annotation-review',
+    admittedAt: '2026-11-17T00:00:01.000Z',
+    source: 'subagents.startActivation' as const,
+  }
+  await test.ctx.homeActivityDelegations.recordAdmitted(delegation.id, admission)
+  const report = await test.ctx.homeActivityDelegations.recordReported(delegation.id, admission, {
+    stopReason: 'stop', outputText: 'The build is ready for release.', nonTextBlockTypes: [], outputTruncated: false,
+    reportedAt: '2026-11-17T00:00:02.000Z', source: 'subagent-activation-result',
+  })
+  const startActivation = vi.spyOn(test.ctx.subagents, 'startActivation')
+  const beforeCommandEvents = test.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')
+
+  const first = await run(test, ` annotate ${activity.id} {"text":"The release appears ready based on the provider report."}`)
+  expect(first.kind).toBe('success')
+  expect(first.text).toContain('This starts the annotation history.')
+  const correction = await run(test, ` annotate ${activity.id} {"text":"Correction: the release remains blocked because migration validation failed."}`)
+  expect(correction.kind).toBe('success')
+  expect(correction.text).toContain('revision 2')
+  expect(correction.text).toContain('Earlier user annotations remain in history.')
+  expect(correction.text).toContain('Provider-reported and specialist-authored facts were not changed.')
+
+  const opened = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+  expect(opened.kind).toBe('success')
+  expect(opened.text).toContain('Current annotation (revision 2): Correction: the release remains blocked because migration validation failed.')
+  expect(opened.text).toContain('Revision 1 (')
+  expect(opened.text).toContain('The release appears ready based on the provider report.')
+  expect(opened.text).toContain('supersedes')
+  expect(opened.text).toContain('Provider-reported output: The build is ready for release.')
+  expect(opened.text).toContain('Provider report: received; DSH has not independently verified it.')
+  expect(test.ctx.homeActivityDelegations.get(delegation.id)).toEqual(report)
+  expect(test.ctx.homeActivityAnnotations.list(activity.id)).toHaveLength(2)
+  expect(startActivation).not.toHaveBeenCalled()
+  expect(test.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end'))
+    .toEqual(beforeCommandEvents)
+})
+
+it('requires a DSH restart before inspecting annotation history after a write failure', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Write recovery', objective: 'Inspect annotation state after a storage failure.',
+    boundaries: { inScope: ['Preserve the saved note.'], outOfScope: ['Do not retry automatically.'] },
+  })
+  vi.spyOn(test.ctx.homeActivityAnnotations, 'correct').mockRejectedValue(
+    new ActivityAnnotationStorageError(new Error('injected storage failure')),
+  )
+
+  const result = await run(test, ` annotate ${activity.id} {"text":"A correction."}`)
+
+  expect(result.kind).toBe('error')
+  expect(result.text).toContain('persistence may be uncertain')
+  expect(result.text).toContain(`Restart DSH, then run /activity open ${activity.id}`)
+  expect(result.text).toContain('before deciding whether to retry')
+})
+
+it('bounds opened annotation history while retaining the full saved revision list', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Long review history', objective: 'Inspect the latest coordination note.',
+    boundaries: { inScope: ['Review saved notes.'], outOfScope: ['Do not execute work.'] },
+  })
+  const revisions: ActivityAnnotation[] = []
+  for (let index = 0; index < 256; index += 1) {
+    const previous = revisions.at(-1)
+    revisions.push({
+      id: brandString<ActivityAnnotationId>(randomUUID()),
+      activityId: activity.id,
+      revision: index + 1,
+      text: `${index + 1}: ${'x'.repeat(3_990)}`,
+      ...(previous === undefined ? {} : { supersedes: previous.id }),
+      source: 'user-command',
+      recordedAt: '2026-11-18T00:00:00.000Z',
+    })
+  }
+  vi.spyOn(test.ctx.homeActivityAnnotations, 'list').mockReturnValue(Object.freeze(revisions))
+
+  const opened = await run(test, ` open ${activity.id}`)
+
+  expect(opened.kind).toBe('success')
+  expect(opened.text).toContain('Current annotation (revision 256): 256:')
+  expect(opened.text).toContain('248 earlier revisions are saved; this view shows the latest 8.')
+  expect(opened.text).toContain('Revision 249 (')
+  expect(opened.text).toContain('Revision 256 (')
+  expect(opened.text).not.toContain('Revision 248 (')
+  expect(opened.text?.length).toBeLessThan(50_000)
+})
+
+it('describes the visible annotation subset when the history limit is reached', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Capped review history', objective: 'Keep the visible history limit accurate.',
+    boundaries: { inScope: ['Review the current note.'], outOfScope: ['Do not change saved history.'] },
+  })
+  vi.spyOn(test.ctx.homeActivityAnnotations, 'correct').mockRejectedValue(
+    new ActivityAnnotationError('annotation-limit', 'An Activity can have at most 256 annotation revisions.'),
+  )
+
+  const result = await run(test, ` annotate ${activity.id} {"text":"A new note."}`)
+
+  expect(result.kind).toBe('error')
+  expect(result.text).toContain('An Activity can have at most 256 annotation revisions.')
+  expect(result.text).toContain(
+    `Run /activity open ${activity.id} to view the current note and latest 8 revisions; older revisions remain saved but are not shown by that command.`,
+  )
 })
 
 it('links selected Workspaces and Sessions independently and reopens them from another Session', async () => {
@@ -543,7 +701,16 @@ it('does not expose details when Activity reads fail', async () => {
   vi.spyOn(test.ctx.homeActivities, 'list').mockImplementation(() => { throw new Error('private storage location') })
   await expect(run(test, ' list')).resolves.toEqual({
     kind: 'error',
-    text: 'Activity or context links could not be read; no current link state was confirmed.',
+    text: 'Activity data could not be read; no current state was confirmed. Check storage before repeating this read.',
+  })
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Read failure', objective: 'Keep an existing Activity intact.',
+    boundaries: { inScope: ['Read saved reports.'], outOfScope: ['Do not start execution.'] },
+  })
+  vi.spyOn(test.ctx.homeActivityDelegations, 'list').mockImplementation(() => { throw new Error('private provider data') })
+  await expect(run(test, ` open ${activity.id}`)).resolves.toEqual({
+    kind: 'error',
+    text: 'Activity data could not be read; no current state was confirmed. Check storage before repeating this read.',
   })
 })
 
@@ -555,4 +722,275 @@ it('reports an ambiguous storage failure with a safe list-before-retry instructi
       kind: 'error',
       text: 'Activity storage could not confirm the save. Run /activity list before retrying.',
     })
+})
+
+it('keeps a successful provider report separate from failed verification and the user disposition across Sessions', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Release review', objective: 'Review a reported release change.',
+    boundaries: { inScope: ['Inspect the report and evidence.'], outOfScope: ['Do not publish the release.'] },
+  })
+  const delegation = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'spawn',
+    task: 'Review the release change.',
+    parentSessionId: test.session.id,
+  })
+  const admission = {
+    childSessionId: SessionId('review-child'),
+    activationName: 'activity-review',
+    admittedAt: '2026-11-18T12:00:00.000Z',
+    source: 'subagents.startActivation' as const,
+  }
+  await test.ctx.homeActivityDelegations.recordAdmitted(delegation.id, admission)
+  await test.ctx.homeActivityDelegations.recordReported(delegation.id, admission, {
+    stopReason: 'stop',
+    outputText: 'The provider reported the requested change complete.',
+    nonTextBlockTypes: [],
+    outputTruncated: false,
+    reportedAt: '2026-11-18T12:01:00.000Z',
+    source: 'subagent-activation-result',
+  })
+  const providerReport = test.ctx.homeActivityDelegations.get(delegation.id)
+  const startActivation = vi.spyOn(test.ctx.subagents, 'startActivation')
+
+  const initial = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+  expect(initial.text).toContain('Delegation state: reported.')
+  expect(initial.text).toContain('Provider report: received; DSH has not independently verified it.')
+  expect(initial.text).toContain('User disposition: pending; no review has been recorded.')
+  expect(initial.text).toContain('Verification evidence: none recorded.')
+
+  const recorded = await run(test, ` review set ${activity.id} ${delegation.id} {"disposition":"requires-investigation","evidence":{"source":"Release CI run","result":"failed","summary":"The publish validation job failed.","reference":"https://example.test/checks/release-validation","observedAt":"2026-11-18T12:02:00.000Z"}}`)
+  expect(recorded).toMatchObject({ kind: 'success' })
+  expect(recorded.text).toContain('User-supplied evidence recorded: Release CI run reports failed.')
+  expect(recorded.text).toContain('DSH did not verify its source or result.')
+  expect(recorded.text).toContain('provider execution report was not changed')
+
+  const conflicting = await run(test,
+    ` review set ${activity.id} ${delegation.id} {"disposition":"requires-investigation","evidence":{"source":"Independent smoke check","result":"passed","summary":"The smoke check reported success."}}`)
+  expect(conflicting.text).toContain('Independent smoke check reports passed.')
+
+  const reopened = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+  expect(reopened.text).toContain('Delegation state: reported.')
+  expect(reopened.text).toContain('Provider report: received; DSH has not independently verified it.')
+  expect(reopened.text).toContain('User disposition: requires investigation')
+  expect(reopened.text).toContain('Release CI run reports failed.')
+  expect(reopened.text).toContain('The publish validation job failed.')
+  expect(reopened.text).toContain('Evidence observed: 2026-11-18T12:02:00.000Z')
+  expect(reopened.text).toContain('Independent smoke check reports passed.')
+  expect(reopened.text).toContain('The smoke check reported success.')
+  expect(reopened.text).toContain('not checked by DSH')
+  expect(test.ctx.homeActivityDelegations.get(delegation.id)).toEqual(providerReport)
+
+  const accepted = await run(test, ` review set ${activity.id} ${delegation.id} {"disposition":"accepted"}`)
+  expect(accepted.text).toContain('User disposition recorded: accepted.')
+  expect(accepted.text).toContain('previously recorded evidence was retained')
+  const acceptedView = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+  expect(acceptedView.text).toContain('Delegation state: reported.')
+  expect(acceptedView.text).toContain('Provider report: received; DSH has not independently verified it.')
+  expect(acceptedView.text).toContain('User disposition: accepted')
+  expect(acceptedView.text).not.toContain('not verified or accepted')
+  expect(acceptedView.text).toContain('Release CI run reports failed.')
+  expect(test.ctx.homeActivityDelegations.get(delegation.id)).toEqual(providerReport)
+  expect(startActivation).not.toHaveBeenCalled()
+})
+
+it('classifies known provider stop reasons and shows report source and freshness', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Provider outcome review', objective: 'Inspect outcome source fields.',
+    boundaries: { inScope: ['Compare provider status with its report.'], outOfScope: ['Do not retry work.'] },
+  })
+  const cases = [
+    ['completed', 'provider-reported completion; not independently verified'],
+    ['error', 'provider-reported failure; output may be partial'],
+    ['aborted', 'provider-reported interruption; output may be partial'],
+    ['max-tokens', 'partial output; the provider reached its token limit'],
+    ['refusal', 'provider refusal; the requested task was not completed'],
+    ['provider-specific-stop', 'unknown; the provider stop reason is not classified'],
+  ] as const
+  for (const [index, [stopReason]] of cases.entries()) {
+    const delegation = await test.ctx.homeActivityDelegations.createRequest({
+      activityId: activity.id,
+      provider: 'spawn',
+      task: `Inspect outcome ${stopReason}.`,
+      parentSessionId: test.session.id,
+    })
+    const admission = {
+      childSessionId: SessionId(`outcome-child-${index}`),
+      activationName: 'activity-outcome-review',
+      admittedAt: `2026-11-18T12:00:${String(index).padStart(2, '0')}.000Z`,
+      source: 'subagents.startActivation' as const,
+    }
+    await test.ctx.homeActivityDelegations.recordAdmitted(delegation.id, admission)
+    await test.ctx.homeActivityDelegations.recordReported(delegation.id, admission, {
+      stopReason,
+      outputText: `Provider output for ${stopReason}.`,
+      nonTextBlockTypes: [],
+      outputTruncated: false,
+      reportedAt: `2026-11-18T12:01:${String(index).padStart(2, '0')}.000Z`,
+      source: 'subagent-activation-result',
+    })
+  }
+  const startActivation = vi.spyOn(test.ctx.subagents, 'startActivation')
+
+  const opened = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+
+  for (const [, expected] of cases) expect(opened.text).toContain(`Reported outcome: ${expected}.`)
+  expect(opened.text).toContain('Provider report source: subagent-activation-result.')
+  expect(opened.text).toContain('Provider report observed at: 2026-11-18T12:01:00.000Z.')
+  expect(opened.text).toContain('Freshness: unknown; DSH has no freshness check for this saved report, so it may be stale.')
+  expect(opened.text).toContain('Provider stop reason: provider-specific-stop')
+  expect(opened.text).toContain('Provider report: received; DSH has not independently verified it.')
+  expect(startActivation).not.toHaveBeenCalled()
+})
+
+it('distinguishes rejected startup from unknown recovery and records available source times', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Recovered outcomes', objective: 'Inspect unresolved execution facts.',
+    boundaries: { inScope: ['Inspect saved outcome facts.'], outOfScope: ['Do not restart them.'] },
+  })
+  const failed = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id, provider: 'spawn', task: 'Record a rejected start.', parentSessionId: test.session.id,
+  })
+  await test.ctx.homeActivityDelegations.markNotAdmitted(failed.id, 'The selected provider is unavailable.')
+  const uncertain = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id, provider: 'spawn', task: 'Record an uncertain start.', parentSessionId: test.session.id,
+  })
+  await test.ctx.homeActivityDelegations.markUnconfirmed(uncertain.id, undefined, 'restart-before-admission-recorded')
+  const startActivation = vi.spyOn(test.ctx.subagents, 'startActivation')
+
+  const opened = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+
+  expect(opened.text).toContain('Outcome: startup failed before DSH admission; no activation was published.')
+  expect(opened.text).toContain('Failure source: subagents.startActivation.')
+  expect(opened.text).toContain('Failure observed at: unavailable (the failure time was not recorded).')
+  expect(opened.text).toContain('Outcome: unknown; no provider result was recorded.')
+  expect(opened.text).toContain('Uncertainty source: application restart recovery.')
+  expect(opened.text).toMatch(/Uncertainty observed at: 2026-\d\d-\d\dT/u)
+  expect(opened.text).toContain('Opening an Activity displays saved intent and reported facts; it does not start work or activate a Goal.')
+  expect(startActivation).not.toHaveBeenCalled()
+})
+
+it('does not imply verification evidence exists when recording a disposition alone', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Evidence-free review', objective: 'Review a reported provider result.',
+    boundaries: { inScope: ['Inspect the provider report.'], outOfScope: ['Do not rerun the provider.'] },
+  })
+  const delegation = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'spawn',
+    task: 'Summarize the requested change.',
+    parentSessionId: test.session.id,
+  })
+  const admission = {
+    childSessionId: SessionId('evidence-free-child'),
+    activationName: 'activity-review',
+    admittedAt: '2026-11-18T12:00:00.000Z',
+    source: 'subagents.startActivation' as const,
+  }
+  await test.ctx.homeActivityDelegations.recordAdmitted(delegation.id, admission)
+  await test.ctx.homeActivityDelegations.recordReported(delegation.id, admission, {
+    stopReason: 'stop',
+    outputText: 'The provider reported completion.',
+    nonTextBlockTypes: [],
+    outputTruncated: false,
+    reportedAt: '2026-11-18T12:01:00.000Z',
+    source: 'subagent-activation-result',
+  })
+
+  const recorded = await run(test, ` review set ${activity.id} ${delegation.id} {"disposition":"accepted"}`)
+
+  expect(recorded.text).toContain('User disposition recorded: accepted.')
+  expect(recorded.text).toContain('No verification evidence is currently recorded.')
+  expect(recorded.text).not.toContain('previously recorded evidence was retained')
+})
+
+it('validates review commands and reports safe selection, read, and write failures', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Release review', objective: 'Review a reported release change.',
+    boundaries: { inScope: ['Inspect the report.'], outOfScope: ['Do not publish.'] },
+  })
+  const delegation = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'spawn',
+    task: 'Review the release change.',
+    parentSessionId: test.session.id,
+  })
+  const foreignActivity = await test.ctx.homeActivities.create({
+    name: 'Other release', objective: 'Review a separate report.',
+    boundaries: { inScope: ['Inspect the other report.'], outOfScope: ['Do not publish.'] },
+  })
+  const foreignDelegation = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: foreignActivity.id,
+    provider: 'spawn',
+    task: 'Review the other release.',
+    parentSessionId: test.session.id,
+  })
+  const details = '{"disposition":"accepted"}'
+
+  const prematureReview = await run(test, ` review set ${activity.id} ${delegation.id} ${details}`)
+  expect(prematureReview.kind).toBe('error')
+  expect(prematureReview.text).toContain('A provider report is required before recording a review.')
+  expect(prematureReview.text).toContain(`Run /activity open ${activity.id} after its provider report is recorded, then retry the review.`)
+  expect(test.ctx.homeActivityReviews.get(activity.id, delegation.id)).toBeUndefined()
+
+  expect((await run(test, ' review')).text).toContain('Usage: /activity review set')
+  expect((await run(test, ` review set invalid ${delegation.id} ${details}`)).text).toContain('Activity id must be a UUID.')
+  expect((await run(test, ` review set ${activity.id} invalid ${details}`)).text).toContain('Delegation id must be a UUID.')
+  expect((await run(test, ` review set ${activity.id} ${delegation.id} {`)).text).toContain('Review details must be valid JSON.')
+  expect((await run(test, ` review set ${activity.id} ${delegation.id} {"disposition":"unknown"}`)).text)
+    .toContain('Review details are invalid:')
+  expect((await run(test, ` review set ${'x'.repeat(16_500)}`)).text).toContain('must not exceed 16384 bytes')
+  expect((await run(test, ` create ${'x'.repeat(16_500)}`)).text).toContain('must not exceed 16384 bytes')
+
+  expect((await run(test, ` review set 00000000-0000-4000-8000-000000000098 ${delegation.id} ${details}`)).text)
+    .toContain('Run /activity list to choose a saved Activity id.')
+  expect((await run(test, ` review set ${activity.id} 00000000-0000-4000-8000-000000000099 ${details}`)).text)
+    .toContain(`Run /activity open ${activity.id} to choose a saved delegation id.`)
+  expect((await run(test, ` review set ${activity.id} ${foreignDelegation.id} ${details}`)).text)
+    .toContain('Choose a delegation recorded for this Activity.')
+
+  const admission = {
+    childSessionId: SessionId('review-validation-child'),
+    activationName: 'activity-review',
+    admittedAt: '2026-11-18T12:00:00.000Z',
+    source: 'subagents.startActivation' as const,
+  }
+  await test.ctx.homeActivityDelegations.recordAdmitted(delegation.id, admission)
+  await test.ctx.homeActivityDelegations.recordReported(delegation.id, admission, {
+    stopReason: 'stop',
+    outputText: 'The provider reported completion.',
+    nonTextBlockTypes: [],
+    outputTruncated: false,
+    reportedAt: '2026-11-18T12:01:00.000Z',
+    source: 'subagent-activation-result',
+  })
+
+  vi.spyOn(test.ctx.homeActivityReviews, 'record').mockRejectedValueOnce(
+    new ActivityReviewError('evidence-limit', 'No further evidence can be added.'),
+  )
+  expect((await run(test, ` review set ${activity.id} ${delegation.id} ${details}`)).text)
+    .toContain(`Inspect saved review evidence with /activity open ${activity.id}.`)
+  vi.spyOn(test.ctx.homeActivityReviews, 'record').mockRejectedValueOnce(
+    new ActivityReviewStorageError(new Error('private storage path')),
+  )
+  expect((await run(test, ` review set ${activity.id} ${delegation.id} ${details}`)).text)
+    .toContain('Activity review storage failed; no updated review was confirmed.')
+  vi.spyOn(test.ctx.homeActivityReviews, 'record').mockRejectedValueOnce(new Error('private service state'))
+  expect((await run(test, ` review set ${activity.id} ${delegation.id} ${details}`)).text)
+    .toContain('The selected Activity and delegation could not be confirmed; no updated review was recorded.')
+
+  await test.ctx.homeActivityReviews.record({
+    activityId: activity.id, delegationId: delegation.id, disposition: 'pending',
+  })
+  expect((await run(test, ` open ${activity.id}`)).text).toContain('Verification evidence: none recorded.')
+  vi.spyOn(test.ctx.homeActivityReviews, 'get').mockImplementationOnce(() => {
+    throw new ActivityReviewStorageError(new Error('private storage path'))
+  })
+  expect((await run(test, ` open ${activity.id}`)).text)
+    .toContain('User review state could not be read; no current disposition or evidence was confirmed.')
 })

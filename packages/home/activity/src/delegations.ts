@@ -1,4 +1,4 @@
-/** Durable DSH-native execution facts for saved Home Activities. @module @deepseek-ai/dsh-home-activity/delegations */
+/** Durable provider execution facts for saved Home Activities. @module @deepseek-ai/dsh-home-activity/delegations */
 
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -8,8 +8,10 @@ import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { ActivityDelegationAdmission, ActivityDelegationReport } from './delegation-types.ts'
 import type {
   ActivityDelegation,
+  ActivityDelegationExecutionSelectionSnapshot,
   ActivityDelegationId,
   ActivityDelegationUncertainty,
+  DshActivityDelegationExecutionSelectionSnapshot,
   CreateActivityDelegationRequest,
 } from './delegation-types.ts'
 import { activityDelegationRecordSchema, homeActivityDelegationDomain } from './delegation-spec.ts'
@@ -17,12 +19,14 @@ import { activityDelegationRecordSchema, homeActivityDelegationDomain } from './
 export type {
   ActivityDelegation,
   ActivityDelegationAdmission,
+  ActivityDelegationExecutionSelectionSnapshot,
   ActivityDelegationFailure,
   ActivityDelegationId,
   ActivityDelegationReport,
   ActivityDelegationRequest,
   ActivityDelegationStatus,
   ActivityDelegationUncertainty,
+  DshActivityDelegationExecutionSelectionSnapshot,
   CreateActivityDelegationRequest,
 } from './delegation-types.ts'
 export { activityDelegationRecordSchema, homeActivityDelegationDomain } from './delegation-spec.ts'
@@ -85,9 +89,14 @@ export class HomeActivityDelegationService extends Service {
         provider: request.provider,
         task: request.task,
         parentSessionId: request.parentSessionId,
-        requestedChildSessionId: brandString<SessionId>(randomUUID()),
+        ...(request.provider === 'spawn'
+          ? { requestedChildSessionId: brandString<SessionId>(randomUUID()) }
+          : {}),
         requestedAt: new Date().toISOString(),
         source: 'user-command',
+        executionSelection: request.provider === 'spawn'
+          ? request.executionSelection ?? unavailableDshSelectionSnapshot()
+          : unavailableExternalSelectionSnapshot(request.provider),
       },
       status: 'requested',
     })
@@ -144,7 +153,7 @@ export class HomeActivityDelegationService extends Service {
 
   /** Persist the admission returned by `startActivation`.
    * @param id - Saved request identity.
-   * @param admission - Child Session and activation references.
+   * @param admission - Local Session or external execution and activation references.
    * @returns The admitted record.
   */
   async recordAdmitted(id: ActivityDelegationId, admission: ActivityDelegationAdmission): Promise<ActivityDelegation> {
@@ -198,15 +207,15 @@ export class HomeActivityDelegationService extends Service {
     }
   }
 
-  /** Record a result that the activation API could not return as a provider report.
+  /** Record a startup or report outcome that cannot be confirmed.
    * @param id - Saved request identity.
-   * @param admission - Accepted activation references.
+   * @param admission - New activation references, or undefined to preserve an existing reference or when startup outcome is unknown.
    * @param reason - Why its result is unknown.
    * @returns The unconfirmed record.
   */
   async markUnconfirmed(
     id: ActivityDelegationId,
-    admission: ActivityDelegationAdmission,
+    admission: ActivityDelegationAdmission | undefined,
     reason: ActivityDelegationUncertainty['reason'],
   ): Promise<ActivityDelegation> {
     const uncertain = this.withUncertainty(id, admission, reason)
@@ -234,17 +243,18 @@ export class HomeActivityDelegationService extends Service {
 
   private withUncertainty(
     id: ActivityDelegationId,
-    admission: ActivityDelegationAdmission,
+    admission: ActivityDelegationAdmission | undefined,
     reason: ActivityDelegationUncertainty['reason'],
   ): ActivityDelegation {
     const current = this.volatileUncertainty.get(id) ?? this.requireTable().get(id)
     if (current === undefined) throw new ActivityDelegationError('invalid-transition', `No delegation has id ${id}.`)
+    const savedAdmission = admission ?? current.admission
     return freezeDelegation({
       id: current.id,
       activityId: current.activityId,
       request: current.request,
       status: 'unconfirmed',
-      admission,
+      ...(savedAdmission === undefined ? {} : { admission: savedAdmission }),
       uncertainty: { reason, observedAt: new Date().toISOString() },
     })
   }
@@ -267,7 +277,12 @@ export function activityDelegationId(value: string): ActivityDelegationId {
 function freezeDelegation(record: ActivityDelegation): ActivityDelegation {
   return Object.freeze({
     ...record,
-    request: Object.freeze({ ...record.request }),
+    request: Object.freeze({
+      ...record.request,
+      ...(record.request.executionSelection === undefined ? {} : {
+        executionSelection: freezeExecutionSelectionSnapshot(record.request.executionSelection),
+      }),
+    }),
     ...(record.admission === undefined ? {} : { admission: Object.freeze({ ...record.admission }) }),
     ...(record.report === undefined ? {} : {
       report: Object.freeze({ ...record.report, nonTextBlockTypes: Object.freeze([...record.report.nonTextBlockTypes]) }),
@@ -275,6 +290,47 @@ function freezeDelegation(record: ActivityDelegation): ActivityDelegation {
     ...(record.failure === undefined ? {} : { failure: Object.freeze({ ...record.failure }) }),
     ...(record.uncertainty === undefined ? {} : { uncertainty: Object.freeze({ ...record.uncertainty }) }),
   })
+}
+
+/** Copy a provider-specific launch snapshot so callers cannot mutate persisted selection. */
+function freezeExecutionSelectionSnapshot(
+  selection: ActivityDelegationExecutionSelectionSnapshot,
+): ActivityDelegationExecutionSelectionSnapshot {
+  if (selection.provider !== 'spawn') return Object.freeze({ ...selection })
+  return Object.freeze({
+    ...selection,
+    profile: Object.freeze({
+      ...selection.profile,
+      ...(selection.profile.status === 'available' && selection.profile.startedBundles !== null
+        ? { startedBundles: Object.freeze([...selection.profile.startedBundles]) }
+        : {}),
+    }),
+    preset: Object.freeze({
+      ...selection.preset,
+      ...(selection.preset.status === 'selected' && selection.preset.activeModules !== null
+        ? { activeModules: Object.freeze([...selection.preset.activeModules]) }
+        : {}),
+    }),
+  })
+}
+
+/** Record unavailable DSH configuration when a direct caller has no launcher context. */
+function unavailableDshSelectionSnapshot(): DshActivityDelegationExecutionSelectionSnapshot {
+  return {
+    provider: 'spawn',
+    profile: { status: 'unavailable', reason: 'runtime-profile-unavailable' },
+    preset: { status: 'unavailable', reason: 'agent-preset-registry-unavailable' },
+  }
+}
+
+/** Record that an external provider does not expose its composition to DSH.
+ * @param provider - Explicitly selected external provider.
+ * @returns The provider-specific unavailable configuration fact.
+ */
+function unavailableExternalSelectionSnapshot(
+  provider: 'codex' | 'claude-code',
+): ActivityDelegationExecutionSelectionSnapshot {
+  return { provider, unavailableReason: 'external-provider-does-not-expose-dsh-composition' }
 }
 
 /** Describe a rejected lifecycle transition without exposing persistence internals. */
