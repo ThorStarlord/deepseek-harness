@@ -94,9 +94,9 @@ export class HomeActivityDelegationService extends Service {
           : {}),
         requestedAt: new Date().toISOString(),
         source: 'user-command',
-        executionSelection: request.provider === 'codex'
-          ? unavailableCodexSelectionSnapshot()
-          : request.executionSelection ?? unavailableDshSelectionSnapshot(),
+        executionSelection: request.provider === 'spawn'
+          ? request.executionSelection ?? unavailableDshSelectionSnapshot()
+          : unavailableExternalSelectionSnapshot(request.provider),
       },
       status: 'requested',
     })
@@ -296,7 +296,7 @@ function freezeDelegation(record: ActivityDelegation): ActivityDelegation {
 function freezeExecutionSelectionSnapshot(
   selection: ActivityDelegationExecutionSelectionSnapshot,
 ): ActivityDelegationExecutionSelectionSnapshot {
-  if (selection.provider === 'codex') return Object.freeze({ ...selection })
+  if (selection.provider !== 'spawn') return Object.freeze({ ...selection })
   return Object.freeze({
     ...selection,
     profile: Object.freeze({
@@ -323,9 +323,14 @@ function unavailableDshSelectionSnapshot(): DshActivityDelegationExecutionSelect
   }
 }
 
-/** Record that the external Codex provider does not expose its composition to DSH. */
-function unavailableCodexSelectionSnapshot(): ActivityDelegationExecutionSelectionSnapshot {
-  return { provider: 'codex', unavailableReason: 'external-provider-does-not-expose-dsh-composition' }
+/** Record that an external provider does not expose its composition to DSH.
+ * @param provider - Explicitly selected external provider.
+ * @returns The provider-specific unavailable configuration fact.
+ */
+function unavailableExternalSelectionSnapshot(
+  provider: 'codex' | 'claude-code',
+): ActivityDelegationExecutionSelectionSnapshot {
+  return { provider, unavailableReason: 'external-provider-does-not-expose-dsh-composition' }
 }
 
 /** Describe a rejected lifecycle transition without exposing persistence internals. */

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-通过 Web composer 或 SDK `session.run()` 使用 `/activity` 命令创建、列出和重新打开命名 Activity，管理所选上下文引用和产物指针，通过 DSH 原生 `spawn` 或可选的一次性 Codex 提供方显式委派有界任务，并分别记录用户处置及带来源归属的验证证据。Activity 命令不会自动启动已保存的目标；审核不会启动或重试委派，也不会改变提供方报告。Codex 使用原生配置和权限模式，Activity 不提供继续、恢复、查看转录或回滚功能。该命令需要命令注册表及所挂载命令使用的 Home Activity 服务。
+在 Web composer 或 SDK `session.run()` 中使用 `/activity` 保存、重新打开和关联命名 Activity；关联产物、记录用户处置及带来源归属的验证证据，或通过 DSH `spawn`、Codex 或 Claude Code 显式委派有界任务。已保存的目标不会自动启动。审核不会启动或重试委派，也不会更改提供方报告。Codex 和 Claude Code 使用原生配置与权限处理；Activity 不支持继续、恢复、查看转录或回滚这些一次性运行。挂载此命令需要命令注册表和所需的 Home Activity 服务。
 
 ## 目录
 
@@ -41,7 +41,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 
 [命令注册表](../commands/README.zh.md)负责直接调用人工命令，[`dsh-home-activity`](../../home/activity/README.zh.md)负责持久记录。
 
-启用委派的组合还需挂载 `@deepseek-ai/dsh-home-activity/delegations`、`@deepseek-ai/dsh-subagent` 和受支持的提供方。命令支持 `spawn`；启用可选的原生 Codex 提供方后也支持 `codex`。
+启用委派的组合还需挂载 `@deepseek-ai/dsh-home-activity/delegations`、`@deepseek-ai/dsh-subagent` 和受支持的提供方。命令支持 `spawn`；启用可选的原生 Codex 或 Claude Code 提供方后，也支持 `codex` 或 `claude-code`。
 
 ### 命令参考
 
@@ -49,7 +49,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 |---|---|
 | `/activity create <JSON>` | 保存名称、目标，以及包含 `inScope` 和 `outOfScope` 字符串数组的 `boundaries` 对象。至少需要一项 `inScope` 内容。 |
 | `/activity list` | 按创建时间从新到旧列出已保存 Activity 的名称和稳定 id。 |
-| `/activity open <activity-id>` | ??????????????????????????????? profile ? preset ??? |
+| `/activity open <activity-id>` | 显示已保存的目标、描述性范围、上下文引用、委派记录，以及已捕获的 profile 和 preset 选择。 |
 | `/activity workspaces` | 列出可以关联的注册 Workspace 上下文。 |
 | `/activity sessions` | 列出已存储的 DSH Session 及可用摘要元数据。 |
 | `/activity link <activity-id> workspace <workspace-id>` | 添加 Workspace 引用，不修改 Workspace 记录。 |
@@ -59,7 +59,10 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 | `/activity artifact add <activity-id> <delegation-id> <workspace-id> <JSON>` | 为该 Activity 的委派记录输出指针，并要求所选 Workspace 已关联到同一 Activity。JSON 字段为 `label`、`location` 和可选的 `revision`；缺少修订版时显示为未知。 |
 | `/activity delegate <activity-id> spawn <task>` | 保存请求，显式启动一次 DSH 原生子级执行，并分别报告提供方结果。任务最多 4,096 UTF-8 字节。 |
 | `/activity delegate <activity-id> codex <task>` | 保存请求，显式启动一次原生 Codex 执行，并分别报告其结果。此操作为一次性执行，不创建 DSH Session。任务最多 4,096 UTF-8 字节。 |
+| `/activity delegate <activity-id> claude-code <task>` | 保存请求，显式启动一次原生 Claude Code 执行，并分别报告其结果。此操作为一次性执行，不创建 DSH Session。任务最多 4,096 UTF-8 字节。 |
 | `/activity review set <activity-id> <delegation-id> <JSON>` | 为已保存的提供方报告记录明确的用户处置和可选的用户提供证据，且不修改该报告；报告保存前命令会拒绝审核。JSON 必须包含 `disposition`（`pending`、`accepted`、`declined` 或 `requires-investigation`）；可选 `evidence` 包含 `source`、`result`（`passed`、`failed`、`inconclusive` 或 `unavailable`）和 `summary`，以及可选的 `reference` 和 `observedAt`。响应会区分新证据、保留的证据和未记录证据。 |
+
+创建、产物和审核 JSON 均限制为 16,384 个 UTF-8 字节。每个 Activity 最多关联 256 个 Workspace、256 个 DSH Session 和 512 个产物指针。审核证据会在当前审核记录中追加保存，每个委派最多 128 条。证据记录用户填写的来源和报告结果；DSH 不会检查这些信息。提供方成功仍只是提供方报告，不代表已经验证或被用户接受。必须先保存提供方报告才能审核。委派请求会在提供方启动前保存；拟用 `spawn` 子级 Session id 不代表已准入，外部提供方也不会虚构 DSH Session 身份。DSH 接受 activation 后命令即返回，后续结果记录独立继续。启动在调用提供方前被拒绝时会记录为未准入。如果 Codex 或 Claude Code 的启动调用在已开始调用提供方后拒绝，结果会保持未确认，因为外部运行可能已经启动；除非独立确认其未启动，否则不要重复任务。打开 Activity 不会重试。如果 `spawn` 准入状态不确定，`/activity sessions` 会显示拟用 id 是否对应已存储 Session 及其可用摘要元数据，但不会检查转录。找不到 Session 不代表启动失败。外部准入记录提供方适配器的 `SubagentRun.id`，不代表 DSH Session 或原生提供方对话 id。产物指针与报告分开保存，并明确指出它们与输出之间的关系未经验证。
 
 -----
 
@@ -69,7 +72,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-???????????????????????????? `ctx.homeActivities`???????? `ctx.homeActivityAssociations`??????? `ctx.subagents.startActivation` ????????????????? `ctx.homeActivityReviews`?DSH `spawn` ??????????? profile bundle ????? Agent preset ???Codex ? profile ? preset ???????????????????? DSH ?????????????? Goal????????????????????
+此命令仅供用户明确调用，不是模型工具。创建、列出和打开使用 `ctx.homeActivities`；上下文引用使用 `ctx.homeActivityAssociations`；委派沿用 `ctx.subagents.startActivation` 生命周期，并另行保存持久记录；审核使用 `ctx.homeActivityReviews`。DSH `spawn` 会在启动前捕获启动器的 profile bundle 选择和当前 Agent preset 的确切模块。Codex 和 Claude Code 因其外部运行时不会提供 DSH profile 或 preset 信息而显示为不可用。此命令不会创建 Goal，也不会声称提供方报告已经过验证或接受。
 
 
 
@@ -77,7 +80,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 |---|---|
 | [`src/index.ts`](src/index.ts) | 命令注册、输入校验与用户可见结果 |
 | [`src/delegation-command.ts`](src/delegation-command.ts) | 委派解析、生命周期与用户可见结果 |
-| [`src/execution-selection.ts`](src/execution-selection.ts) | DSH profile ? preset ?????????? |
+| [`src/execution-selection.ts`](src/execution-selection.ts) | 捕获 DSH profile 和 preset，并进行保守的产品分类 |
 | [`src/association-command.ts`](src/association-command.ts) | Workspace 和 Session 目录、引用命令与解析 |
 | [`src/artifact-command.ts`](src/artifact-command.ts) | 用户关联的产物指针命令与显示 |
 | [`src/review-command.ts`](src/review-command.ts) | 审核输入、持久化命令与结果显示 |
@@ -110,13 +113,13 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 ## 已知限制与后续工作
 <a id="known-limitations-and-deferred-work"></a>
 
-Activity 范围说明描述请求的工作；它们不会更改提供方权限。`spawn` 由 DSH 运行时策略控制；`codex` 由 Codex 原生配置和指定权限模式控制。
+Activity 范围说明描述请求的工作；它们不会更改提供方权限。`spawn` 由 DSH 运行时策略控制；`codex` 由 Codex 原生配置和指定权限模式控制；`claude-code` 遵循 Claude Code 原生配置和权限处理。
 
 - Web composer 与 SDK session.run() 是受支持的交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。SDK profile 必须加载 Home Activity 插件。
-- 创建输入为 JSON 文本，且此命令不支持编辑或删除 Activity。`spawn` 和 Codex 委派都是显式的一次性操作；Activity 不提供继续、恢复、查看转录或回滚功能。Session 目录只显示摘要元数据，不检查子级对话或证明提供方已准入。
+- 创建输入为 JSON 文本，且此命令不支持编辑或删除 Activity。Codex 和 Claude Code 委派均为显式的一次性执行；Activity 不提供继续、恢复、查看转录或回滚功能。Session 目录只显示摘要元数据，不检查子级对话或证明提供方已准入。
 - 审核证据及其报告结果由用户提供，DSH 不会检查。用户更改处置前，当前状态保持待处理；报告执行成功不会自动接受结果。
 - `/activity open` 会把已知的提供方停止原因显示为提供方报告的完成、失败、部分输出或拒绝；无法识别的原因仍显示为未知。可用时会显示报告来源和时间，以及不确定状态的来源类别和观察时间。DSH 不会检查已保存报告的新鲜度，因此报告可能已过时；打开 Activity 不会查询提供方后续状态，也不会重试工作。
-- ?????????? bundle ????? preset ??????????????? profile patch ???? overlay ???????????? profile ??? bundle ???????????????????? preset ??????????????????????????? Skill ???
+- 产品分类仅使用捕获的 bundle 列表或活动 preset 模块，以及产品提供的元数据。profile patch 和运行时 overlay 不参与分类；稳定标签仅适用于与已发布 profile 模板的 bundle 列表完全相同的情况，未分类的 preset 会显示为不可用。这些标签不代表沙箱隔离、权限强制执行或 Skill 资格。
 - 产物位置、修订版和 Workspace 选择由用户提供。命令不会检查被引用的文件，也不会从 Workspace 目录推断 Git 根目录；缺少的修订版保持未知，指针不验证执行上下文或提供方输出。
 
 <a id="dev-note"></a>

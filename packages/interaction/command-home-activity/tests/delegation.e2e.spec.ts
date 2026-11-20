@@ -222,7 +222,9 @@ it('starts the real DSH spawn provider from `/activity`, then records success an
   const initialRecord = ctx.homeActivityDelegations.list(activity.id)[0]
   expect(initialRecord).toMatchObject({ status: 'admitted', request: { provider: 'spawn' } })
   const initialAdmission = initialRecord?.admission
-  if (initialAdmission === undefined || initialAdmission.provider === 'codex') {
+  if (initialAdmission === undefined
+    || initialAdmission.provider === 'codex'
+    || initialAdmission.provider === 'claude-code') {
     throw new Error('The spawn activation has no DSH child Session admission.')
   }
   expect(initialAdmission.childSessionId).toBeDefined()
@@ -286,7 +288,7 @@ it('rejects malformed delegation commands before saving or starting work', async
   expect(malformed.text).toContain('Usage: /activity create <JSON>')
   expect(invalidGrammar.text).toContain('Usage: /activity delegate')
   expect(invalidId.text).toContain('Activity id must be a UUID')
-  expect(unsupportedProvider.text).toContain('Choose spawn or codex')
+  expect(unsupportedProvider.text).toContain('Choose spawn, codex, or claude-code')
   expect(emptyTask.text).toContain('Delegated task is invalid')
   expect(oversizedUtf8.text).toContain('UTF-8 bytes')
   expect(missingActivity.text).toContain('No saved Activity')
@@ -373,6 +375,141 @@ it('runs Codex through the external provider seam and records a one-shot report 
   expect(start).toHaveBeenCalledTimes(1)
   expect(parent.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toEqual([])
   expect(parent.session.snapshotEvents().filter(event => event.type.startsWith('goal/'))).toEqual([])
+})
+
+it('runs Claude Code through the external provider seam and records its one-shot report without a DSH Session', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  const result = Promise.withResolvers<SubagentResult>()
+  const providerRequests: ResolvedSubagentStartRequest[] = []
+  ctx.subagents.registerProvider({
+    name: 'claude-code',
+    capabilities: NO_START_CAPABILITIES,
+    inheritsParentContext: false,
+    async start(request): Promise<SubagentRun> {
+      providerRequests.push(request)
+      return {
+        id: SessionId('claude-code-provider-run-1'),
+        result: result.promise,
+        dispose: async () => {},
+      }
+    },
+  })
+  const start = vi.spyOn(ctx.subagents, 'startActivation')
+  const activity = await ctx.homeActivities.create({
+    name: 'Claude Code one-shot review',
+    objective: 'Receive a bounded Claude Code report.',
+    boundaries: { inScope: ['Review a checklist.'], outOfScope: ['Do not publish.'] },
+  })
+
+  const admitted = await run(ctx, parent, ` delegate ${activity.id} claude-code Review the release checklist once.`)
+  expect(admitted).toMatchObject({ kind: 'success' })
+  expect(admitted.text).toContain('provider claude-code (native Claude Code, external one-shot)')
+  expect(admitted.text).toContain('Claude Code adapter run id (not a DSH Session or native Claude Code conversation id): claude-code-provider-run-1')
+  expect(admitted.text).toContain('Runtime profile and preset: unavailable (the native Claude Code provider does not expose DSH composition).')
+  expect(admitted.text).not.toContain('Child Session:')
+  expect(admitted.text).toContain('native Claude Code configuration and permission handling govern this one-shot execution')
+  expect(admitted.text).toContain('Activity does not expose transcript inspection, continuation, resume, or rollback.')
+
+  const spec = start.mock.calls[0]?.[0]
+  expect(spec).toMatchObject({ provider: 'claude-code', delivery: 'caller' })
+  expect(spec?.childId).toBeUndefined()
+  expect(spec?.name).toBeUndefined()
+  expect(spec?.agentOptions).toBeUndefined()
+  expect(spec?.prompt).toEqual([{ type: 'text', text: 'Review the release checklist once.' }])
+  expect(providerRequests).toHaveLength(1)
+  expect(providerRequests[0]?.prompt).toEqual([{ type: 'text', text: 'Review the release checklist once.' }])
+  const request = ctx.homeActivityDelegations.list(activity.id)[0]
+  expect(request?.request).toMatchObject({ provider: 'claude-code', task: 'Review the release checklist once.' })
+  expect(request?.request.executionSelection).toEqual({
+    provider: 'claude-code', unavailableReason: 'external-provider-does-not-expose-dsh-composition',
+  })
+  expect(request?.request).not.toHaveProperty('requestedChildSessionId')
+  expect(request?.admission).toMatchObject({
+    provider: 'claude-code',
+    providerRunId: 'claude-code-provider-run-1',
+  })
+  expect(request?.admission).not.toHaveProperty('childSessionId')
+
+  result.resolve({
+    stopReason: 'completed',
+    output: [{ type: 'text', text: 'The checklist needs one migration step.' }],
+  })
+  await waitForReported(ctx, request!.id)
+  const reopened = await run(ctx, parent, ` open ${activity.id}`)
+  expect(reopened.text).toContain('Delegation state: reported.')
+  expect(reopened.text).toContain('Provider report: received; DSH has not independently verified it.')
+  expect(reopened.text).toContain('Reported outcome: provider-reported completion; not independently verified.')
+  expect(reopened.text).toContain('Provider report source: subagent-activation-result.')
+  expect(reopened.text).toContain('Freshness: unknown; DSH has no freshness check for this saved report, so it may be stale.')
+  expect(reopened.text).toContain('Claude Code-reported output: The checklist needs one migration step.')
+  expect(reopened.text).toContain('Claude Code adapter run id (not a DSH Session or native Claude Code conversation id): claude-code-provider-run-1')
+  expect(reopened.text).not.toContain('Child Session: claude-code-provider-run-1')
+  expect(start).toHaveBeenCalledTimes(1)
+  expect(parent.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toEqual([])
+  expect(parent.session.snapshotEvents().filter(event => event.type.startsWith('goal/'))).toEqual([])
+})
+
+it('reports a missing native Claude Code provider without admitting or retrying work', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  const activity = await ctx.homeActivities.create({
+    name: 'Unavailable Claude Code route',
+    objective: 'Report a missing provider without execution.',
+    boundaries: { inScope: ['Show the provider error.'], outOfScope: ['Start another provider.'] },
+  })
+  const start = vi.spyOn(ctx.subagents, 'startActivation')
+
+  const rejected = await run(ctx, parent, ` delegate ${activity.id} claude-code Review the release checklist.`)
+
+  expect(rejected).toMatchObject({ kind: 'error' })
+  expect(rejected.text).toContain('The Claude Code provider is unavailable; DSH did not attempt activation.')
+  expect(ctx.homeActivityDelegations.list(activity.id)[0]).toMatchObject({
+    status: 'not-admitted',
+    request: { provider: 'claude-code' },
+    failure: { message: 'The Claude Code provider is unavailable; DSH did not attempt activation.' },
+  })
+  expect(start).not.toHaveBeenCalled()
+  const reopened = await run(ctx, parent, ` open ${activity.id}`)
+  expect(reopened.text).toContain('Status: not admitted.')
+  expect(reopened.text).toContain('The Claude Code provider is unavailable; DSH did not attempt activation.')
+})
+
+it('keeps a possibly-started Claude Code rejection unconfirmed and never retries on reopen', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  const activity = await ctx.homeActivities.create({
+    name: 'Claude Code startup uncertainty',
+    objective: 'Keep an ambiguous external start from being retried.',
+    boundaries: { inScope: ['Record whether startup is confirmed.'], outOfScope: ['Retry external work.'] },
+  })
+  let providerStartedTask = false
+  ctx.subagents.registerProvider({
+    name: 'claude-code',
+    capabilities: NO_START_CAPABILITIES,
+    inheritsParentContext: false,
+    async start(): Promise<SubagentRun> {
+      providerStartedTask = true
+      throw new Error('simulated transport loss after SDK dispatch')
+    },
+  })
+  const start = vi.spyOn(ctx.subagents, 'startActivation')
+
+  const rejected = await run(ctx, parent, ` delegate ${activity.id} claude-code Review the checklist once.`)
+  expect(rejected.kind).toBe('error')
+  expect(providerStartedTask).toBe(true)
+  expect(rejected.text).toContain('DSH could not confirm whether Claude Code started.')
+  expect(rejected.text).toContain('It may have started; do not repeat this task unless you have independently confirmed it did not start.')
+  expect(ctx.homeActivityDelegations.list(activity.id)[0]).toMatchObject({
+    status: 'unconfirmed',
+    request: { provider: 'claude-code' },
+    uncertainty: { reason: 'claude-code-start-outcome-unknown' },
+  })
+
+  const reopened = await run(ctx, parent, ` open ${activity.id}`)
+  expect(reopened.text).toContain('Status: unconfirmed; saved facts do not establish whether the external Claude Code run started.')
+  expect(reopened.text).toContain('No Claude Code execution id was saved.')
+  expect(reopened.text).toContain('do not repeat the task unless you independently confirm it did not start')
+  expect(reopened.text).toContain('Reason: DSH did not confirm whether the external Claude Code run started.')
+  expect(providerStartedTask).toBe(true)
+  expect(start).toHaveBeenCalledTimes(1)
 })
 
 it('reports a missing native Codex provider without admitting or retrying work', async () => {

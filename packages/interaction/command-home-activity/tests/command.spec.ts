@@ -171,7 +171,7 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   )
   if (descriptor === undefined) throw new Error('Activity command was not registered')
   expect(descriptor.name).toBe('activity')
-  expect(descriptor.description).toContain('DSH-native task')
+  expect(descriptor.description).toContain('explicitly delegate one DSH-native, Codex, or Claude Code task')
   expect(descriptor.input?.hint).toContain('artifact add <activity-id> <delegation-id> <workspace-id> <JSON>')
   expect(descriptor.input?.hint).toContain('review set <activity-id> <delegation-id> <JSON>')
 
