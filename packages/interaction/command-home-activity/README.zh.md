@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 Web composer 或 SDK `session.run()` 中使用 `/activity` 保存、重新打开和关联命名 Activity；关联产物、记录用户处置及带来源归属的验证证据，或通过 DSH `spawn`、Codex 或 Claude Code 显式委派有界任务。已保存的目标不会自动启动。审核不会启动或重试委派，也不会更改提供方报告。Codex 和 Claude Code 使用原生配置与权限处理；Activity 不支持继续、恢复、查看转录或回滚这些一次性运行。挂载此命令需要命令注册表和所需的 Home Activity 服务。
+在 Web 或 SDK session.run() 中使用 /activity 创建、重新打开、关联、备注和审核 Activity，关联产物指针，或通过 DSH spawn、Codex 或 Claude Code 显式委派有界任务。备注和审核与提供方报告及专家断言分开保存。保存或重新打开 Activity 不会启动工作。Codex 和 Claude Code 保留原生身份验证与权限处理；它们是一次性运行，Activity 不能继续、恢复、查看转录或回滚。挂载命令时需启用所需 Home Activity 服务。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服务、Workspace 注册表及 Session 持久化服务加载此命令。启用委派还需要 Activity 委派与 subagent 服务，以及受支持的 DSH 原生提供方。
+Web 和 SDK profile 会通过命令注册表、持久化 Activity、关联和备注服务、Workspace 注册表及 Session 持久化服务加载此命令。启用委派还需要 Activity 委派与 subagent 服务，以及受支持的 DSH 原生提供方。
 
 ### 何时选择
 
@@ -49,7 +49,8 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 |---|---|
 | `/activity create <JSON>` | 保存名称、目标，以及包含 `inScope` 和 `outOfScope` 字符串数组的 `boundaries` 对象。至少需要一项 `inScope` 内容。 |
 | `/activity list` | 按创建时间从新到旧列出已保存 Activity 的名称和稳定 id。 |
-| `/activity open <activity-id>` | 显示已保存的目标、描述性范围、上下文引用、委派记录，以及已捕获的 profile 和 preset 选择。 |
+| `/activity open <activity-id>` | 显示已保存的目标、描述性范围、当前用户备注和最近修订、上下文引用、委派记录，以及已捕获的 profile 和 preset 选择。 |
+| `/activity annotate <activity-id> <JSON>` | 追加一条用户撰写的协调备注或更正，不修改提供方报告或专家断言。JSON 必须包含 `text`；`/activity open` 会单独显示当前备注和保留的修订历史。 |
 | `/activity workspaces` | 列出可以关联的注册 Workspace 上下文。 |
 | `/activity sessions` | 列出已存储的 DSH Session 及可用摘要元数据。 |
 | `/activity link <activity-id> workspace <workspace-id>` | 添加 Workspace 引用，不修改 Workspace 记录。 |
@@ -61,6 +62,8 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity 与关联服�
 | `/activity delegate <activity-id> codex <task>` | 保存请求，显式启动一次原生 Codex 执行，并分别报告其结果。此操作为一次性执行，不创建 DSH Session。任务最多 4,096 UTF-8 字节。 |
 | `/activity delegate <activity-id> claude-code <task>` | 保存请求，显式启动一次原生 Claude Code 执行，并分别报告其结果。此操作为一次性执行，不创建 DSH Session。任务最多 4,096 UTF-8 字节。 |
 | `/activity review set <activity-id> <delegation-id> <JSON>` | 为已保存的提供方报告记录明确的用户处置和可选的用户提供证据，且不修改该报告；报告保存前命令会拒绝审核。JSON 必须包含 `disposition`（`pending`、`accepted`、`declined` 或 `requires-investigation`）；可选 `evidence` 包含 `source`、`result`（`passed`、`failed`、`inconclusive` 或 `unavailable`）和 `summary`，以及可选的 `reference` 和 `observedAt`。响应会区分新证据、保留的证据和未记录证据。 |
+
+备注 JSON 最多为 16,384 个 UTF-8 字节，备注文本最多 4,000 个字符。备注必须为单行，且不接受控制、格式、行分隔或段落分隔字符。每个 Activity 最多保留 256 条用户命令修订；`/activity open` 显示当前备注和最近 8 条，较早修订仍会保存。写入被拒绝并不能确认修订是否已持久化或回滚。JSON 存储可能在替换文件后才报告错误，因此请重启 DSH，再打开 Activity 检查已保存历史，然后决定是否重试。
 
 创建、产物和审核 JSON 均限制为 16,384 个 UTF-8 字节。每个 Activity 最多关联 256 个 Workspace、256 个 DSH Session 和 512 个产物指针。审核证据会在当前审核记录中追加保存，每个委派最多 128 条。证据记录用户填写的来源和报告结果；DSH 不会检查这些信息。提供方成功仍只是提供方报告，不代表已经验证或被用户接受。必须先保存提供方报告才能审核。委派请求会在提供方启动前保存；拟用 `spawn` 子级 Session id 不代表已准入，外部提供方也不会虚构 DSH Session 身份。DSH 接受 activation 后命令即返回，后续结果记录独立继续。启动在调用提供方前被拒绝时会记录为未准入。如果 Codex 或 Claude Code 的启动调用在已开始调用提供方后拒绝，结果会保持未确认，因为外部运行可能已经启动；除非独立确认其未启动，否则不要重复任务。打开 Activity 不会重试。如果 `spawn` 准入状态不确定，`/activity sessions` 会显示拟用 id 是否对应已存储 Session 及其可用摘要元数据，但不会检查转录。找不到 Session 不代表启动失败。外部准入记录提供方适配器的 `SubagentRun.id`，不代表 DSH Session 或原生提供方对话 id。产物指针与报告分开保存，并明确指出它们与输出之间的关系未经验证。
 

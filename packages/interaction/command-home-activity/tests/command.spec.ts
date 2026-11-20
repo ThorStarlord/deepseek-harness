@@ -13,6 +13,7 @@ import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence
 import type { SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Workspace } from '@deepseek-ai/dsh-workspace/types'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { Agent as DshAgent } from '@deepseek-ai/dsh-agent'
@@ -30,6 +31,11 @@ import HomeActivityReviewService, {
   ActivityReviewError,
   ActivityReviewStorageError,
 } from '@deepseek-ai/dsh-home-activity/reviews'
+import HomeActivityAnnotationService, {
+  ActivityAnnotationError,
+  ActivityAnnotationStorageError,
+} from '@deepseek-ai/dsh-home-activity/annotations'
+import type { ActivityAnnotation, ActivityAnnotationId } from '@deepseek-ai/dsh-home-activity/annotations'
 import * as commandHomeActivity from '../src/index.ts'
 
 const roots: string[] = []
@@ -96,6 +102,7 @@ async function harness() {
   await ctx.plugin(HomeActivityAssociationService)
   await ctx.plugin(HomeActivityArtifactService)
   await ctx.plugin(HomeActivityReviewService)
+  await ctx.plugin(HomeActivityAnnotationService)
   const commandFiber = await ctx.plugin(commandHomeActivity)
   const primary = createAgent(ctx, SessionId(`home-activity-${randomUUID()}`))
   const secondary = createAgent(ctx, SessionId(`home-activity-coordinator-${randomUUID()}`))
@@ -164,14 +171,17 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   const test = await harness()
   expect(commandHomeActivity.inject).toEqual([
     'commands', 'homeActivities', 'homeActivityDelegations', 'subagents',
-    'homeActivityAssociations', 'homeActivityArtifacts', 'homeActivityReviews', 'workspaceRegistry', 'sessionPersistence',
+    'homeActivityAssociations', 'homeActivityArtifacts', 'homeActivityReviews', 'homeActivityAnnotations',
+    'workspaceRegistry', 'sessionPersistence',
   ])
   const descriptor = test.ctx.commands.list(test.agent).find(command =>
     command.definitionId === '@deepseek-ai/dsh-command-home-activity',
   )
   if (descriptor === undefined) throw new Error('Activity command was not registered')
   expect(descriptor.name).toBe('activity')
-  expect(descriptor.description).toContain('explicitly delegate one DSH-native, Codex, or Claude Code task')
+  expect(descriptor.description).toContain('DSH-native task')
+  expect(descriptor.description).toContain('coordination notes')
+  expect(descriptor.description).toContain('one-shot Codex or Claude Code task')
   expect(descriptor.input?.hint).toContain('artifact add <activity-id> <delegation-id> <workspace-id> <JSON>')
   expect(descriptor.input?.hint).toContain('review set <activity-id> <delegation-id> <JSON>')
 
@@ -213,6 +223,122 @@ it('rejects invalid JSON, missing scope, malformed ids, and unknown Activities c
   expect(unsupported.kind).toBe('error')
   expect(unsupported.text).toContain('Usage: /activity')
   expect(unsupported.text).toContain('link <activity-id> workspace|session <context-id>')
+})
+
+it('corrects only the user annotation and shows its history beside the unchanged provider report', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Release review', objective: 'Review the reported release state.',
+    boundaries: { inScope: ['Compare provider results with current checks.'], outOfScope: ['Do not release.'] },
+  })
+  const delegation = await test.ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id, provider: 'spawn', task: 'Report release readiness.', parentSessionId: test.session.id,
+  })
+  const admission = {
+    childSessionId: SessionId('annotation-child-session'),
+    activationName: 'activity-annotation-review',
+    admittedAt: '2026-11-17T00:00:01.000Z',
+    source: 'subagents.startActivation' as const,
+  }
+  await test.ctx.homeActivityDelegations.recordAdmitted(delegation.id, admission)
+  const report = await test.ctx.homeActivityDelegations.recordReported(delegation.id, admission, {
+    stopReason: 'stop', outputText: 'The build is ready for release.', nonTextBlockTypes: [], outputTruncated: false,
+    reportedAt: '2026-11-17T00:00:02.000Z', source: 'subagent-activation-result',
+  })
+  const startActivation = vi.spyOn(test.ctx.subagents, 'startActivation')
+  const beforeCommandEvents = test.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')
+
+  const first = await run(test, ` annotate ${activity.id} {"text":"The release appears ready based on the provider report."}`)
+  expect(first.kind).toBe('success')
+  expect(first.text).toContain('This starts the annotation history.')
+  const correction = await run(test, ` annotate ${activity.id} {"text":"Correction: the release remains blocked because migration validation failed."}`)
+  expect(correction.kind).toBe('success')
+  expect(correction.text).toContain('revision 2')
+  expect(correction.text).toContain('Earlier user annotations remain in history.')
+  expect(correction.text).toContain('Provider-reported and specialist-authored facts were not changed.')
+
+  const opened = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+  expect(opened.kind).toBe('success')
+  expect(opened.text).toContain('Current annotation (revision 2): Correction: the release remains blocked because migration validation failed.')
+  expect(opened.text).toContain('Revision 1 (')
+  expect(opened.text).toContain('The release appears ready based on the provider report.')
+  expect(opened.text).toContain('supersedes')
+  expect(opened.text).toContain('Provider-reported output: The build is ready for release.')
+  expect(opened.text).toContain('Provider report: received; DSH has not independently verified it.')
+  expect(test.ctx.homeActivityDelegations.get(delegation.id)).toEqual(report)
+  expect(test.ctx.homeActivityAnnotations.list(activity.id)).toHaveLength(2)
+  expect(startActivation).not.toHaveBeenCalled()
+  expect(test.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end'))
+    .toEqual(beforeCommandEvents)
+})
+
+it('requires a DSH restart before inspecting annotation history after a write failure', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Write recovery', objective: 'Inspect annotation state after a storage failure.',
+    boundaries: { inScope: ['Preserve the saved note.'], outOfScope: ['Do not retry automatically.'] },
+  })
+  vi.spyOn(test.ctx.homeActivityAnnotations, 'correct').mockRejectedValue(
+    new ActivityAnnotationStorageError(new Error('injected storage failure')),
+  )
+
+  const result = await run(test, ` annotate ${activity.id} {"text":"A correction."}`)
+
+  expect(result.kind).toBe('error')
+  expect(result.text).toContain('persistence may be uncertain')
+  expect(result.text).toContain(`Restart DSH, then run /activity open ${activity.id}`)
+  expect(result.text).toContain('before deciding whether to retry')
+})
+
+it('bounds opened annotation history while retaining the full saved revision list', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Long review history', objective: 'Inspect the latest coordination note.',
+    boundaries: { inScope: ['Review saved notes.'], outOfScope: ['Do not execute work.'] },
+  })
+  const revisions: ActivityAnnotation[] = []
+  for (let index = 0; index < 256; index += 1) {
+    const previous = revisions.at(-1)
+    revisions.push({
+      id: brandString<ActivityAnnotationId>(randomUUID()),
+      activityId: activity.id,
+      revision: index + 1,
+      text: `${index + 1}: ${'x'.repeat(3_990)}`,
+      ...(previous === undefined ? {} : { supersedes: previous.id }),
+      source: 'user-command',
+      recordedAt: '2026-11-18T00:00:00.000Z',
+    })
+  }
+  vi.spyOn(test.ctx.homeActivityAnnotations, 'list').mockReturnValue(Object.freeze(revisions))
+
+  const opened = await run(test, ` open ${activity.id}`)
+
+  expect(opened.kind).toBe('success')
+  expect(opened.text).toContain('Current annotation (revision 256): 256:')
+  expect(opened.text).toContain('248 earlier revisions are saved; this view shows the latest 8.')
+  expect(opened.text).toContain('Revision 249 (')
+  expect(opened.text).toContain('Revision 256 (')
+  expect(opened.text).not.toContain('Revision 248 (')
+  expect(opened.text?.length).toBeLessThan(50_000)
+})
+
+it('describes the visible annotation subset when the history limit is reached', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Capped review history', objective: 'Keep the visible history limit accurate.',
+    boundaries: { inScope: ['Review the current note.'], outOfScope: ['Do not change saved history.'] },
+  })
+  vi.spyOn(test.ctx.homeActivityAnnotations, 'correct').mockRejectedValue(
+    new ActivityAnnotationError('annotation-limit', 'An Activity can have at most 256 annotation revisions.'),
+  )
+
+  const result = await run(test, ` annotate ${activity.id} {"text":"A new note."}`)
+
+  expect(result.kind).toBe('error')
+  expect(result.text).toContain('An Activity can have at most 256 annotation revisions.')
+  expect(result.text).toContain(
+    `Run /activity open ${activity.id} to view the current note and latest 8 revisions; older revisions remain saved but are not shown by that command.`,
+  )
 })
 
 it('links selected Workspaces and Sessions independently and reopens them from another Session', async () => {

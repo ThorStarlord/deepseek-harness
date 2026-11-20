@@ -619,6 +619,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Stores user dispositions and separately attributed, user-entered evidence for Activity delegations; missing review remains pending, and review records do not alter provider reports or start work.',
   },
   {
+    key: 'homeActivityAnnotations',
+    pkg: 'home-activity',
+    title: 'Activity coordination annotation history',
+    mode: 'service',
+    consumers: ['command-home-activity'],
+    note: 'Appends user-authored corrections to Home Harness coordination notes and preserves earlier revisions separately from provider reports and specialist assertions.',
+  },
+  {
     key: 'sessionQuery',
     pkg: 'session-query',
     title: 'Session reads, traces, filters, and search',

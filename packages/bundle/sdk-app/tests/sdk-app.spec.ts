@@ -34,6 +34,7 @@ describe('dsh-sdk-app bundle', () => {
     expect(rows.find(row => row.id === 'home-activity-associations')?.name).toBe('@deepseek-ai/dsh-home-activity/associations')
     expect(rows.find(row => row.id === 'home-activity-artifacts')?.name).toBe('@deepseek-ai/dsh-home-activity/artifacts')
     expect(rows.find(row => row.id === 'home-activity-reviews')?.name).toBe('@deepseek-ai/dsh-home-activity/reviews')
+    expect(rows.find(row => row.id === 'home-activity-annotations')?.name).toBe('@deepseek-ai/dsh-home-activity/annotations')
     expect(rows.find(row => row.id === 'command-home-activity')?.name).toBe('@deepseek-ai/dsh-command-home-activity')
   })
 })

@@ -2,7 +2,7 @@
 
 English | [中文](home-activity.zh.md)
 
-A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope statements, and creation time. It is independent of any Session; creating or opening one does not start its objective. The `home-activity` package stores Activity records, context references, explicitly requested delegation facts, user-linked artifact pointers, and separate user dispositions with attributed verification evidence in [StorageDomain](storage.md) records. The Web [`/activity` command](../../packages/interaction/command-home-activity/README.md) creates, lists, opens, associates contexts, records pointers and reviews, and explicitly delegates a bounded task.
+A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope, and creation time. It is independent of any Session; creating or opening one does not start its objective. StorageDomain records keep Activity data separate from context links, requested delegation facts, user-linked output pointers, user reviews and evidence, and append-only user annotation history. The Web /activity command creates, lists, opens, associates, annotates, links outputs, records reviews, and explicitly delegates bounded tasks.
 
 ## Saved intent
 
@@ -31,6 +31,10 @@ Artifact pointers do not alter delegation requests, admissions, or reports. Open
 The separate version-1 `home_activity_reviews` domain stores one user review per delegation, linked to its owning Activity. No review row means the user disposition is pending. The service accepts a review only after the delegation has a saved provider report. A user can set the current disposition to pending, accepted, declined, or requires investigation, and append separately attributed evidence that records a user-entered source and reported result. Opening an Activity shows the disposition and each evidence entry separately from its provider report.
 
 Evidence and its result are user-supplied and are not checked by DSH. Conflicting entries remain visible rather than being collapsed into a verification status. Updating a disposition retains the evidence and does not modify delegation requests, admissions, or reports. Reviewing an Activity never starts or retries delegation.
+
+## User annotations
+
+The separate version-1 home_activity_annotations domain stores immutable, user-authored user-command revisions, each linked to the prior revision for that Activity. A correction changes only the current coordination note; it does not edit Activity fields, provider reports, or specialist assertions. Each Activity retains at most 256 revisions, and /activity open shows the current note and latest eight. Note text rejects control, format, line, and paragraph separators so history remains line-oriented. A rejected write may leave persistence uncertain; restart DSH and inspect the saved history before deciding whether to retry.
 
 ## Cordis API
 
@@ -71,6 +75,34 @@ get(id: ActivityId): Activity | undefined
 ```
 
 Source: [`packages/home/activity/src/index.ts`](../../packages/home/activity/src/index.ts)
+
+<a id="ctxhomeactivityannotations--homeactivityannotationservice"></a>
+
+### `ctx.homeActivityAnnotations` — `HomeActivityAnnotationService`
+
+Stores append-only user corrections independently from Activity and execution records.
+
+```ts cordis-catalog
+/**
+ * Append a new current-note revision while retaining each earlier user annotation.
+ * @param request - Saved Activity identity and replacement note text.
+ * @returns The saved revision with its predecessor and source attribution.
+ * @throws {ActivityAnnotationError} when the Activity is unknown, the note is invalid, or history is full.
+ * @throws {ActivityAnnotationStorageError} when annotation persistence fails.
+ */
+correct(request: CorrectActivityAnnotationRequest): Promise<ActivityAnnotation>
+
+/**
+ * List user-authored annotation revisions in original order.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached revisions for the Activity, oldest first.
+ * @throws {ActivityAnnotationError} when the Activity does not exist.
+ * @throws {ActivityAnnotationStorageError} when annotation storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityAnnotation[]
+```
+
+Source: [`packages/home/activity/src/annotations.ts`](../../packages/home/activity/src/annotations.ts)
 
 <a id="ctxhomeactivityartifacts--homeactivityartifactservice"></a>
 

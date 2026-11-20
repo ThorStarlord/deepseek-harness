@@ -11,6 +11,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import { ActivityError, ActivityId, createActivityRequestSchema } from '@deepseek-ai/dsh-home-activity'
 import { executeActivityDelegation, renderActivityDelegation } from './delegation-command.ts'
 import { executeAssociationCommand, renderActivityAssociations } from './association-command.ts'
+import { executeActivityAnnotationCommand, renderActivityAnnotations } from './annotation-command.ts'
 import { executeActivityReviewCommand, renderActivityReview } from './review-command.ts'
 
 export const name = 'command-home-activity'
@@ -22,11 +23,12 @@ export const inject = [
   'homeActivityAssociations',
   'homeActivityArtifacts',
   'homeActivityReviews',
+  'homeActivityAnnotations',
   'workspaceRegistry',
   'sessionPersistence',
 ]
 
-const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task>'
+const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task>'
 const MAX_INPUT_BYTES = 16_384
 
 type ActivityCommand =
@@ -57,14 +59,16 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.commands.register({
     definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-home-activity'),
     name: 'activity',
-    description: 'Create, list, reopen, associate Activities, record artifact pointers and outcome reviews, or explicitly delegate one DSH-native, Codex, or Claude Code task',
-    input: { hint: 'create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task>' },
+    description: 'Create, list, reopen, and associate saved Activities; correct user-owned coordination notes; record artifact pointers and outcome reviews; or explicitly delegate one DSH-native task or one-shot Codex or Claude Code task',
+    input: { hint: 'create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task>' },
     recordInput: false,
     handler: invocation => execute(ctx, invocation),
   }))
 }
 
 async function execute(ctx: Context, invocation: CommandInvocation): Promise<CommandResult> {
+  const annotationResult = await executeActivityAnnotationCommand(ctx, invocation)
+  if (annotationResult !== undefined) return annotationResult
   const associationResult = await executeAssociationCommand(ctx, invocation)
   if (associationResult !== undefined) return associationResult
   const reviewResult = await executeActivityReviewCommand(ctx, invocation)
@@ -128,6 +132,8 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
         'Boundaries (descriptive only; runtime permissions are unchanged):',
         ...activity.boundaries.inScope.map(item => `In scope: ${item}`),
         ...activity.boundaries.outOfScope.map(item => `Out of scope: ${item}`),
+        '',
+        ...renderActivityAnnotations(ctx, activity.id),
         '',
         'Delegations:',
         ...(delegations.length === 0

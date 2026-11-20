@@ -2,7 +2,7 @@
 
 [English](home-activity.md) | 中文
 
-Home Activity 是由用户发起并持久保存的事务，包含稳定身份、名称、目标、描述性范围说明和创建时间。它独立于任何 Session；创建或打开 Activity 不会启动其目标。`home-activity` 包会通过独立的 [StorageDomain](storage.zh.md) 记录保存 Activity、上下文引用、明确请求的委派事实、用户关联的产物指针，以及带来源信息的用户处置和验证证据。Web [`/activity` 命令](../../packages/interaction/command-home-activity/README.zh.md) 可创建、列出、打开、关联上下文、记录指针与审核，并明确委派有界任务。
+Home Activity 是由用户发起并持久保存的事务，具有稳定身份、名称、目标、描述性范围和创建时间。它独立于任何 Session；创建或打开 Activity 不会启动目标。StorageDomain 记录将 Activity 与上下文关联、明确请求的委派事实、用户关联的输出指针、用户审核及证据、仅追加的用户备注历史分开保存。Web /activity 命令可创建、列出、打开、关联、备注、关联输出、记录审核，并显式委派有界任务。
 
 ## 已保存意图
 
@@ -31,6 +31,10 @@ Home Activity 是由用户发起并持久保存的事务，包含稳定身份、
 独立的版本 1 `home_activity_reviews` 域会为每项委派保存一条用户审核记录，并关联到其所属 Activity。没有审核记录表示用户处置仍为 pending。只有委派的提供方报告已保存后，服务才接受审核记录。用户可以将当前处置设为 pending、accepted、declined 或 requires investigation，并追加分别注明来源的证据，记录用户填写的来源和报告结果。打开 Activity 时会将处置及各条证据与提供方报告分别显示。
 
 证据及其结果由用户提供，DSH 不会检查。相互冲突的记录会分别显示，不会合并为单一验证状态。更新处置会保留证据，也不会修改委派请求、准入或报告。审核 Activity 不会启动或重试委派。
+
+## 用户备注
+
+独立的版本 1 home_activity_annotations 域会保存用户撰写的不可变 user-command 修订，并将每条修订关联到同一 Activity 的上一条修订。更正只更新当前协调备注，不会编辑 Activity 字段、提供方报告或专家断言。每个 Activity 最多保留 256 条修订；/activity open 显示当前备注和最近八条。备注文本不接受控制、格式、行分隔或段落分隔字符，以便历史记录保持单行。写入被拒绝后，持久化状态可能不确定；请重启 DSH 并检查已保存历史，再决定是否重试。
 
 ## Cordis API
 
@@ -71,6 +75,34 @@ get(id: ActivityId): Activity | undefined
 ```
 
 Source: [`packages/home/activity/src/index.ts`](../../packages/home/activity/src/index.ts)
+
+<a id="ctxhomeactivityannotations--homeactivityannotationservice"></a>
+
+### `ctx.homeActivityAnnotations` — `HomeActivityAnnotationService`
+
+Stores append-only user corrections independently from Activity and execution records.
+
+```ts cordis-catalog
+/**
+ * Append a new current-note revision while retaining each earlier user annotation.
+ * @param request - Saved Activity identity and replacement note text.
+ * @returns The saved revision with its predecessor and source attribution.
+ * @throws {ActivityAnnotationError} when the Activity is unknown, the note is invalid, or history is full.
+ * @throws {ActivityAnnotationStorageError} when annotation persistence fails.
+ */
+correct(request: CorrectActivityAnnotationRequest): Promise<ActivityAnnotation>
+
+/**
+ * List user-authored annotation revisions in original order.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached revisions for the Activity, oldest first.
+ * @throws {ActivityAnnotationError} when the Activity does not exist.
+ * @throws {ActivityAnnotationStorageError} when annotation storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityAnnotation[]
+```
+
+Source: [`packages/home/activity/src/annotations.ts`](../../packages/home/activity/src/annotations.ts)
 
 <a id="ctxhomeactivityartifacts--homeactivityartifactservice"></a>
 
