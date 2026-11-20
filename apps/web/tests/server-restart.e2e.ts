@@ -527,8 +527,12 @@ it('creates and reopens a named Activity from a new Session after a Web process 
 
   await composer.fill('/activity sessions')
   await composer.press('Enter')
-  const availableSessions = recoveryConversation.getByText(/Available DSH Sessions/u).last()
-  await availableSessions.waitFor({ timeout: 15_000 })
+  await expect.poll(() => composer.textContent(), { timeout: 10_000 }).toBe('')
+  const availableSessions = page.getByText(/Available DSH Sessions/u).filter({ visible: true }).last()
+  await availableSessions.waitFor({ state: 'visible', timeout: 15_000 })
+  expect(await availableSessions.evaluate(element =>
+    element.closest<HTMLElement>('[data-conversation-session]')?.dataset.conversationSession,
+  )).toBe(newParentSessionId)
   const sessionListText = await availableSessions.textContent() ?? ''
   expect(sessionListText).toContain(dshChildSessionId)
   expect(sessionListText).toContain(newParentSessionId)
