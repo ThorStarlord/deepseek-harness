@@ -523,7 +523,7 @@ it('creates and reopens a named Activity from a new Session after a Web process 
   expect(overview).toContain('Source location: reports/recovery.md')
   expect(overview).toContain('Outcome: unknown; no provider result was recorded.')
   expect(overview).toContain('do not repeat the task unless you independently confirm it did not start')
-  expect(overview).toContain('Activity does not expose a Codex transcript, resume the run, or retry it')
+  expect(overview).toContain('Activity does not expose its transcript, resume the run, or retry it')
   expect(overview).toContain('does not start work or activate a Goal')
   expect(overview).not.toContain('Status: accepted.')
 

@@ -701,7 +701,7 @@ it('does not expose details when Activity reads fail', async () => {
   vi.spyOn(test.ctx.homeActivities, 'list').mockImplementation(() => { throw new Error('private storage location') })
   await expect(run(test, ' list')).resolves.toEqual({
     kind: 'error',
-    text: 'Activity data could not be read; no current state was confirmed. Check storage before repeating this read.',
+    text: 'Activity or context links could not be read; no current link state was confirmed.',
   })
   const activity = await test.ctx.homeActivities.create({
     name: 'Read failure', objective: 'Keep an existing Activity intact.',
@@ -710,7 +710,7 @@ it('does not expose details when Activity reads fail', async () => {
   vi.spyOn(test.ctx.homeActivityDelegations, 'list').mockImplementation(() => { throw new Error('private provider data') })
   await expect(run(test, ` open ${activity.id}`)).resolves.toEqual({
     kind: 'error',
-    text: 'Activity data could not be read; no current state was confirmed. Check storage before repeating this read.',
+    text: 'Activity or context links could not be read; no current link state was confirmed.',
   })
 })
 
