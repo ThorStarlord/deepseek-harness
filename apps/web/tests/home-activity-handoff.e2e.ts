@@ -108,7 +108,7 @@ describe('web e2e: external Activity handoff', () => {
 
     await submit(`/activity open ${activityId}`, /Activity: Release readiness/u)
     await page.getByRole('button', { name: /Activity: Release readiness/u }).last().click()
-    const opened = await page.locator('pre')
+    const opened = page.locator('pre')
       .filter({ hasText: 'External handoffs (user-supplied; not imported native execution history)' })
       .last()
     await mkdir(SCREENSHOT_DIR, { recursive: true })

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use /activity in Web or SDK session.run() to create, reopen, associate, annotate, and review Activities; link output pointers; and delegate bounded work through DSH spawn, Codex, or Claude Code. `/activity continue` starts a new user-requested delegation under the saved objective and selected in-scope statement; it does not resume a provider process. Annotations and reviews remain separate from provider reports and specialist assertions. Saving or reopening never starts work. Codex and Claude Code retain native authentication and permissions and remain one-shot; Activity cannot resume them, expose their transcripts, or roll them back. Users can also record external handoffs under an Activity without importing transcripts or claiming native execution.
+Use `/activity` in Web or SDK `session.run()` to create, reopen, associate, annotate, review, and delegate bounded work through DSH `spawn`, Codex, or Claude Code. It also links output pointers and records user-supplied external handoffs without importing transcripts. `/activity continue` starts a new delegation under the saved objective and selected in-scope statement; it never resumes provider work. Annotations, reviews, and corrections stay separate from provider reports and specialist assertions. Saving or reopening never starts work. Codex and Claude Code keep native authentication and permissions, run once, and expose no transcript, resume, or rollback through Activity.
 
 ## Table of Contents
 
@@ -39,8 +39,6 @@ This package has no configuration fields. In a composition that already provides
 - name: '@deepseek-ai/dsh-command-home-activity'
 ```
 
-The [command registry](../commands/README.md) owns direct human-command invocation, and [`dsh-home-activity`](../../home/activity/README.md) owns durable records.
-
 The [command registry](../commands/README.md) owns direct human-command invocation, and [`dsh-home-activity`](../../home/activity/README.md) owns durable records. Mount `@deepseek-ai/dsh-home-activity/handoffs` to record user-supplied external work summaries and references.
 
 A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activity/delegations`, `@deepseek-ai/dsh-subagent`, and a supported provider. The command supports `spawn`, `codex` when the optional native Codex provider is enabled, and `claude-code` when the optional native Claude Code provider is enabled.
@@ -61,7 +59,6 @@ A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activit
 | `/activity unlink <activity-id> session <session-id>` | Remove a DSH Session reference while preserving its log. |
 | `/activity artifact add <activity-id> <delegation-id> <workspace-id> <JSON>` | Record a user-linked output pointer with a Workspace already linked to the same Activity and a delegation owned by that Activity. JSON fields are `label`, `location`, and optional `revision`; an absent revision is displayed as unknown. |
 | `/activity handoff add <activity-id> <JSON>` | Record a user-supplied external handoff for an existing Activity. JSON fields are `source`, optional `summary`, optional `sourceReference`, and optional `artifacts` containing `label`, `location`, and optional `revision`. Include at least one summary, source reference, or artifact. |
-
 | `/activity delegate <activity-id> spawn <task>` | Save the request, explicitly start one DSH-native child activation, and report the provider outcome separately. The task is limited to 4,096 UTF-8 bytes. |
 | `/activity delegate <activity-id> codex <task>` | Save the request, explicitly start one native Codex execution, and report its outcome separately. It is one-shot and does not create a DSH Session. The task is limited to 4,096 UTF-8 bytes. |
 | `/activity delegate <activity-id> claude-code <task>` | Save the request, explicitly start one native Claude Code execution, and report its outcome separately. It is one-shot and does not create a DSH Session. The task is limited to 4,096 UTF-8 bytes. |
@@ -93,7 +90,6 @@ The command is registered for explicit human invocation, not as a model tool. Sa
 | [`src/artifact-command.ts`](src/artifact-command.ts) | User-linked artifact pointer commands and rendering |
 | [`src/review-command.ts`](src/review-command.ts) | Review input, persistence command, and outcome rendering |
 | [`src/handoff-command.ts`](src/handoff-command.ts) | User-supplied external handoff command and rendering |
-
 | [`tests/command.spec.ts`](tests/command.spec.ts) | Command behavior, safe failures, and no-execution assertions |
 | [`apps/web/tests/home-activity-review.e2e.ts`](../../../apps/web/tests/home-activity-review.e2e.ts) | Review disposition and evidence through the assembled Web app and command RPC |
 | [`tests/delegation.e2e.spec.ts`](tests/delegation.e2e.spec.ts) | Provider-backed command success and failure through the host seam |

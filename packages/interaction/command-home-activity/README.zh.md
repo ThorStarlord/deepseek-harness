@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 Web 或 SDK session.run() 中使用 /activity 创建、重新打开、关联、备注和审核 Activity，关联产物指针，通过 DSH spawn、Codex 或 Claude Code 显式委派有界任务，或在 Activity 已保存目标和选定的范围内语句下请求一次新的委派。备注和审核与提供方报告及专家断言分开保存。保存或重新打开 Activity 不会启动工作。继续请求是由用户明确启动的新提供方请求，不是恢复先前进程。Codex 和 Claude Code 保留原生身份验证与权限处理；它们是一次性运行，Activity 不能恢复、查看转录或回滚。挂载命令时需启用所需 Home Activity 服务。 用户也可以在 Activity 下记录外部交接，而无需导入 transcript 或声称这是原生执行记录。
+在 Web 或 SDK `session.run()` 中使用 `/activity` 创建、重新打开、关联、备注和审核 Activity，并通过 DSH `spawn`、Codex 或 Claude Code 发起有界委派。命令也可关联输出指针，并记录用户提供的外部交接而不导入 transcript。`/activity continue` 会按已保存目标和用户选择的范围内语句启动一次新委派，不会恢复之前的提供方执行。备注、审核与更正都与提供方报告和专家断言分开保存。保存或重新打开不会启动工作。Codex 和 Claude Code 保留原生身份验证与权限；它们是一次性执行，Activity 不提供 transcript、恢复或回滚能力。
 
 ## 目录
 
@@ -39,8 +39,6 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity、关联和备
 - name: '@deepseek-ai/dsh-command-home-activity'
 ```
 
-[命令注册表](../commands/README.zh.md)负责直接调用人工命令，[`dsh-home-activity`](../../home/activity/README.zh.md)负责持久记录。
-
 [命令注册表](../commands/README.zh.md)负责直接调用人工命令，[`dsh-home-activity`](../../home/activity/README.zh.md)负责持久记录。挂载 `@deepseek-ai/dsh-home-activity/handoffs` 可记录用户提供的外部交接。
 
 启用委派的组合还需挂载 `@deepseek-ai/dsh-home-activity/delegations`、`@deepseek-ai/dsh-subagent` 和受支持的提供方。命令支持 `spawn`；启用可选的原生 Codex 或 Claude Code 提供方后，也支持 `codex` 或 `claude-code`。
@@ -61,7 +59,6 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity、关联和备
 | `/activity unlink <activity-id> session <session-id>` | 删除 DSH Session 引用，保留 Session 日志。 |
 | `/activity artifact add <activity-id> <delegation-id> <workspace-id> <JSON>` | 为该 Activity 的委派记录输出指针，并要求所选 Workspace 已关联到同一 Activity。JSON 字段为 `label`、`location` 和可选的 `revision`；缺少修订版时显示为未知。 |
 | `/activity handoff add <activity-id> <JSON>` | 为现有 Activity 记录用户提供的外部交接。JSON 字段为 `source`、可选的 `summary`、可选的 `sourceReference`，以及可选的 `artifacts`（含 `label`、`location` 和可选的 `revision`）。至少需要摘要、来源引用或一个产物引用。 |
-
 | `/activity delegate <activity-id> spawn <task>` | 保存请求，显式启动一次 DSH 原生子级执行，并分别报告提供方结果。任务最多 4,096 UTF-8 字节。 |
 | `/activity delegate <activity-id> codex <task>` | 保存请求，显式启动一次原生 Codex 执行，并分别报告其结果。此操作为一次性执行，不创建 DSH Session。任务最多 4,096 UTF-8 字节。 |
 | `/activity delegate <activity-id> claude-code <task>` | 保存请求，显式启动一次原生 Claude Code 执行，并分别报告其结果。此操作为一次性执行，不创建 DSH Session。任务最多 4,096 UTF-8 字节。 |
@@ -95,7 +92,6 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity、关联和备
 | [`src/artifact-command.ts`](src/artifact-command.ts) | 用户关联的产物指针命令与显示 |
 | [`src/review-command.ts`](src/review-command.ts) | 审核输入、持久化命令与结果显示 |
 | [`src/handoff-command.ts`](src/handoff-command.ts) | 用户提供的外部交接命令与显示 |
-
 | [`tests/command.spec.ts`](tests/command.spec.ts) | 命令行为、安全失败与不执行断言 |
 | [`apps/web/tests/home-activity-review.e2e.ts`](../../../apps/web/tests/home-activity-review.e2e.ts) | 通过组装后的 Web 应用和命令 RPC 验证处置与证据 |
 | [`tests/delegation.e2e.spec.ts`](tests/delegation.e2e.spec.ts) | 通过宿主调用路径验证提供方委派成功与失败 |

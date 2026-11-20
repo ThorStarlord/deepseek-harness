@@ -92,13 +92,15 @@ it('rejects invalid handoffs and preserves prior records after an unconfirmed wr
     artifacts: [],
     recordedInSessionId: SessionId('dsh-source-session'),
   })).rejects.toMatchObject({ code: 'invalid-handoff' })
-  await expect(test.ctx.homeActivityHandoffs.create({
+  const duplicate = await test.ctx.homeActivityHandoffs.create({
     activityId: activity.id,
     source: 'External native interface',
     summary: 'User-supplied result summary.',
     artifacts: [],
     recordedInSessionId: SessionId('dsh-source-session'),
-  })).resolves.toMatchObject({ id: expect.any(String), origin: 'user-supplied-external' })
+  })
+  expect(duplicate.origin).toBe('user-supplied-external')
+  expect(duplicate.id).toMatch(/^[0-9a-f-]{36}$/u)
   const beforeFailure = test.ctx.homeActivityHandoffs.list(activity.id)
   expect(beforeFailure).toHaveLength(2)
 

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-保存命名 Activity 的目标与描述性范围，使其在原 Session 结束后仍可使用。Web 与 SDK 的 /activity 命令可在不同 Session 间创建、关联、备注和重新打开 Activity。独立记录保存上下文关联、委派请求与报告、用户关联的输出指针、带来源归属证据的用户处置，以及仅追加的用户更正；更正和审核不会替换提供方报告或专家事实。显式委派支持 DSH 子级激活，以及一次性 Codex 或 Claude Code 运行。创建或打开 Activity 不会启动目标、创建 Goal 或授予权限。 用户提供的外部交接会保留其来源和产物引用，不会导入 transcript 或声称其为原生执行记录。
+保存命名 Activity、目标与描述性范围，使其可跨 Session 使用。Web 与 SDK 的 `/activity` 命令可在不同 Session 间创建、关联、备注和重新打开 Activity。独立记录保存上下文引用、委派请求与报告、输出指针、带来源证据的用户处置、追加式更正，以及用户提供的外部交接。显式委派可启动 DSH 子级激活，或一次性 Codex、Claude Code 运行。审核和更正不会替换提供方报告或专家事实。创建或打开 Activity 不会启动工作、创建 Goal 或授予权限。外部交接保留来源和产物引用，不导入 transcript，也不声称其为原生执行记录。
 
 
 ## 目录
@@ -84,7 +84,6 @@ Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associ
 | [`src/annotation-types.ts`](src/annotation-types.ts) | 用户撰写的备注修订类型 |
 | [`src/annotation-spec.ts`](src/annotation-spec.ts) | 版本化备注记录 schema 和域 |
 | [`src/annotations.ts`](src/annotations.ts) | 独立追加式备注 StorageDomain 服务 |
-
 | [`src/handoff-types.ts`](src/handoff-types.ts) | 外部交接记录类型 |
 | [`src/handoff-spec.ts`](src/handoff-spec.ts) | 带版本的外部交接 schema |
 | [`src/handoffs.ts`](src/handoffs.ts) | 独立外部交接 StorageDomain 服务 |

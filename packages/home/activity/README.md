@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Save named Activities with objectives and descriptive scope that persist beyond their originating Sessions. The Web and SDK /activity command creates, links, annotates, and reopens Activities across Sessions. Separate records retain context links, delegation requests and reports, user-linked output pointers, user dispositions with attributed evidence, and append-only user corrections; corrections and reviews do not replace provider or specialist facts. Explicit delegation supports DSH child activations and one-shot Codex or Claude Code runs. Creating or opening an Activity never starts its objective, creates a Goal, or grants permissions. User-supplied external handoffs preserve their source and artifact references without importing transcripts or claiming native execution.
+Save named Activities with objectives and descriptive scope beyond their originating Sessions. The Web and SDK `/activity` command creates, links, annotates, and reopens Activities across Sessions. Separate records retain context links, delegation requests and reports, output pointers, user dispositions with attributed evidence, append-only corrections, and user-supplied external handoffs. Explicit delegation starts a DSH child activation or a one-shot Codex or Claude Code run. Reviews and corrections never replace provider or specialist facts. Creating or opening an Activity never starts work, creates a Goal, or grants permissions. External handoffs preserve source and artifact references without importing transcripts or claiming native execution.
 
 ## Table of Contents
 
@@ -83,7 +83,6 @@ User-supplied external handoffs use the separate version-1 `home_activity_handof
 | [`src/annotation-types.ts`](src/annotation-types.ts) | User-authored annotation revision types |
 | [`src/annotation-spec.ts`](src/annotation-spec.ts) | Versioned annotation record schema and domain |
 | [`src/annotations.ts`](src/annotations.ts) | Separate append-only annotation StorageDomain service |
-
 | [`src/handoff-types.ts`](src/handoff-types.ts) | External handoff record types |
 | [`src/handoff-spec.ts`](src/handoff-spec.ts) | Versioned external handoff schema |
 | [`src/handoffs.ts`](src/handoffs.ts) | Separate external handoff StorageDomain service |
