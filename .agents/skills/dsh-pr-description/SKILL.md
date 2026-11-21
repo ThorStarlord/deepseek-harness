@@ -60,7 +60,7 @@ Write each disclosure in the section it concerns, usually Changes, after a bold 
 |---|---|---|
 | Changing the behavior an existing test describes | Why the behavior changed | The Tests describe behavior rule in [root AGENTS.md](../../../AGENTS.md) |
 | Raising a ceiling in `scripts/doc-budgets.manifest.json` | Each raised ceiling with its old and new value, and why the words are necessary | [Wordcount budgets](../../../docs/AGENTS.md#wordcount-budgets) |
-| Changing product-user-visible GUI behavior | Evidence selected under the DSH UI evidence policy, with the exact commit, server, origin, and runtime mode disclosed beside each artifact; when no GIF is used, state why and identify the supporting evidence | [DSH UI evidence policy](../dsh-client-ui-ux/SKILL.md#evidence-matched-to-claims); [record-browser-gif](../record-browser-gif/SKILL.md#when-a-gif-supports-the-evidence-claim) |
+| Changing product-user-visible GUI behavior | Evidence selected under the DSH UI evidence policy, with the exact reviewed commit and source identified. For an artifact, identify the application tree, server origin, transport, provider, and runtime mode when they apply; if no GIF is used, state why and identify the supporting evidence | [DSH UI evidence policy](../dsh-client-ui-ux/SKILL.md#evidence-matched-to-claims); [record-browser-gif](../record-browser-gif/SKILL.md#when-a-gif-supports-the-evidence-claim) |
 | Using a translation term the terminology list lacks | The source of the rendering, or a proposed rendering under pending terms | [Translation rules](../../../docs/i18n/translation-rules.md) |
 
 ## AI Usage
