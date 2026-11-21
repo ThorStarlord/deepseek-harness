@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionLogOffset, SessionSeq, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent, SessionHeader, SessionId as SessionIdType } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader, SessionId as SessionIdType } from '@deepseek-ai/dsh-session'
 import SessionPersistence, {
   SessionPersistenceCorruptionError,
   SessionPersistenceNotFoundError,
@@ -179,6 +179,7 @@ describe('SessionObservationReader live path', () => {
     using observed = await reader.read(session.id, { projectionMode: 'none' })
     using retained = observed.retain()
     expect(observed.cursor).toBe(0)
+    expect(observed).not.toHaveProperty('persistedCursor')
     expect(snapshotEvents).not.toHaveBeenCalled()
 
     expect(retained.events).toBe(observed.events)
@@ -234,6 +235,7 @@ describe('SessionObservationReader cold path', () => {
     expect(observed.events[0]).toBe(restoredSource?.[0])
     expect(Object.isFrozen(restoredSource?.[0]?.data)).toBe(false)
     expect(observed.cursor).toBe(2)
+    expect(observed.persistedCursor).toBe(1)
     // No projection registry is mounted, so the observation carries none.
     expect(observed.projections).toBeUndefined()
     // Balancing is in-memory only: nothing was written back to the store.
@@ -745,13 +747,21 @@ describe('SessionObservationReader cold projections', () => {
     const ctx = await readerContext()
     await ctx.plugin(SessionProjectionRegistry)
     const meta = header('cold-registry')
-    const store = new Map([[meta.id, { header: meta, events: [messageEvent(0, 'projected')], revision: 'r1' }]])
+    const storedEvents = interruptedLog('projected')
+    const store = new Map([[meta.id, { header: meta, events: storedEvents, revision: 'r1' }]])
     ctx.provide('sessionPersistence', stubPersistence(store, { stat: 0, open: 0, read: 0 }))
+    const hydrate = vi.spyOn(ctx.sessionProjections, 'hydrate')
 
     using observed = await new SessionObservationReader(ctx).read(meta.id)
 
     expect(observed.source).toBe('prepared')
-    expect(observed.projections).toBeDefined()
+    expect(observed.events.at(-1)).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'interrupted' } } })
+    expect(observed.cursor).toBe(2)
+    expect(observed.persistedCursor).toBe(1)
+    expect(observed.projections?.asOfSeq).toBe(1)
+    expect(hydrate.mock.calls[0]?.[2]).toEqual(storedEvents)
+    expect(hydrate.mock.calls[0]?.[2].every(event => event.type !== 'turn/end')).toBe(true)
+    expect(store.get(meta.id)?.events).toEqual(storedEvents)
     await ctx.fiber.dispose()
   })
 
@@ -759,17 +769,91 @@ describe('SessionObservationReader cold projections', () => {
     const ctx = await readerContext()
     await ctx.plugin(SessionProjectionRegistry)
     const meta = header('cold-cache')
-    const store = new Map([[meta.id, { header: meta, events: [messageEvent(0, 'cached')], revision: 'r1' }]])
+    const storedEvents = interruptedLog('cached')
+    const store = new Map([[meta.id, { header: meta, events: storedEvents, revision: 'r1' }]])
     ctx.provide('sessionPersistence', stubPersistence(store, { stat: 0, open: 0, read: 0 }))
-    const snapshot = { asOfSeq: 0, values: {} }
-    const hydratePrepared = vi.fn().mockReturnValue(snapshot)
+    const projectedEvents: (readonly SessionEvent[])[] = []
+    const snapshot = { asOfSeq: 1, values: {} }
+    const hydratePrepared = vi.fn((_session: Session, events: readonly SessionEvent[]) => {
+      projectedEvents.push(events)
+      return snapshot
+    })
     ctx.provide('sessionProjectionCache', { hydratePrepared } as never)
+    const reader = new SessionObservationReader(ctx)
 
-    using observed = await new SessionObservationReader(ctx).read(meta.id)
+    using observed = await reader.read(meta.id)
+    using repeated = await reader.read(meta.id)
 
     expect(observed.projections).toBe(snapshot)
-    expect(hydratePrepared).toHaveBeenCalledOnce()
+    expect(observed.events.at(-1)).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'interrupted' } } })
+    expect(observed.cursor).toBe(2)
+    expect(observed.persistedCursor).toBe(1)
+    expect(repeated.projections).toBe(snapshot)
+    expect(hydratePrepared).toHaveBeenCalledTimes(2)
+    expect(projectedEvents).toEqual([storedEvents, storedEvents])
+    expect(projectedEvents.every(events => events.every(event => event.type !== 'turn/end'))).toBe(true)
+    expect(store.get(meta.id)?.events).toEqual(storedEvents)
+
+    const durableMeta = header('cold-durable-interrupted')
+    const durableEvents = [
+      ...interruptedLog('durably interrupted'),
+      { type: 'turn/end', seq: SessionSeq(2), time: 3, data: { turn: 1, reason: { kind: 'interrupted' } } },
+    ] satisfies SessionEvent[]
+    store.set(durableMeta.id, { header: durableMeta, events: durableEvents, revision: 'r1' })
+    using durable = await reader.read(durableMeta.id)
+    expect(durable.events.at(-1)).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'interrupted' } } })
+    expect(durable.persistedCursor).toBe(2)
+    expect(projectedEvents.at(-1)).toEqual(durableEvents)
     await ctx.fiber.dispose()
+  })
+
+  it('keeps cold outcome projections unknown in a fresh reader while retaining durable interruption', async () => {
+    const meta = header('cold-fresh-reader')
+    const storedEvents = interruptedLog('fresh reader')
+    const store = new Map([[meta.id, { header: meta, events: storedEvents, revision: 'r1' }]])
+    const projected: (readonly SessionEvent[])[] = []
+    const snapshotFor = (events: readonly SessionEvent[]) => {
+      projected.push(events)
+      return {
+        asOfSeq: events.at(-1)?.seq ?? -1,
+        values: {
+          outcome: events.findLast(event => event.type === 'turn/end')?.type === 'turn/end'
+            ? 'interrupted'
+            : 'unknown',
+        },
+      }
+    }
+
+    const firstContext = await readerContext()
+    await firstContext.plugin(SessionProjectionRegistry)
+    firstContext.provide('sessionPersistence', stubPersistence(store, { stat: 0, open: 0, read: 0 }))
+    firstContext.provide('sessionProjectionCache', {
+      hydratePrepared: (_session: Session, events: readonly SessionEvent[]) => snapshotFor(events),
+    } as never)
+    using first = await new SessionObservationReader(firstContext).read(meta.id)
+    expect(first.events.at(-1)?.type).toBe('turn/end')
+    expect(first.persistedCursor).toBe(1)
+    expect(first.projections?.values).toEqual({ outcome: 'unknown' })
+    await firstContext.fiber.dispose()
+
+    const durableMeta = header('cold-fresh-durable-interrupted')
+    const durableEvents = [
+      ...interruptedLog('durable'),
+      { type: 'turn/end', seq: SessionSeq(2), time: 3, data: { turn: 1, reason: { kind: 'interrupted' } } },
+    ] satisfies SessionEvent[]
+    store.set(durableMeta.id, { header: durableMeta, events: durableEvents, revision: 'r1' })
+    const secondContext = await readerContext()
+    await secondContext.plugin(SessionProjectionRegistry)
+    secondContext.provide('sessionPersistence', stubPersistence(store, { stat: 0, open: 0, read: 0 }))
+    secondContext.provide('sessionProjectionCache', {
+      hydratePrepared: (_session: Session, events: readonly SessionEvent[]) => snapshotFor(events),
+    } as never)
+    using durable = await new SessionObservationReader(secondContext).read(durableMeta.id)
+    expect(durable.events.at(-1)?.type).toBe('turn/end')
+    expect(durable.persistedCursor).toBe(2)
+    expect(durable.projections?.values).toEqual({ outcome: 'interrupted' })
+    expect(projected).toEqual([storedEvents, durableEvents])
+    await secondContext.fiber.dispose()
   })
 
   it('wraps a prepared projection failure as a corrupt-session failure', async () => {

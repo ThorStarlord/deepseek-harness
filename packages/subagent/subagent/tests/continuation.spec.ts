@@ -2,7 +2,8 @@ import { listChildren } from '../src/list-children.ts'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { mountWorkingDirectoryFixture } from './working-directory-fixture.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -11,8 +12,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionEventMap, SessionHeader } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
@@ -25,12 +26,13 @@ import SubagentRuntime, {
   SubagentError,
   SUBAGENT_DESCRIPTOR_VERSION,
 } from '../src/index.ts'
+import { establishCatalogChild } from '../src/catalog.ts'
 import type { SubagentRunEndInfo, SubagentRunInfo } from '../src/index.ts'
 import type { SubagentPromptRequestId } from '../src/control-types.ts'
 import * as activationResults from '../src/activation.ts'
 import { requireLocalActivation } from '../src/activation.ts'
 import { TestSessionQuery } from './test-session-query.ts'
-import { loadStoredSession } from './persistence-helpers.ts'
+import { loadStoredSession, seedStoredSession } from './persistence-helpers.ts'
 import {
   managerState,
   subagentManager,
@@ -83,10 +85,10 @@ afterEach(async () => {
 /** Boot the full continuable stack: loop, persistence, providers, and subagents. */
 async function setupWith(
   adapter: LlmAdapter,
-  options: { persistence?: boolean; sessionQuery?: boolean; maxActiveSubagents?: number } = {},
+  options: { persistence?: boolean; sessionQuery?: boolean; maxActiveSubagents?: number; workingDirectory?: boolean } = {},
 ) {
   const ctx = new Context()
-  await mountAgentLoopTestDependencies(ctx)
+  await mountAgentLoopTestDependencies(ctx, { workingDirectory: options.workingDirectory === true })
   let disposePersistence: (() => Promise<void>) | undefined
   let root: string | undefined
   if (options.persistence !== false) {
@@ -112,10 +114,82 @@ async function setupWith(
   return { ctx, parent, disposePersistence, root }
 }
 
-async function setup(script: Script, options: { persistence?: boolean } = {}) {
+async function setup(script: Script, options: { persistence?: boolean; workingDirectory?: boolean } = {}) {
   const adapter = new MockAdapter(script)
   const booted = await setupWith(adapter, options)
   return { ...booted, adapter }
+}
+
+/** Run fixture Git without inherited credentials or repository overrides. */
+function git(cwd: string, args: readonly string[]): string {
+  const inheritedEnv = Object.fromEntries(Object.entries(process.env)
+    .filter(([name]) => !name.startsWith('GIT_') && !/(key|secret|token|password)/i.test(name)))
+  return execFileSync('git', [...args], {
+    cwd,
+    encoding: 'utf8',
+    env: {
+      ...inheritedEnv,
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+    },
+  })
+}
+
+/** Reopen one persisted subagent tree in a fresh runtime context. */
+async function restoreStack(root: string, adapter?: LlmAdapter): Promise<Context> {
+  const fresh = new Context()
+  // Close this second persistence owner before the setup stack removes its root.
+  cleanups.unshift(async () => { await fresh.fiber.dispose() })
+  await mountAgentLoopTestDependencies(fresh, { workingDirectory: true })
+  await fresh.plugin(JsonlSessionPersistence, { root })
+  await fresh.plugin(AgentLoop, { agents: [] })
+  await fresh.plugin(TestSessionQuery)
+  await mountWorkingDirectoryFixture(fresh)
+  if (fresh.get('sessionProjections') === undefined) await fresh.plugin(SessionProjectionRegistry)
+  await fresh.plugin(SubagentRuntime)
+  await fresh.plugin(SubagentSpawn, { providerName: 'spawn' })
+  if (adapter !== undefined) fresh.llm.registerAdapter(['mock'], adapter)
+  return fresh
+}
+
+/** Make a disposable Git workspace with staged, unstaged, and untracked files. */
+function makeDirtyRepository() {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-return-task-'))
+  cleanups.push(async () => { rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) })
+  git(root, ['-c', 'init.defaultBranch=main', 'init', '--quiet'])
+  mkdirSync(join(root, 'src'))
+  writeFileSync(join(root, 'AGENTS.md'), 'Keep this disposable repository unchanged.\n')
+  writeFileSync(join(root, 'src', 'worker.ts'), "export const value = 'baseline'\n")
+  git(root, ['add', 'AGENTS.md', 'src/worker.ts'])
+  git(root, [
+    '-c', 'user.name=DSH Test', '-c', 'user.email=dsh-test@example.invalid',
+    'commit', '--quiet', '-m', 'baseline',
+  ])
+  writeFileSync(join(root, 'src', 'worker.ts'), "export const value = 'unstaged change'\n")
+  writeFileSync(join(root, 'src', 'staged.ts'), 'export const staged = true\n')
+  git(root, ['add', 'src/staged.ts'])
+  writeFileSync(join(root, 'scratch.txt'), 'untracked content\n')
+  return {
+    root,
+    head: git(root, ['rev-parse', 'HEAD']).trim(),
+    branch: git(root, ['branch', '--show-current']).trim(),
+    status: git(root, ['status', '--porcelain=v1']).trim(),
+    staged: git(root, ['diff', '--cached', '--binary']),
+    unstaged: git(root, ['diff', '--binary']),
+  }
+}
+
+/** Check the disposable repository's Git state and user files after delegated work. */
+function expectRepositoryUnchanged(repository: ReturnType<typeof makeDirtyRepository>): void {
+  expect(git(repository.root, ['rev-parse', 'HEAD']).trim()).toBe(repository.head)
+  expect(git(repository.root, ['branch', '--show-current']).trim()).toBe(repository.branch)
+  expect(git(repository.root, ['status', '--porcelain=v1']).trim()).toBe(repository.status)
+  expect(git(repository.root, ['diff', '--cached', '--binary'])).toBe(repository.staged)
+  expect(git(repository.root, ['diff', '--binary'])).toBe(repository.unstaged)
+  expect(readFileSync(join(repository.root, 'AGENTS.md'), 'utf8')).toBe('Keep this disposable repository unchanged.\n')
+  expect(readFileSync(join(repository.root, 'src', 'worker.ts'), 'utf8')).toBe("export const value = 'unstaged change'\n")
+  expect(readFileSync(join(repository.root, 'src', 'staged.ts'), 'utf8')).toBe('export const staged = true\n')
+  expect(readFileSync(join(repository.root, 'scratch.txt'), 'utf8')).toBe('untracked content\n')
 }
 
 const testSignal = new AbortController().signal
@@ -800,29 +874,30 @@ describe('SubagentRuntime.startActivation', () => {
     await drainManager(ctx)
   })
 
-  it('cold-resumes without inventing a model route the descriptor never declared', async () => {
-    const { ctx, root } = await setup([textResponse('first')])
+  it('restores an actual failed delegated outcome without inventing a model route', async () => {
+    const { ctx, root } = await setup([textResponse('first')], { workingDirectory: true })
+    const repository = makeDirtyRepository()
     const routeless = await ctx.agentLoop.create(SessionId('routeless-resume'), {})
-    const started = await ctx.subagents.startActivation({ ...startSpec(routeless), delivery: 'parent' })
+    const started = await ctx.subagents.startActivation({ ...startSpec(routeless), cwd: repository.root, delivery: 'parent' })
     await waitNoActivation(ctx, started.childId)
+    expectRepositoryUnchanged(repository)
     // End the first lifecycle so its write leases release before the fresh
     // context re-creates the parent identity and cold-resumes the child.
     await ctx.fiber.dispose()
 
-    const fresh = new Context()
-    await mountAgentLoopTestDependencies(fresh)
-    const freshPersistence = await fresh.plugin(JsonlSessionPersistence, { root: root! })
-    // This context opened a second handle on the same root; register it so
-    // afterEach closes it before removing the root (even on a failure path).
-    cleanups.push(async () => { await freshPersistence.dispose() })
-    await fresh.plugin(AgentLoop, { agents: [] })
-    await fresh.plugin(TestSessionQuery)
-    await mountWorkingDirectoryFixture(fresh)
-    await fresh.plugin(SubagentRuntime)
-    await fresh.plugin(SubagentSpawn, { providerName: 'spawn' })
+    const fresh = await restoreStack(root!)
     // The disposed lifecycle drained the parent's log durably, so the fresh
     // context resumes that identity instead of re-creating it.
-    await fresh.agents.resume({ resumeSessionId: SessionId('routeless-resume'), agentOptions: {} })
+    const restoredParent = await fresh.agents.resume({ resumeSessionId: SessionId('routeless-resume'), agentOptions: {} })
+    expect(await listChildren(fresh, restoredParent.agent.id)).toMatchObject([
+      { id: started.childId, mode: 'continuable', label: 'child task' },
+    ])
+    expect(fresh.agents.get(started.childId)).toBeUndefined()
+    using childObservation = await fresh.sessionQuery.observeSession(started.childId)
+    expect(childObservation.projections?.values.subagentTiming).toMatchObject({ lastTurnOutcome: 'failed' })
+    expect(childObservation.events.findLast(event => event.type === 'turn/end'))
+      .toMatchObject({ data: { reason: { kind: 'error' } } })
+    expectRepositoryUnchanged(repository)
     await queuePrompt(fresh, started.childId, message('resume routeless'))
 
     const resumed = await vi.waitFor(() => {
@@ -833,6 +908,124 @@ describe('SubagentRuntime.startActivation', () => {
     expect(resumed.options.provider).toBeUndefined()
     expect(resumed.options.model).toBeUndefined()
     await drainManager(fresh)
+  })
+
+  it('keeps a cold synthetic interruption unknown and a persisted interruption recorded', async () => {
+    const { ctx, parent } = await setup([])
+    const repository = makeDirtyRepository()
+    const openChildId = SessionId('cold-open-child')
+    const openChildHeader = {
+      version: SESSION_FORMAT_VERSION,
+      id: openChildId,
+      createdAt: 2,
+      cwd: repository.root,
+      parentSession: parent.id,
+      isSeeded: false,
+      origin: 'subagent',
+      delegationDepth: 1,
+    } satisfies SessionHeader
+    const childDescriptor = { mode: 'continuable' as const, label: 'open turn' }
+    establishCatalogChild(parent.session, openChildHeader, childDescriptor, 'open-child')
+    await ctx.sessionPersistence.flush()
+    await seedStoredSession(ctx.sessionPersistence, openChildHeader, [
+      {
+        type: 'subagent/descriptor',
+        seq: SessionSeq(0),
+        time: 1,
+        data: { version: SUBAGENT_DESCRIPTOR_VERSION, mode: 'continuable', provider: 'spawn', label: 'open turn' },
+      },
+      { type: 'turn/start', seq: SessionSeq(1), time: 2, data: { turn: 1 } },
+    ])
+
+    const before = await loadStoredSession(ctx.sessionPersistence, openChildId)
+    using open = await ctx.sessionQuery.observeSession(openChildId)
+    using repeated = await ctx.sessionQuery.observeSession(openChildId)
+    expect(open.header.cwd).toBe(repository.root)
+    expect(open.events.at(-1)).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'interrupted' } } })
+    expect(open.persistedCursor).toBe(SessionSeq(1))
+    expect(open.projections?.values.subagentTiming).toMatchObject({ active: expect.any(Object) })
+    expect(open.projections?.values.subagentTiming).not.toHaveProperty('lastTurnOutcome')
+    expect(open.projections?.values.subagentTiming).not.toHaveProperty('lastTurnCompleted')
+    expect(repeated.projections?.values.subagentTiming).toEqual(open.projections?.values.subagentTiming)
+    expect(ctx.agents.get(openChildId)).toBeUndefined()
+    expect((await loadStoredSession(ctx.sessionPersistence, openChildId)).events).toEqual(before.events)
+
+    const durableChildId = SessionId('cold-durable-interrupted-child')
+    const durableChildHeader = { ...openChildHeader, id: durableChildId, createdAt: 3 }
+    establishCatalogChild(parent.session, durableChildHeader, { mode: 'continuable', label: 'recorded interruption' }, 'durable-child')
+    await ctx.sessionPersistence.flush()
+    await seedStoredSession(ctx.sessionPersistence, durableChildHeader, [
+      {
+        type: 'subagent/descriptor',
+        seq: SessionSeq(0),
+        time: 1,
+        data: {
+          version: SUBAGENT_DESCRIPTOR_VERSION, mode: 'continuable', provider: 'spawn', label: 'recorded interruption',
+        },
+      },
+      { type: 'turn/start', seq: SessionSeq(1), time: 2, data: { turn: 1 } },
+      { type: 'turn/end', seq: SessionSeq(2), time: 3, data: { turn: 1, reason: { kind: 'interrupted' } } },
+    ])
+    const durableBefore = await loadStoredSession(ctx.sessionPersistence, durableChildId)
+    using durable = await ctx.sessionQuery.observeSession(durableChildId)
+    expect(durable.persistedCursor).toBe(SessionSeq(2))
+    expect(durable.cursor).toBe(SessionSeq(2))
+    expect(durable.events.at(-1)).toMatchObject({ type: 'turn/end', data: { reason: { kind: 'interrupted' } } })
+    expect(durable.projections?.values.subagentTiming)
+      .toMatchObject({ lastTurnOutcome: 'interrupted', lastTurnCompleted: false })
+    expect((await loadStoredSession(ctx.sessionPersistence, durableChildId)).events).toEqual(durableBefore.events)
+    expect(ctx.agents.get(durableChildId)).toBeUndefined()
+    expectRepositoryUnchanged(repository)
+  })
+
+  it('restores a completed child and cold-resumes it from its original repository scope', async () => {
+    const { ctx, parent, root } = await setup([textResponse('first result')], { workingDirectory: true })
+    const repository = makeDirtyRepository()
+    const started = await ctx.subagents.startActivation({
+      ...startSpec(parent), cwd: repository.root, delivery: 'parent',
+    })
+    await waitNoActivation(ctx, started.childId)
+    expectRepositoryUnchanged(repository)
+    const originalChild = await loadStoredSession(ctx.sessionPersistence, started.childId)
+    expect(originalChild.events.findLast(event => event.type === 'turn/end'))
+      .toMatchObject({ data: { reason: { kind: 'completed' } } })
+    expect(originalChild.events.findLast(event => event.type === 'working-directory/change'))
+      .toMatchObject({ data: { cwd: repository.root } })
+
+    await ctx.fiber.dispose()
+    const releaseContinuation = Promise.withResolvers<undefined>()
+    const continuationAdapter = new GatedAdapter([
+      { chunks: textResponse('continued result'), gate: releaseContinuation.promise },
+    ])
+    const fresh = await restoreStack(root!, continuationAdapter)
+    const restoredParent = await fresh.agents.resume({
+      resumeSessionId: parent.id,
+      agentOptions: { provider: 'mock', model: 'mock' },
+    })
+    expect(await listChildren(fresh, restoredParent.agent.id)).toContainEqual(expect.objectContaining({
+      id: started.childId, mode: 'continuable', label: 'child task',
+    }))
+    expect(fresh.agents.get(started.childId)).toBeUndefined()
+
+    using beforeContinuation = await fresh.sessionQuery.observeSession(started.childId)
+    expect(beforeContinuation.projections?.values.subagentTiming).toMatchObject({ lastTurnOutcome: 'completed' })
+    expect(beforeContinuation.events.findLast(event => event.type === 'working-directory/change'))
+      .toMatchObject({ data: { cwd: repository.root } })
+
+    try {
+      await queuePrompt(fresh, started.childId, message('continue the task'))
+      await vi.waitFor(() => { expect(continuationAdapter.requests).toHaveLength(1) })
+      expect(fresh.workingDirectory.get(fresh.agents.get(started.childId)!.session)).toBe(repository.root)
+    } finally {
+      releaseContinuation.resolve(undefined)
+    }
+    await waitNoActivation(fresh, started.childId)
+    using afterContinuation = await fresh.sessionQuery.observeSession(started.childId)
+    expect(afterContinuation.events.filter(event => event.type === 'assistant/message')
+      .some(event => event.data.message.content.some(block => block.type === 'text' && block.text === 'continued result'))).toBe(true)
+    expect(afterContinuation.projections?.values.subagentTiming).toMatchObject({ lastTurnOutcome: 'completed' })
+    expect(afterContinuation.events.filter(event => event.type === 'subagent/descriptor')).toHaveLength(1)
+    expectRepositoryUnchanged(repository)
   })
 
   it('continues turn numbering after an inherited fork prefix and pre-turn descriptor', async () => {

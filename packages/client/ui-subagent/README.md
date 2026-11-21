@@ -71,7 +71,7 @@ Breadcrumb addresses derive from the Provider-bound Session address, loaded pare
 
 ### Duration, completion, and tokens
 
-Each visible catalog level advances its own clock while it contains a running child; collapsing the level or closing the menu releases that clock. Token totals sum the four disjoint `tokenUsage` buckets. The `subagentTiming` projection sums completed-turn duration and supplies `latestTurnCompleted` for both the success dot and completed count; opening another turn clears that completion until its own `turn/end`. Duration advances once per second only for an open turn on a running child and freezes after the child becomes inactive; an interrupted open turn is bounded by its same-cut `active.through`, never by newer session metadata.
+Each visible catalog level advances its own clock while it contains a running child; collapsing the level or closing the menu releases that clock. Token totals sum the four disjoint `tokenUsage` buckets. The `subagentTiming` projection sums closed-turn duration, maps the latest local `turn/end` reason to the `lastTurnOutcome` category, and clears that outcome when another turn opens. Inactive local child rows show the latest turn as completed, failed, cancelled, blocked, token-limit, interrupted, ended for another reason, or unknown when outcome evidence is absent; these labels describe a turn, not completion of the delegated responsibility. External rows have no local Session outcome. Duration advances once per second only for an open turn on a running child and freezes after the child becomes inactive; an interrupted open turn is bounded by its same-cut `active.through`, never by newer session metadata.
 
 ### Composer election
 
@@ -122,7 +122,7 @@ Append-only. This package never edits earlier request tokens.
 
 These limits define what the catalog can show and what `@` references mean; they are current package constraints.
 
-- **Non-completed inactive outcomes remain grouped** — the catalog distinguishes a latest normal completion from other inactive states, but does not distinguish failure, cancellation, refusal, token exhaustion, or a child with no closed turn; the UI exposes no Activation identity, and stopping is limited to the composer's current-turn Stop for a running continuable child.
+- **Inactive child outcome scope** — local rows classify only the latest durable `turn/end` reason; an open turn or missing child projection is shown as unknown, and external rows have no local Session outcome. The label describes that turn, not completion of the delegated responsibility. The UI exposes no Activation identity, and stopping is limited to the composer's current-turn Stop for a running continuable child.
 - **`@` references remain display-title text** — duplicate or renamed labels are ambiguous, so they intentionally do not acquire continuation semantics.
 
 <a id="dev-note"></a>

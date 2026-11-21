@@ -92,7 +92,7 @@ kind: "package-reference"
 | [`src/index.ts`](src/index.ts) | 服务定义：抽象 `SessionQueryEngine`、具体读取、配置校验 |
 | [`src/corpus.ts`](src/corpus.ts) | 实时优先的语料库解析、可选持久化绑定、批量投影 |
 | [`src/observation.ts`](src/observation.ts) | 实时优先的定点观察，带按修订键控的有界 prepared-Session 缓存 |
-| [`src/cold-read.ts`](src/cold-read.ts) | 基于句柄的冷日志读取，附内存中的中断轮次闭合事件 |
+| [`src/cold-read.ts`](src/cold-read.ts) | 基于句柄的冷日志读取，保留已存事件数量并附加内存中的中断轮次闭合事件 |
 | [`src/types.ts`](src/types.ts) | 公共记录、过滤器、请求与分页类型 |
 | [`src/config.ts`](src/config.ts) | 继承配置与封闭的 `SessionQueryError` 分类体系 |
 | [`src/filters.ts`](src/filters.ts) | 提供方无关谓词与字面文本扫描 |
@@ -108,6 +108,8 @@ kind: "package-reference"
 ### 观察缓存
 
 `observeSession` 不经过列表预检直接构建定点观察。实时观察以当前日志长度固定 cut，并在首次读取时才物化 `events`，因此只需要 header、cursor 或 projection 的消费者永远不会复制日志；日志只会追加，所以延后的首次读取得到的仍然正好是该前缀。冷路径先对存储会话执行 `stat`，再查询自有的有界缓存，缓存键为持久化实例加 `stat` 修订：修订未变则复用已恢复的未发布 Session，不再重读日志；修订变化或持久化实例被替换则经句柄 seam 重新加载并替换条目。缓存保留 `preparedSessionCacheSize` 个条目并按最久未用淘汰，被活跃观察租约钉住的条目从不被淘汰；读取中途转为实时的会话会重试实时路径。
+
+prepared 冷观察会在逻辑事件转录中保留合成闭合事件，但 `persistedCursor` 指向已存前缀，投影也只折叠该前缀。
 
 ### 读取与追踪
 

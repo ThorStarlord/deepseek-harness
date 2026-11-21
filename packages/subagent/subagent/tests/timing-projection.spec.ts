@@ -38,6 +38,30 @@ describe('subagent timing projection', () => {
     expect(subagentIdentityProjectionDefinition.wire.view(state)).toEqual({ mode: 'one-shot', seq: 1 })
   })
 
+  it('retains a one-shot label and leaves malformed or newer descriptors unknown', () => {
+    const labeled = {
+      ...event('subagent/descriptor', 1, 110),
+      data: { version: SUBAGENT_DESCRIPTOR_VERSION, mode: 'one-shot', provider: 'spawn', label: 'reviewer' },
+    } as SessionEvent
+    expect(subagentIdentityProjectionDefinition.wire.view(
+      subagentIdentityProjectionDefinition.apply(subagentIdentityProjectionDefinition.init(), labeled),
+    )).toEqual({ mode: 'one-shot', label: 'reviewer', seq: 1 })
+
+    const malformed = {
+      ...event('subagent/descriptor', 2, 120),
+      data: { version: SUBAGENT_DESCRIPTOR_VERSION, mode: 'continuable', provider: 'spawn' },
+    } as SessionEvent
+    const newer = {
+      ...event('subagent/descriptor', 3, 130),
+      data: { version: SUBAGENT_DESCRIPTOR_VERSION + 1, mode: 'one-shot', provider: 'spawn' },
+    } as SessionEvent
+    for (const descriptor of [malformed, newer]) {
+      expect(subagentIdentityProjectionDefinition.wire.view(
+        subagentIdentityProjectionDefinition.apply(subagentIdentityProjectionDefinition.init(), descriptor),
+      )).toBeNull()
+    }
+  })
+
   it('waits for the session projection registry and releases its projections on unload', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
@@ -52,6 +76,22 @@ describe('subagent timing projection', () => {
     // The identity unit registers alongside timing; an empty log serves its
     // serializable null sentinel.
     expect(before.subagent).toBeNull()
+    const session = ctx.sessions.create()
+    session.append('turn/start', { turn: 1 })
+    session.append('subagent/descriptor', {
+      version: SUBAGENT_DESCRIPTOR_VERSION, mode: 'continuable', provider: 'spawn', label: 'worker',
+    })
+    session.append('turn/end', { turn: 1, reason: { kind: 'error', error: { message: 'failed', code: 'UNKNOWN' } } })
+    expect(ctx.sessionProjections.snapshot(session).values.subagentTiming)
+      .toMatchObject({ lastTurnOutcome: 'failed' })
+    session.append('turn/start', { turn: 2 })
+    const active = ctx.sessionProjections.snapshot(session).values.subagentTiming?.active
+    expect(active).toBeDefined()
+    expect(typeof active?.since).toBe('number')
+    expect(typeof active?.through).toBe('number')
+    session.append('turn/end', { turn: 2, reason: { kind: 'aborted', reason: { kind: 'user' } } })
+    expect(ctx.sessionProjections.snapshot(session).values.subagentTiming)
+      .toMatchObject({ lastTurnOutcome: 'cancelled' })
     await serviceFiber.dispose()
     const after = ctx.sessionProjections.snapshot(ctx.sessions.create()).values
     expect(after.subagentTiming).toBeUndefined()
@@ -68,7 +108,15 @@ describe('subagent timing projection', () => {
       event('turn/end', 5, 4_100),
       event('turn/start', 6, 10_000),
       event('turn/end', 7, 12_000),
-    ])).toEqual({ settledMs: 5_100, lastTurnCompleted: true })
+    ])).toEqual({ settledMs: 5_100, lastTurnOutcome: 'completed', lastTurnCompleted: true })
+  })
+
+  it('preserves the completion-only projection field for older consumers', () => {
+    expect(subagentTimingProjectionDefinition.wire.viewSchema.parse({ settledMs: 0, lastTurnCompleted: true }))
+      .toEqual({ settledMs: 0, lastTurnCompleted: true })
+    expect(subagentTimingProjectionDefinition.wire.viewSchema.parse({
+      settledMs: 0, lastTurnOutcome: 'failed', lastTurnCompleted: true,
+    })).toEqual({ settledMs: 0, lastTurnOutcome: 'failed', lastTurnCompleted: false })
   })
 
   it('exposes an open turn start and never subtracts time for reversed boundaries', () => {
@@ -81,14 +129,14 @@ describe('subagent timing projection', () => {
     ])).toEqual({ settledMs: 0, active: { since: 2_000, through: 2_500 } })
   })
 
-  it('publishes only the latest closed turn completion and clears it when another turn opens', () => {
+  it('publishes the latest closed turn outcome and clears it when another turn opens', () => {
     expect(fold([
       event('turn/start', 0, 100),
       event('subagent/descriptor', 1, 110),
       event('turn/end', 2, 200),
       event('turn/start', 3, 300),
       event('turn/end', 4, 400, { kind: 'interrupted' }),
-    ])).toEqual({ settledMs: 200, lastTurnCompleted: false })
+    ])).toEqual({ settledMs: 200, lastTurnOutcome: 'interrupted', lastTurnCompleted: false })
 
     expect(fold([
       event('turn/start', 0, 100),
@@ -96,6 +144,20 @@ describe('subagent timing projection', () => {
       event('turn/end', 2, 200),
       event('turn/start', 3, 300),
     ])).toEqual({ settledMs: 100, active: { since: 300, through: 300 } })
+  })
+
+  it.each([
+    [{ kind: 'error', error: { message: 'failed', code: 'UNKNOWN' } }, 'failed'],
+    [{ kind: 'aborted', reason: { kind: 'user' } }, 'cancelled'],
+    [{ kind: 'blocked' }, 'blocked'],
+    [{ kind: 'max-tokens' }, 'token-limit'],
+    [{ kind: 'forked' }, 'other'],
+  ] as const)('classifies the durable turn end %s', (reason, outcome) => {
+    expect(fold([
+      event('turn/start', 0, 100),
+      event('subagent/descriptor', 1, 110),
+      event('turn/end', 2, 200, reason),
+    ])).toMatchObject({ lastTurnOutcome: outcome })
   })
 
   it('ignores completed pre-descriptor turns and unrelated events', () => {

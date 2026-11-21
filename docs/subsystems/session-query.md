@@ -4,6 +4,8 @@ English | [中文](session-query.zh.md)
 
 Query vocabulary over the live-preferred logical session corpus. The [Service Definition package](../../packages/session-query/session-query) owns exact reads, source precedence, relationship tracing, semantic extraction, and provider-independent filters, while the [SQLite provider](../../packages/session-query/session-query-sqlite) owns the concrete full-text index lifecycle.
 
+A prepared cold observation keeps synthetic interrupted-turn closers in its logical event transcript, while its `persistedCursor` and projection baseline stop at the last stored event. Live observations omit `persistedCursor` because their newest events are not guaranteed durable.
+
 Source: [`packages/session-query/session-query/src/types.ts`](../../packages/session-query/session-query/src/types.ts)
 
 ## Logical records
