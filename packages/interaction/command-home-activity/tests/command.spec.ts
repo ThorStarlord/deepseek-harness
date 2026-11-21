@@ -24,6 +24,7 @@ import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import HomeActivityService, { ActivityError, ActivityId } from '@deepseek-ai/dsh-home-activity'
 import HomeActivityDelegations from '@deepseek-ai/dsh-home-activity/delegations'
 import HomeActivityAssociationService, {
+  HomeActivityAssociationError,
   HomeActivityAssociationStorageError,
 } from '@deepseek-ai/dsh-home-activity/associations'
 import HomeActivityArtifactService from '@deepseek-ai/dsh-home-activity/artifacts'
@@ -457,19 +458,22 @@ it('reports association limits with a safe recovery command', async () => {
     name: 'Review', objective: 'Review the change.',
     boundaries: { inScope: ['Inspect the patch.'], outOfScope: ['Do not merge.'] },
   })
-  const workspaceIds = Array.from({ length: 257 }, (_, index) =>
-    `10000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, '0')}`,
+  const workspaceId = '10000000-0000-4000-8000-000000000001'
+  const linkWorkspace = vi.spyOn(test.ctx.homeActivityAssociations, 'linkWorkspace').mockRejectedValueOnce(
+    new HomeActivityAssociationError(
+      'association-limit',
+      'An Activity can have at most 256 Workspace references. Remove an existing Workspace reference before adding another.',
+    ),
   )
-  for (const id of workspaceIds) test.workspaces.set(id, workspace(id, `Project ${id.slice(-4)}`))
-  for (const id of workspaceIds.slice(0, 256)) {
-    await test.ctx.homeActivityAssociations.linkWorkspace(ActivityId(activity.id), WorkspaceId(id))
-  }
 
-  const result = await run(test, ` link ${activity.id} workspace ${workspaceIds[256]}`)
+  const result = await run(test, ` link ${activity.id} workspace ${workspaceId}`)
   expect(result).toMatchObject({ kind: 'error' })
   expect(result.text).toContain('An Activity can have at most 256 Workspace references.')
   expect(result.text).toContain(`Run /activity open ${activity.id}`)
   expect(result.text).toContain(`/activity unlink ${activity.id} workspace <workspace-id>`)
+  expect(linkWorkspace).toHaveBeenCalledWith(
+    ActivityId(activity.id), WorkspaceId(workspaceId),
+  )
 })
 
 it('records user-linked artifact pointers for two Workspace contexts and shows absent revisions as unknown', async () => {

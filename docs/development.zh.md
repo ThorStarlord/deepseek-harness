@@ -172,6 +172,8 @@ keyless [CI 工作流](../.github/workflows/ci.yml) 将独立门禁分组到若�
 
 根目录的[贡献者说明](../AGENTS.md#commands)概述常用命令，[`package.json`](../package.json) 与 [scripts/run-gates.ts](../scripts/run-gates.ts) 则负责当前脚本和门禁清单。请选择覆盖变更表面的最小检查集。文档变更使用 `pnpm run doc-sync`；包公开行为变更还需更新所属 README 或 JSDoc，而基于构建产物的检查需要先运行 `pnpm run build`。
 
+如需记录本地耗时，可用 `pnpm run dev:trace -- begin --run-id run-id --task task-id --agent coordinator` 标记一次运行；用 `pnpm run dev:trace -- run --run-id run-id --operation operation-id --task task-id --agent coordinator --activity test -- <command>` 包装每个命令，然后使用 `end` 和 `report` 模式记录结束并生成报告。要记录 coordinator 等待、review 调用或其他 host 操作，可在操作前立即使用 `span-start`，操作后跟随 `span-end --status completed`，并根据实际情况选择 `completed`、`failed` 或 `unknown`；span 持续时间使用不同进程记录的墙上时钟时间，并包含标记命令本身的耗时。请使用不含用户数据的简短不透明标识符；subagent 使用独立运行 ID 和 `--parent-run-id`，并将子运行指向同一记录文件。`--depends-on` 用于记录声明的操作依赖。默认的逐次运行记录保存在被忽略的 `.artifacts/dev-run-traces/` 中。记录器只保存标签、进程 ID、时间戳、耗时、安全的进程错误代码和结果，不保存命令参数、提示词、错误消息或输出。包装命令的耗时使用单调时钟；运行区间和跨进程区间使用记录的墙上时钟时间，因此缺少结束时间时报告会标为未知，也不会推断关键路径。
+
 ### Profile 运行
 
 从源码 checkout 运行这些演示前，请单独执行仓库构建：
