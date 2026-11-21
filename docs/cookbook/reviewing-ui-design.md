@@ -8,7 +8,7 @@ English | [中文](reviewing-ui-design.zh.md)
 
 ## Summary
 
-Use this cookbook for explicitly requested comprehensive reviews and for evidence steps justified by a change's impact or regression risk. Ordinary development follows the lightweight path in the [UI change workflow](../../.agents/skills/dsh-client-ui-ux/SKILL.md#required-review-loop); it does not execute every section below. The [principles and case reference](../ui-design-review-cases.md) supplies judgment criteria, not a mandatory checklist. Existing tests, GUI PR GIFs and designer/product approval remain governed by their original owners.
+Use this cookbook for explicitly requested comprehensive reviews and for evidence steps justified by a change's impact or regression risk. Ordinary development follows the lightweight path in the [UI change workflow](../../.agents/skills/dsh-client-ui-ux/SKILL.md#required-review-loop); it does not execute every section below. The [principles and case reference](../ui-design-review-cases.md) supplies judgment criteria, not a mandatory checklist. Tests, UI evidence and designer/product approval follow their respective policy owners.
 
 Check the complete icon box, including intentional internal whitespace, text columns and gaps before judging the drawn contour. Hit targets are not icon boxes; do not align each glyph’s painted pixels independently. See the [alignment principle](../ui-design-review-cases.md#alignment).
 
@@ -120,7 +120,7 @@ When build or hot-reload state is uncertain, create a separate application insta
 <a id="verify"></a>
 ## 5. Verify behavior and comparable images
 
-Inspect the affected result and directly affected neighbors in the actual page. If a required scene is unavailable, report the missing check, reason and next verification; labeled production-component fixtures provide partial evidence, not an actual-page pass. Extra screenshots and comparisons are required when requested or needed to explain broad changes or assess regression risk; routine edits need no separate report. This changes recordkeeping, not the minimum inspection or existing GIF rules. For a comparison, match content, theme, locale, viewport, zoom, device scale, interaction state and content anchor; let fonts, data and transitions settle.
+Inspect the affected result and directly affected neighbors in the actual page. If a required scene is unavailable, report the missing check, reason and next verification; labeled production-component fixtures provide partial evidence, not an actual-page pass. Extra screenshots and comparisons are required when requested or needed to explain broad changes or assess regression risk; routine edits need no separate report. This changes recordkeeping, not the minimum inspection or evidence selected by the [UI evidence policy](../../.agents/skills/dsh-client-ui-ux/SKILL.md#evidence-matched-to-claims). For a comparison, match content, theme, locale, viewport, zoom, device scale, interaction state and content anchor; let fonts, data and transitions settle.
 
 When producing a comparison, save final captures separately and pair them with the corresponding starting scene under matching conditions.
 
@@ -145,7 +145,7 @@ Use the [UI change workflow](../../.agents/skills/dsh-client-ui-ux/SKILL.md#requ
 
 ### Comparison delivery and cumulative changes
 
-For a formal comparison report, use before on the left and after on the right. Add non-obscuring annotations only when helpful, on the after image, and retain originals; a removable overlay is useful for interactive reports. Choose a readable narrow-screen presentation rather than requiring a special report interface. Ordinary handoffs may use simple labeled images or concise text; the original GIF requirements remain unchanged.
+For a formal comparison report, use before on the left and after on the right. Add non-obscuring annotations only when helpful, on the after image, and retain originals; a removable overlay is useful for interactive reports. Choose a readable narrow-screen presentation rather than requiring a special report interface. Ordinary handoffs may use simple labeled images or concise text; evidence form follows the [UI evidence policy](../../.agents/skills/dsh-client-ui-ux/SKILL.md#evidence-matched-to-claims).
 
 Deduplicate cumulative summaries by location: pair the earliest reliable before image with the final implementation, retaining comparable conditions. Keep intermediate rounds only as historical evidence, not separate final results; reverted proposals are not current results. List another session's retained changes separately without claiming them. Disclose missing baselines or uncertain ownership. Record actual checks without adding repeated runs as extra coverage.
 

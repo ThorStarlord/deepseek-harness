@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-11-16-claim-proportionate-ui-evidence.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/process/2026-11-16-claim-proportionate-ui-evidence.md
+/agent-note-claim-proportionate-ui-evidence:
+  en: e5595090e7bf0dbc
+  zh: 59b1bc677408c665
+/agent-note-claim-proportionate-ui-evidence/problem:
+  en: ce5c3919479557e1
+  zh: 193ebef8810bceca
+/agent-note-claim-proportionate-ui-evidence/proposal:
+  en: a971ad20beb5a3ab
+  zh: a8545836d1a425d8
+/agent-note-claim-proportionate-ui-evidence/alternatives-considered:
+  en: a1535344515acc29
+  zh: b98a2213c9acf36c
+/agent-note-claim-proportionate-ui-evidence/acceptance-criteria:
+  en: e75e85258441c358
+  zh: 06715200ac9fab40
+/agent-note-claim-proportionate-ui-evidence/risks:
+  en: 042297ee0ac464c9
+  zh: e5cb1fd8c1ab9f33
