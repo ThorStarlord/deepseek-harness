@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { parseTraceEvents, renderTraceReport, summarizeTrace } from './dev-run-trace.ts'
 
@@ -34,6 +39,37 @@ const operation = (
 })
 
 describe('development run trace', () => {
+  it('rejects a reused operation ID before running or appending another command', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'dsh-dev-run-trace-'))
+    const tracePath = join(directory, 'trace.jsonl')
+    const scriptPath = fileURLToPath(new URL('./dev-run-trace.ts', import.meta.url))
+    const baseArgs = [
+      '--import', 'tsx/esm', scriptPath,
+      'run', '--trace', tracePath,
+      '--run-id', 'guard-run', '--task', 'trace-guard', '--agent', 'coordinator',
+      '--operation', 'same-operation', '--activity', 'test', '--',
+      process.execPath, '-e', 'process.exit(0)',
+    ]
+    try {
+      const first = spawnSync(process.execPath, baseArgs, { cwd: resolve(import.meta.dirname, '..'), encoding: 'utf8', timeout: 30_000 })
+      expect(first.error).toBeUndefined()
+      expect(first.signal).toBeNull()
+      expect(first.status).toBe(0)
+      const beforeRetry = readFileSync(tracePath, 'utf8')
+
+      const retry = spawnSync(process.execPath, [...baseArgs.slice(0, -1), 'process.exit(23)'], {
+        cwd: resolve(import.meta.dirname, '..'), encoding: 'utf8', timeout: 30_000,
+      })
+      expect(retry.error).toBeUndefined()
+      expect(retry.signal).toBeNull()
+      expect(retry.status).toBe(1)
+      expect(retry.stderr).toContain('Operation same-operation already has a start event in run guard-run')
+      expect(readFileSync(tracePath, 'utf8')).toBe(beforeRetry)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it('uses monotonic operation duration while retaining wall timestamps for correlation', () => {
     const events = parseTraceEvents([
       JSON.stringify(run('run-started', '2026-11-21T12:00:00.000Z')),
