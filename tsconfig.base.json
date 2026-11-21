@@ -418,6 +418,7 @@
       "@deepseek-ai/dsh-home-activity/delegations": ["./packages/home/activity/src/delegations.ts"],
       "@deepseek-ai/dsh-home-activity/associations": ["./packages/home/activity/src/associations.ts"],
       "@deepseek-ai/dsh-home-activity/artifacts": ["./packages/home/activity/src/artifacts.ts"],
+      "@deepseek-ai/dsh-home-activity/handoffs": ["./packages/home/activity/src/handoffs.ts"],
       "@deepseek-ai/dsh-home-activity/reviews": ["./packages/home/activity/src/reviews.ts"],
       "@deepseek-ai/dsh-home-activity/annotations": ["./packages/home/activity/src/annotations.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths

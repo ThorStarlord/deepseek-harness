@@ -69,6 +69,8 @@ Never dissolve, reorder, or rebuild an existing stack automatically; `gh stack l
 
 Do not rewrite branches merely because a refresh mechanism exists. When the live merge state or repository rules require an updated trunk, choose either allowed history:
 
+After a prerequisite merges, fetch and compare the dependent branch's current base before final qualification begins. If the base must be incorporated, synchronize first, inspect the resulting diff, and run only checks invalidated by the changed base; do not spend final-qualification time on a tree already known to require another merge-forward. Keep the refresh explicit and preserve any in-progress checkpoint.
+
 - **Native cascading rebase:** check out the remote stack with `gh stack checkout <pr-or-stack>` when it is not tracked locally, then run `gh stack sync`. The command may rebase and lease-protected force-push every active layer before local validation. Immediately inspect the rewritten scope, run the relevant checks for every affected layer, and do not merge or claim readiness until they pass. If sync detects a rebase conflict, use `gh stack rebase`, resolve and validate it, then publish with `gh stack push`. If checkout or sync reports divergent local and remote stack compositions, cancel and ask rather than deleting or recreating the remote stack automatically.
 - **Incremental merge-forward:** merge the trunk into the bottom affected branch, then propagate each updated parent into its child in bottom-to-top order and push normally. If the base advances during an in-progress merge, preserve that checkpoint before merging the newer tip.
 

@@ -23,6 +23,12 @@ function unexpectedWebsiteMarkdown(files: readonly string[]): string[] {
   return files.filter(file => file.endsWith('.md') && file !== 'website/AGENTS.md').sort()
 }
 
+function isSymlinkPermissionError(error: unknown): boolean {
+  return error instanceof Error
+    && 'code' in error
+    && (error.code === 'EPERM' || error.code === 'EACCES')
+}
+
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -150,17 +156,31 @@ describe('publishableImage', () => {
     expect(publishableImage(join(root, 'packages/logo.svg'), realpathSync(root))).toBe(real)
   })
 
-  it('refuses a target whose real path escapes the repository', () => {
+  it('refuses a target whose real path escapes the repository', ({ skip }) => {
     // Publication copies the bytes onto the site, so a reference reaching a
     // build-machine file must not be treated as an image the repository owns.
     const { root } = fixture()
     const outside = mkdtempSync(join(tmpdir(), 'dsh-doc-site-outside-'))
     roots.push(outside)
     writeFileSync(join(outside, 'secret.png'), 'not really a png\n')
-    symlinkSync(join(outside, 'secret.png'), join(root, 'packages/linked.png'))
+    try {
+      symlinkSync(join(outside, 'secret.png'), join(root, 'packages/linked.png'))
+    } catch (error) {
+      if (process.platform === 'win32' && isSymlinkPermissionError(error)) {
+        skip('Windows denied creation of the symlink required by this case')
+      }
+      throw error
+    }
 
     expect(publishableImage(join(root, 'packages/linked.png'), realpathSync(root))).toBeUndefined()
     expect(publishableImage(join(outside, 'secret.png'), realpathSync(root))).toBeUndefined()
+  })
+
+  it('classifies only symlink permission errors as capability denials', () => {
+    expect(isSymlinkPermissionError(Object.assign(new Error('denied'), { code: 'EPERM' }))).toBe(true)
+    expect(isSymlinkPermissionError(Object.assign(new Error('denied'), { code: 'EACCES' }))).toBe(true)
+    expect(isSymlinkPermissionError(Object.assign(new Error('missing'), { code: 'ENOENT' }))).toBe(false)
+    expect(isSymlinkPermissionError(new Error('missing code'))).toBe(false)
   })
 
   it('refuses a directory', () => {
