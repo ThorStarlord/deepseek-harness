@@ -1,0 +1,29 @@
+- banner:
+  - navigation "Session hierarchy": Reply with the single word
+  - text: Standard mode
+  - button "More actions"
+  - button "Open right sidebar"
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+  - button "More conversation views"
+- text: Reply with the single word LIGHTHOUSE and stop. {{clock}}
+- button "Copy"
+- status: Completed
+- button "Completed in {{duration}}"
+- paragraph: LIGHTHOUSE
+- button "Copy"
+- button "Good response"
+- button "Bad response"
+- button "Branch into a new conversation"
+- text: {{clock}}
+- button [expanded]
+- text: "Activity: Release readiness ID: {{activity-id}} Created: {{timestamp}} Objective: Prepare the release for review. Boundaries (descriptive only; runtime permissions are unchanged): In scope 1: Collect external reports. Out of scope: Do not publish. Home Harness coordination annotation (user-authored; separate from provider reports and specialist assertions): No annotation recorded. Use /activity annotate <activity-id> <JSON> to add a note. Delegations: No delegation requests. External handoffs (user-supplied; not imported native execution history): External handoff: Claude Code terminal — {{handoff-id}} Recorded in DSH Session: {{recording-session-id}} User-supplied summary: The external run reports two checklist items for follow-up. User-supplied source reference: https://example.invalid/external/review/123 User-supplied artifact reference: Review notes — reports/external-review.md Artifact revision: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa This external report was not imported as a native Session and has not been independently verified or accepted. Workspace links (selected separately): No Workspace links. DSH Session links (selected separately; these links do not assign Sessions to Workspaces): No DSH Session links. User-linked artifact references (not verified outputs): No artifact references. Opening an Activity displays saved intent and reported facts; it does not start work or activate a Goal."
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Add files or run commands"
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash": DeepSeek-V4-Flash
+- button "Send message" [disabled]
+- button "1 turns 1 steps · {{throughput}} tok/s": 1 turns 1 steps{{throughput}} tok/s
+- button "7.8K tok · Cache hit 99%": 7.8K tokCache hit 99%
+- button "6% of context used": 6%

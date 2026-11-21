@@ -54,6 +54,29 @@
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 
+    - id: home-activity
+      name: '@deepseek-ai/dsh-home-activity'
+
+    - id: home-activity-delegations
+      name: '@deepseek-ai/dsh-home-activity/delegations'
+
+    - id: home-activity-associations
+      name: '@deepseek-ai/dsh-home-activity/associations'
+
+    - id: home-activity-artifacts
+      name: '@deepseek-ai/dsh-home-activity/artifacts'
+
+    - id: home-activity-handoffs
+      name: '@deepseek-ai/dsh-home-activity/handoffs'
+    - id: home-activity-reviews
+      name: '@deepseek-ai/dsh-home-activity/reviews'
+
+    - id: home-activity-annotations
+      name: '@deepseek-ai/dsh-home-activity/annotations'
+
+    - id: command-home-activity
+      name: '@deepseek-ai/dsh-command-home-activity'
+
     - id: schedule
       name: '@deepseek-ai/dsh-schedule'
       inject: [sdkSessionActivation]

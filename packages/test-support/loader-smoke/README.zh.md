@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-使用 `dsh-loader-smoke` 可从应用 fixture（测试前置数据）的真实可执行文件及其 `cordis.yml` 启动应用，并在隔离的临时目录中捕获输出和完成清理。`runFixtureTurn` 通过已配置的根 agent 驱动一项任务，并返回最终 assistant 文本与 token 用量。测试可以选择零构建的源码执行或已构建包执行，使本地和 CI 冒烟测试分别采用对应环境预期的消费路径。这个支持层库面向测试作者，不用于产品集成。
+使用 `dsh-loader-smoke` 可从应用 fixture（测试前置数据）的真实可执行文件及其 `cordis.yml` 启动应用，并在隔离的临时目录中捕获输出和完成清理。`runFixtureTurn` 通过已配置的根 agent 驱动一项任务，并返回最终 assistant 文本与 token 用量。`bootProductionProfile` 使用有序测试 overlay 组装已交付 profile。测试可以选择零构建的源码执行或已构建包执行，使本地和 CI 冒烟测试分别采用对应环境预期的消费路径。这个支持层库面向测试作者，不用于产品集成。
 
 ## 目录
 
@@ -45,7 +45,7 @@ const result = await runLoaderSmoke({
 
 ### 测试交付 profile
 
-Profile 集成 driver 使用仅限仓库内部的 `tests/fixtures/production-profile.ts` helper。它通过 `loadProfile` 加载指定的已交付 profile 及其组合包 patch，计算 runtime resolution，并通过 `PluginPackages` 安装它，然后把组合包 patch 与测试 `*.patch.yml` 文件依次交给 `boot` 挂载的根 `cordis:include`。这些 patch 应只包含测试提供方或模型、隔离持久化路径及被测对象专用变更。只需要 agent loop 而不测试 profile 集成的包级单元测试改为在本地挂载 `dsh-agent-loop-testkit`。
+从 `@deepseek-ai/dsh-loader-smoke` 导入 `bootProductionProfile`，并传入诊断 bin 名称、已交付 profile 和按顺序排列的测试 `*.patch.yml` 路径。它加载 profile 的组合包 patch，解析这些补丁所需的运行时包，使用测试 overlay 启动 Loader，然后返回根 context。Overlay 仅应包含测试提供方或模型、隔离持久化路径及被测对象专用变更。只需要 agent loop 而不测试 profile 集成的包级单元测试改为在本地挂载 `dsh-agent-loop-testkit`。
 
 ### 驱动 fixture 轮次
 
@@ -81,7 +81,8 @@ harness 建立在一个分离之上：冒烟测试在隔离世界中的子进程
 |---|---|
 | [`src/index.ts`](src/index.ts) | 模式解析器、`runLoaderSmoke` 子进程 harness、选项与结果类型 |
 | [`src/agent-turn.ts`](src/agent-turn.ts) | `runFixtureTurn` 直接 agent driver 与结果信封 |
-| [`tests/fixtures/production-profile.ts`](tests/fixtures/production-profile.ts) | 仅限仓库内部、供集成 fixture 使用的交付 profile 组装 helper |
+| [`src/production-profile.ts`](src/production-profile.ts) | `bootProductionProfile` 已交付 profile 组装 API |
+| [`tests/fixtures/production-profile.ts`](tests/fixtures/production-profile.ts) | 导出到本包 API 的 fixture 本地再导出 |
 
 </details>
 

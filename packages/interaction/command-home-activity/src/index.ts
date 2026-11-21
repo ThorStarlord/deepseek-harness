@@ -1,4 +1,7 @@
-/** Human commands for creating, listing, and reopening Home Activities. @module @deepseek-ai/dsh-command-home-activity */
+/**
+ * Human commands for saved Home Activities and explicit DSH-native delegation.
+ * @module @deepseek-ai/dsh-command-home-activity
+ */
 
 import type { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
@@ -6,17 +9,38 @@ import { StorageError } from '@deepseek-ai/dsh-storage'
 import { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { ActivityError, ActivityId, createActivityRequestSchema } from '@deepseek-ai/dsh-home-activity'
+import { executeActivityDelegation, renderActivityDelegation } from './delegation-command.ts'
+import { executeActivityContinuation } from './continuation-command.ts'
+import { renderActivityNextActions } from './next-actions.ts'
+import { executeAssociationCommand, renderActivityAssociations } from './association-command.ts'
+import { executeActivityHandoffCommand, renderActivityHandoffs } from './handoff-command.ts'
+import { executeActivityAnnotationCommand, renderActivityAnnotations } from './annotation-command.ts'
+import { executeActivityReviewCommand, renderActivityReview } from './review-command.ts'
 
 export const name = 'command-home-activity'
-export const inject = ['commands', 'homeActivities']
+export const inject = [
+  'commands',
+  'homeActivities',
+  'homeActivityDelegations',
+  'subagents',
+  'homeActivityAssociations',
+  'homeActivityArtifacts',
+  'homeActivityHandoffs',
+  'homeActivityReviews',
+  'homeActivityAnnotations',
+  'workspaceRegistry',
+  'sessionPersistence',
+]
 
-const USAGE = 'Usage: /activity create <JSON> | /activity list | /activity open <activity-id>'
+const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | handoff add <activity-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>'
 const MAX_INPUT_BYTES = 16_384
 
 type ActivityCommand =
   | { readonly kind: 'list' }
   | { readonly kind: 'create'; readonly input: string }
   | { readonly kind: 'open'; readonly id: string }
+  | { readonly kind: 'delegate'; readonly input: string }
+  | { readonly kind: 'continue'; readonly input: string }
   | { readonly kind: 'invalid'; readonly message: string }
 
 /** Parse only the grammar owned by `/activity`. */
@@ -30,6 +54,10 @@ function parseCommand(rawInput: string): ActivityCommand {
   if (create?.[1] !== undefined) return { kind: 'create', input: create[1] }
   const open = /^open\s+(\S+)$/u.exec(input)
   if (open?.[1] !== undefined) return { kind: 'open', id: open[1] }
+  const delegate = /^delegate\s+([\s\S]+)$/u.exec(input)
+  if (delegate?.[1] !== undefined) return { kind: 'delegate', input: delegate[1] }
+  const continuation = /^continue\s+([\s\S]+)$/u.exec(input)
+  if (continuation?.[1] !== undefined) return { kind: 'continue', input: continuation[1] }
   return { kind: 'invalid', message: USAGE }
 }
 
@@ -38,16 +66,26 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.commands.register({
     definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-home-activity'),
     name: 'activity',
-    description: 'Create, list, or reopen a saved Home Activity without starting its work',
-    input: { hint: 'create <JSON> | list | open <activity-id>' },
+    description: 'Create, list, reopen, and associate saved Activities; record external handoffs, artifact pointers, coordination notes, and outcome reviews; explicitly delegate one DSH-native task or one-shot Codex or Claude Code task, or start a new provider request under the saved objective and a selected in-scope statement',
+    input: { hint: 'create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | handoff add <activity-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>' },
     recordInput: false,
     handler: invocation => execute(ctx, invocation),
   }))
 }
 
 async function execute(ctx: Context, invocation: CommandInvocation): Promise<CommandResult> {
+  const handoffResult = await executeActivityHandoffCommand(ctx, invocation)
+  if (handoffResult !== undefined) return handoffResult
+  const annotationResult = await executeActivityAnnotationCommand(ctx, invocation)
+  if (annotationResult !== undefined) return annotationResult
+  const associationResult = await executeAssociationCommand(ctx, invocation)
+  if (associationResult !== undefined) return associationResult
+  const reviewResult = await executeActivityReviewCommand(ctx, invocation)
+  if (reviewResult !== undefined) return reviewResult
   const command = parseCommand(invocation.rawInput)
   if (command.kind === 'invalid') return { kind: 'error', text: command.message }
+  if (command.kind === 'delegate') return executeActivityDelegation(ctx, invocation, command.input)
+  if (command.kind === 'continue') return executeActivityContinuation(ctx, invocation, command.input)
   if (command.kind === 'create') {
     let value: unknown
     try {
@@ -93,6 +131,7 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
     if (!parsedId.success) return { kind: 'error', text: `Activity id must be a UUID. ${USAGE}` }
     const activity = ctx.homeActivities.get(ActivityId(parsedId.data))
     if (activity === undefined) return { kind: 'error', text: `No saved Activity has id ${command.id}.` }
+    const delegations = ctx.homeActivityDelegations.list(activity.id)
     return {
       kind: 'success',
       text: [
@@ -101,14 +140,30 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
         `Created: ${activity.createdAt}`,
         `Objective: ${activity.objective}`,
         'Boundaries (descriptive only; runtime permissions are unchanged):',
-        ...activity.boundaries.inScope.map(item => `In scope: ${item}`),
+        ...activity.boundaries.inScope.map((item, index) => `In scope ${index + 1}: ${item}`),
         ...activity.boundaries.outOfScope.map(item => `Out of scope: ${item}`),
         '',
-        'Opening an Activity displays its saved intent; it does not start work or activate a Goal.',
+        ...renderActivityAnnotations(ctx, activity.id),
+        '',
+        'Delegations:',
+        ...(delegations.length === 0
+          ? ['No delegation requests.']
+          : delegations.flatMap((delegation, index) => [
+            ...(index === 0 ? [] : ['']),
+            ...renderActivityDelegation(delegation),
+            ...renderActivityNextActions(delegation, provider => ctx.subagents.getProvider(provider) !== undefined),
+            ...renderActivityReview(ctx, activity.id, delegation.id),
+          ])),
+        '',
+        ...renderActivityHandoffs(ctx, activity.id),
+        '',
+        ...await renderActivityAssociations(ctx, activity.id),
+        '',
+        'Opening an Activity displays saved intent and reported facts; it does not start work or activate a Goal.',
       ].join('\n'),
     }
   } catch (error: unknown) {
     ctx.logger.warn('command-home-activity: read failed: %o', error)
-    return { kind: 'error', text: 'Activity storage could not be read; no saved details were confirmed.' }
+    return { kind: 'error', text: 'Activity or context links could not be read; no current link state was confirmed.' }
   }
 }

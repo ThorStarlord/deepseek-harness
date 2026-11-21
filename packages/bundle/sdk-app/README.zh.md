@@ -41,6 +41,8 @@ Python 运行时向本 profile 提供显式下载的创作资源和 Office sidec
 
 -----
 
+SDK profile 会把持久化 Home Activity、关联与委派服务同原生 `/activity` 命令一起挂载。SDK 客户端可以用 `session.run()` 调用 `/activity workspaces`、`/activity sessions` 以及文档列出的 create、list、open、link、unlink 和显式 `spawn` 委派形式。SDK 会将这些输入路由到原生命令注册表，并返回命令结果，不会创建模型请求。已保存的 Activity 不会启动执行；只有显式委派才会启动所请求的子级 activation，提供方授权与权限仍由 DSH 控制。独立 `sdk-minimal` profile 使用单独组合，不包含 Home Activity。
+
 <a id="model-experience"></a>
 ## 模型体验
 

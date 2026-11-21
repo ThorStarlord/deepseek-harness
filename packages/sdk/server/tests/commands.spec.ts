@@ -63,6 +63,26 @@ async function setup(registry = true, peer?: JsonRpcTransportPeer) {
 }
 
 describe('SDK command dispatch', () => {
+  it('routes the registered Home Activity command through the native registry without a model turn', async () => {
+    const h = await setup()
+    await h.initialize()
+    const handler = vi.fn((_invocation: CommandInvocation) => ({ kind: 'success' as const, text: 'Workspace list' }))
+    h.ctx.effect(() => h.ctx.commands.register({
+      name: 'activity',
+      definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-home-activity'),
+      description: 'Home Activity',
+      handler,
+    }))
+    const sessionId = SessionId('home-activity')
+    const response = await h.server.handleRequest('session/query', {
+      sessionId, contentBlocks: [{ type: 'text', text: '/activity workspaces' }],
+    })
+    expect(response).toMatchObject({ kind: 'command', execution: { result: { kind: 'success', text: 'Workspace list' } } })
+    expect(handler.mock.calls[0]?.[0].rawInput).toBe(' workspaces')
+    expect(h.ctx.agents.get(sessionId)!.session.snapshotEvents().map(event => event.type))
+      .toEqual(['command/run', 'command/done'])
+  })
+
   it.each([' ', '\t\n', '\u3000'])('accepts leading whitespace through the query wire endpoint: %j', async (prefix) => {
     const h = await setup()
     await h.initialize()

@@ -5,7 +5,13 @@
   "references": [
     { "path": "../../../vendor/cosmokit" },
     { "path": "../../../vendor/cordis" },
+    { "path": "../../boot/app-boot" },
     { "path": "../../interaction/commands" },
-    { "path": "../../home/activity" }
+    { "path": "../../home/activity" },
+    { "path": "../../preset/agent-preset-registry" },
+    { "path": "../../subagent/subagent" },
+    { "path": "../../core/session" },
+    { "path": "../../session/session-persistence" },
+    { "path": "../../workspace/workspace" }
   ]
 }

@@ -1756,6 +1756,188 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'homeActivityAnnotations',
+    summary: 'Stores append-only user corrections independently from Activity and execution records.',
+    description: 'Stores append-only user corrections independently from Activity and execution records.',
+    methods: [
+      {
+        signature: 'correct(request: CorrectActivityAnnotationRequest): Promise<ActivityAnnotation>',
+        description: 'Append a new current-note revision while retaining each earlier user annotation.',
+        parameters: [{ name: 'request', description: 'Saved Activity identity and replacement note text.' }],
+        returns: 'The saved revision with its predecessor and source attribution.',
+        throws: ['{ActivityAnnotationError} when the Activity is unknown, the note is invalid, or history is full.', '{ActivityAnnotationStorageError} when annotation persistence fails.'],
+      },
+      {
+        signature: 'list(activityId: ActivityId): readonly ActivityAnnotation[]',
+        description: 'List user-authored annotation revisions in original order.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Detached revisions for the Activity, oldest first.',
+        throws: ['{ActivityAnnotationError} when the Activity does not exist.', '{ActivityAnnotationStorageError} when annotation storage cannot be read.'],
+      },
+    ],
+  },
+  {
+    key: 'homeActivityArtifacts',
+    summary: 'Stores user-linked artifact pointers independently from delegation lifecycle facts.',
+    description: 'Stores user-linked artifact pointers independently from delegation lifecycle facts.',
+    methods: [
+      {
+        signature: 'create(request: CreateActivityArtifactRequest): Promise<ActivityArtifactReference>',
+        description: 'Record a user-linked pointer after confirming its Activity, delegation, and selected Workspace references.',
+        parameters: [{ name: 'request', description: 'User-supplied label, location, optional revision, and selected identities.' }],
+        returns: 'The durable pointer; this does not confirm its Workspace matches execution or who produced it.',
+        throws: ['{ActivityArtifactError} when identities are missing, mismatched, or unlinked.', '{ActivityArtifactStorageError} when pointer persistence fails.'],
+      },
+      {
+        signature: 'list(activityId: ActivityId): readonly ActivityArtifactReference[]',
+        description: 'List user-linked pointers for one Activity, newest first.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Detached pointers belonging to the Activity.',
+        throws: ['{ActivityArtifactError} when the Activity does not exist.', '{ActivityArtifactStorageError} when artifact storage cannot be read.'],
+      },
+    ],
+  },
+  {
+    key: 'homeActivityAssociations',
+    summary: 'Context references persisted separately from the strict Activity v1 record.',
+    description: 'Context references persisted separately from the strict Activity v1 record.',
+    methods: [
+      {
+        signature: 'get(activityId: ActivityId): HomeActivityAssociations',
+        description: 'Read separately authored Workspace and Session ids for one saved Activity.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Detached ids; an Activity with no links returns two empty arrays.',
+        throws: ['{HomeActivityAssociationError} when the Activity does not exist.'],
+      },
+      {
+        signature: 'linkWorkspace(activityId: ActivityId, workspaceId: WorkspaceId): Promise<boolean>',
+        description: 'Add a selected existing Workspace reference; repeated links are idempotent.',
+        parameters: [{ name: 'activityId', description: 'Saved Activity receiving the reference.' }, { name: 'workspaceId', description: 'Existing Workspace registry identity.' }],
+        returns: '`true` when a new durable link was written.',
+        throws: ['{HomeActivityAssociationError} when the Activity or Workspace is unknown or the Activity already has the maximum number of Workspace references.'],
+      },
+      {
+        signature: 'linkSession(activityId: ActivityId, sessionId: SessionId): Promise<boolean>',
+        description: 'Add a selected existing DSH Session reference; repeated links are idempotent.',
+        parameters: [{ name: 'activityId', description: 'Saved Activity receiving the reference.' }, { name: 'sessionId', description: 'Existing DSH Session identity.' }],
+        returns: '`true` when a new durable link was written.',
+        throws: ['{HomeActivityAssociationError} when the Activity or Session is unknown or the Activity already has the maximum number of Session references.'],
+      },
+      {
+        signature: 'unlinkWorkspace(activityId: ActivityId, workspaceId: WorkspaceId): Promise<boolean>',
+        description: 'Remove a Workspace reference without mutating its Workspace record.',
+        parameters: [{ name: 'activityId', description: 'Saved Activity whose reference is removed.' }, { name: 'workspaceId', description: 'Workspace identity, including an unavailable old identity.' }],
+        returns: '`true` when a durable link was removed.',
+        throws: ['{HomeActivityAssociationError} when the Activity is unknown.'],
+      },
+      {
+        signature: 'unlinkSession(activityId: ActivityId, sessionId: SessionId): Promise<boolean>',
+        description: 'Remove a DSH Session reference without mutating its Session log.',
+        parameters: [{ name: 'activityId', description: 'Saved Activity whose reference is removed.' }, { name: 'sessionId', description: 'Session identity, including an unavailable old identity.' }],
+        returns: '`true` when a durable link was removed.',
+        throws: ['{HomeActivityAssociationError} when the Activity is unknown.'],
+      },
+    ],
+  },
+  {
+    key: 'homeActivityDelegations',
+    summary: 'Durable request, DSH admission, and provider-report records mounted as `ctx.homeActivityDelegations`.',
+    description: 'Durable request, DSH admission, and provider-report records mounted as `ctx.homeActivityDelegations`.',
+    methods: [
+      {
+        signature: 'async createRequest(request: CreateActivityDelegationRequest): Promise<ActivityDelegation>',
+        description: 'Persist a user request before starting any provider work.',
+        parameters: [{ name: 'request', description: 'Activity, task, provider, and owning Session.' }],
+        returns: 'The saved request record.',
+      },
+      {
+        signature: 'list(activityId: ActivityDelegation[\'activityId\']): readonly ActivityDelegation[]',
+        description: 'List this Activity\'s delegation facts newest first.',
+        parameters: [{ name: 'activityId', description: 'Owning Activity identity.' }],
+        returns: 'Detached records sorted by request time.',
+      },
+      {
+        signature: 'get(id: ActivityDelegationId): ActivityDelegation | undefined',
+        description: 'Read one delegation by stable identity.',
+        parameters: [{ name: 'id', description: 'Stable delegation identity.' }],
+        returns: 'Its latest saved or in-process uncertainty record, or `undefined`.',
+      },
+      {
+        signature: 'async markNotAdmitted(id: ActivityDelegationId, message: string): Promise<ActivityDelegation>',
+        description: 'Record a startup rejection that occurred before DSH published an activation.',
+        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'message', description: 'Safe user-facing startup explanation.' }],
+        returns: 'The rejected request record.',
+      },
+      {
+        signature: 'async recordAdmitted(id: ActivityDelegationId, admission: ActivityDelegationAdmission): Promise<ActivityDelegation>',
+        description: 'Persist the admission returned by `startActivation`.',
+        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'admission', description: 'Local Session or external execution and activation references.' }],
+        returns: 'The admitted record.',
+      },
+      {
+        signature: 'async recordReported( id: ActivityDelegationId, admission: ActivityDelegationAdmission, report: ActivityDelegationReport, ): Promise<ActivityDelegation>',
+        description: 'Persist the managed activation\'s result separately from its admission.',
+        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'admission', description: 'Accepted activation references.' }, { name: 'report', description: 'Provider-reported result.' }],
+        returns: 'The completed fact record.',
+      },
+      {
+        signature: 'async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAdmission | undefined, reason: ActivityDelegationUncertainty[\'reason\'], ): Promise<ActivityDelegation>',
+        description: 'Record a startup or report outcome that cannot be confirmed.',
+        parameters: [{ name: 'id', description: 'Saved request identity.' }, { name: 'admission', description: 'New activation references, or undefined to preserve an existing reference or when startup outcome is unknown.' }, { name: 'reason', description: 'Why its result is unknown.' }],
+        returns: 'The unconfirmed record.',
+      },
+    ],
+  },
+  {
+    key: 'homeActivityHandoffs',
+    summary: 'Stores user-supplied external handoffs independently from execution records.',
+    description: 'Stores user-supplied external handoffs independently from execution records.',
+    methods: [
+      {
+        signature: 'create(request: CreateActivityHandoffRequest): Promise<ActivityHandoff>',
+        description: 'Record the user-supplied summary and references for work performed outside DSH.',
+        parameters: [{ name: 'request', description: 'Existing Activity, source, summary or references, and recording Session.' }],
+        returns: 'The durable handoff explicitly attributed to user input.',
+        throws: ['{ActivityHandoffError} when the Activity is missing or the handoff is invalid.', '{ActivityHandoffStorageError} when persistence cannot confirm the new record.'],
+      },
+      {
+        signature: 'list(activityId: ActivityId): readonly ActivityHandoff[]',
+        description: 'List user-supplied external handoffs for one Activity, newest first.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Detached handoff records.',
+        throws: ['{ActivityHandoffError} when the Activity does not exist.', '{ActivityHandoffStorageError} when handoff storage cannot be read.'],
+      },
+    ],
+  },
+  {
+    key: 'homeActivityReviews',
+    summary: 'User dispositions and verification evidence stored independently from delegation reports.',
+    description: 'User dispositions and verification evidence stored independently from delegation reports.',
+    methods: [
+      {
+        signature: 'record(request: RecordActivityReviewRequest): Promise<ActivityReview>',
+        description: 'Record a user disposition and optionally append one user-supplied evidence entry.',
+        parameters: [{ name: 'request', description: 'Activity, owned delegation, disposition, and optional evidence.' }],
+        returns: 'The durable review, without changing the delegation report.',
+        throws: ['{ActivityReviewError} when an identity is invalid, no report is saved, or the evidence limit is reached.', '{ActivityReviewStorageError} when review persistence fails.'],
+      },
+      {
+        signature: 'get(activityId: ActivityId, delegationId: ActivityDelegationId): ActivityReview | undefined',
+        description: 'Read a review for one delegation, returning no row when its disposition is still pending.',
+        parameters: [{ name: 'activityId', description: 'Saved Activity that owns the delegation.' }, { name: 'delegationId', description: 'Delegation identity selected for review.' }],
+        returns: 'The saved review, or `undefined` when the user has not recorded one.',
+        throws: ['{ActivityReviewError} when either identity is unavailable or mismatched.', '{ActivityReviewStorageError} when review storage cannot be read.'],
+      },
+      {
+        signature: 'list(activityId: ActivityId): readonly ActivityReview[]',
+        description: 'List user reviews belonging to one saved Activity.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Detached reviews, newest update first.',
+        throws: ['{ActivityReviewError} when the Activity does not exist.', '{ActivityReviewStorageError} when review storage cannot be read.'],
+      },
+    ],
+  },
+  {
     key: 'inspector',
     summary: 'Shared Host/Client service façade over the realm\'s source publisher.',
     description: 'Shared Host/Client service façade over the realm\'s source publisher.',
@@ -5537,8 +5719,100 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface Activity {\n    readonly id: ActivityId;\n    readonly name: string;\n    readonly objective: string;\n    readonly boundaries: ActivityBoundaries;\n    readonly createdAt: string;\n}',
   },
   {
+    name: 'ActivityAnnotation',
+    declaration: 'export interface ActivityAnnotation {\n    readonly id: ActivityAnnotationId;\n    readonly activityId: ActivityId;\n    readonly revision: number;\n    readonly text: string;\n    readonly supersedes?: ActivityAnnotationId | undefined;\n    readonly source: \'user-command\';\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'ActivityAnnotationId',
+    declaration: 'export type ActivityAnnotationId = Branded<\'ActivityAnnotationId\'>;',
+  },
+  {
+    name: 'ActivityArtifactId',
+    declaration: 'export type ActivityArtifactId = Branded<\'ActivityArtifactId\'>;',
+  },
+  {
+    name: 'ActivityArtifactReference',
+    declaration: 'export interface ActivityArtifactReference {\n    readonly id: ActivityArtifactId;\n    readonly activityId: ActivityId;\n    readonly delegationId: ActivityDelegationId;\n    readonly workspaceId: WorkspaceId;\n    readonly label: string;\n    readonly location: string;\n    readonly revision?: string | undefined;\n    readonly source: \'user-command\';\n    readonly recordedAt: string;\n}',
+  },
+  {
     name: 'ActivityBoundaries',
     declaration: 'export interface ActivityBoundaries {\n    readonly inScope: readonly string[];\n    readonly outOfScope: readonly string[];\n}',
+  },
+  {
+    name: 'ActivityConfigurationClassification',
+    declaration: 'export type ActivityConfigurationClassification = \'stable\' | \'experimental\' | \'unavailable\';',
+  },
+  {
+    name: 'ActivityDelegation',
+    declaration: 'export interface ActivityDelegation {\n    readonly id: ActivityDelegationId;\n    readonly activityId: ActivityId;\n    readonly request: ActivityDelegationRequest;\n    readonly status: ActivityDelegationStatus;\n    readonly admission?: ActivityDelegationAdmission | undefined;\n    readonly report?: ActivityDelegationReport | undefined;\n    readonly failure?: ActivityDelegationFailure | undefined;\n    readonly uncertainty?: ActivityDelegationUncertainty | undefined;\n}',
+  },
+  {
+    name: 'ActivityDelegationAdmission',
+    declaration: 'export type ActivityDelegationAdmission = SpawnActivityDelegationAdmission | CodexActivityDelegationAdmission | ClaudeCodeActivityDelegationAdmission;',
+  },
+  {
+    name: 'ActivityDelegationFailure',
+    declaration: 'export interface ActivityDelegationFailure {\n    readonly message: string;\n    readonly source: \'subagents.startActivation\';\n}',
+  },
+  {
+    name: 'ActivityDelegationId',
+    declaration: 'export type ActivityDelegationId = Branded<\'ActivityDelegationId\'>;',
+  },
+  {
+    name: 'ActivityDelegationPresetSelectionSnapshot',
+    declaration: 'export type ActivityDelegationPresetSelectionSnapshot = {\n    readonly status: \'none\';\n} | {\n    readonly status: \'selected\';\n    readonly id: string;\n    readonly activeModules: readonly string[] | null;\n    readonly classification: \'experimental\' | \'unavailable\';\n    readonly classificationSource: \'experimental-package-metadata\' | \'unavailable\';\n} | {\n    readonly status: \'unavailable\';\n    readonly reason: \'agent-preset-registry-unavailable\' | \'preset-identity-exceeds-persistence-limit\' | \'preset-module-list-exceeds-persistence-limit\';\n};',
+  },
+  {
+    name: 'ActivityDelegationProfileSelectionSnapshot',
+    declaration: 'export type ActivityDelegationProfileSelectionSnapshot = {\n    readonly status: \'available\';\n    readonly name: string;\n    readonly startedBundles: readonly string[] | null;\n    readonly classification: ActivityConfigurationClassification;\n    readonly classificationSource: \'shipped-profile-template\' | \'experimental-package-metadata\' | \'unavailable\';\n} | {\n    readonly status: \'unavailable\';\n    readonly reason: \'runtime-profile-unavailable\' | \'profile-identity-exceeds-persistence-limit\';\n};',
+  },
+  {
+    name: 'ActivityDelegationReport',
+    declaration: 'export interface ActivityDelegationReport {\n    readonly stopReason: string;\n    readonly outputText: string;\n    readonly nonTextBlockTypes: readonly string[];\n    readonly outputTruncated: boolean;\n    readonly diagnostic?: string | undefined;\n    readonly reportedAt: string;\n    readonly source: \'subagent-activation-result\';\n}',
+  },
+  {
+    name: 'ActivityDelegationRequest',
+    declaration: 'export type ActivityDelegationRequest = SpawnActivityDelegationRequest | CodexActivityDelegationRequest | ClaudeCodeActivityDelegationRequest;',
+  },
+  {
+    name: 'ActivityDelegationStatus',
+    declaration: 'export type ActivityDelegationStatus = \'requested\' | \'not-admitted\' | \'admitted\' | \'reported\' | \'unconfirmed\';',
+  },
+  {
+    name: 'ActivityDelegationUncertainty',
+    declaration: 'export interface ActivityDelegationUncertainty {\n    readonly reason: \'restart-before-admission-recorded\' | \'restart-before-report-recorded\' | \'admission-write-failed\' | \'report-write-failed\' | \'startup-result-rejected\' | \'codex-start-outcome-unknown\' | \'claude-code-start-outcome-unknown\';\n    readonly observedAt: string;\n}',
+  },
+  {
+    name: 'ActivityHandoff',
+    declaration: 'export interface ActivityHandoff {\n    readonly id: ActivityHandoffId;\n    readonly activityId: ActivityId;\n    readonly source: string;\n    readonly summary?: string | undefined;\n    readonly sourceReference?: string | undefined;\n    readonly artifacts: readonly ActivityHandoffArtifact[];\n    readonly recordedInSessionId: SessionId;\n    readonly origin: \'user-supplied-external\';\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'ActivityHandoffArtifact',
+    declaration: 'export interface ActivityHandoffArtifact {\n    readonly label: string;\n    readonly location: string;\n    readonly revision?: string | undefined;\n}',
+  },
+  {
+    name: 'ActivityHandoffId',
+    declaration: 'export type ActivityHandoffId = Branded<\'ActivityHandoffId\'>;',
+  },
+  {
+    name: 'ActivityReview',
+    declaration: 'export interface ActivityReview {\n    readonly activityId: ActivityId;\n    readonly delegationId: ActivityDelegationId;\n    readonly disposition: ActivityReviewDisposition;\n    readonly evidence: readonly ActivityReviewEvidence[];\n    readonly updatedAt: string;\n    readonly source: \'user-command\';\n}',
+  },
+  {
+    name: 'ActivityReviewDisposition',
+    declaration: 'export type ActivityReviewDisposition = \'pending\' | \'accepted\' | \'declined\' | \'requires-investigation\';',
+  },
+  {
+    name: 'ActivityReviewEvidence',
+    declaration: 'export interface ActivityReviewEvidence {\n    readonly id: ActivityReviewEvidenceId;\n    readonly source: string;\n    readonly result: ActivityReviewEvidenceResult;\n    readonly summary: string;\n    readonly reference?: string | undefined;\n    readonly observedAt?: string | undefined;\n    readonly recordedAt: string;\n    readonly origin: \'user-command\';\n}',
+  },
+  {
+    name: 'ActivityReviewEvidenceId',
+    declaration: 'export type ActivityReviewEvidenceId = Branded<\'ActivityReviewEvidenceId\'>;',
+  },
+  {
+    name: 'ActivityReviewEvidenceResult',
+    declaration: 'export type ActivityReviewEvidenceResult = \'passed\' | \'failed\' | \'inconclusive\' | \'unavailable\';',
   },
   {
     name: 'AdapterRegistrationHandle',
@@ -5889,8 +6163,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ClaimOutcome {\n    readonly claimed: number;\n    readonly skipped: number;\n}',
   },
   {
+    name: 'ClaudeCodeActivityDelegationAdmission',
+    declaration: 'export interface ClaudeCodeActivityDelegationAdmission extends ActivityDelegationAdmissionBase {\n    readonly provider: \'claude-code\';\n    readonly providerRunId: string;\n}',
+  },
+  {
+    name: 'ClaudeCodeActivityDelegationRequest',
+    declaration: 'export interface ClaudeCodeActivityDelegationRequest extends ActivityDelegationRequestBase {\n    readonly provider: \'claude-code\';\n}',
+  },
+  {
     name: 'ClientArtifactBaseline',
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly ctimeMs: number;\n    readonly size: number;\n}',
+  },
+  {
+    name: 'CodexActivityDelegationAdmission',
+    declaration: 'export interface CodexActivityDelegationAdmission extends ActivityDelegationAdmissionBase {\n    readonly provider: \'codex\';\n    readonly providerRunId: string;\n}',
+  },
+  {
+    name: 'CodexActivityDelegationRequest',
+    declaration: 'export interface CodexActivityDelegationRequest extends ActivityDelegationRequestBase {\n    readonly provider: \'codex\';\n}',
   },
   {
     name: 'CollectedOutput',
@@ -6137,12 +6427,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CordisRuntimeTreeReader {\n    getTree(): Promise<CordisRuntimeTree>;\n}',
   },
   {
+    name: 'CorrectActivityAnnotationRequest',
+    declaration: 'export type CorrectActivityAnnotationRequest = Pick<ActivityAnnotation, \'activityId\' | \'text\'>;',
+  },
+  {
     name: 'CotTranslationPreferences',
     declaration: 'export interface CotTranslationPreferences {\n    provider: TranslationProvider;\n    targetLanguage: string;\n}',
   },
   {
     name: 'CotTranslationSnapshot',
     declaration: 'export interface CotTranslationSnapshot {\n    maxTextChars: number;\n    preferences: CotTranslationPreferences;\n    availableProviders: readonly TranslationProvider[];\n}',
+  },
+  {
+    name: 'CreateActivityArtifactRequest',
+    declaration: 'export type CreateActivityArtifactRequest = Pick<ActivityArtifactReference, \'activityId\' | \'delegationId\' | \'workspaceId\' | \'label\' | \'location\' | \'revision\'>;',
+  },
+  {
+    name: 'CreateActivityDelegationRequest',
+    declaration: 'export interface CreateActivityDelegationRequest {\n    readonly activityId: ActivityId;\n    readonly provider: \'spawn\' | \'codex\' | \'claude-code\';\n    readonly task: string;\n    readonly parentSessionId: SessionId;\n    readonly executionSelection?: DshActivityDelegationExecutionSelectionSnapshot | undefined;\n}',
+  },
+  {
+    name: 'CreateActivityHandoffRequest',
+    declaration: 'export type CreateActivityHandoffRequest = Pick<ActivityHandoff, \'activityId\' | \'source\' | \'summary\' | \'sourceReference\' | \'artifacts\' | \'recordedInSessionId\'>;',
   },
   {
     name: 'CreateActivityRequest',
@@ -6355,6 +6661,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DomainTableSpec',
     declaration: 'export interface DomainTableSpec<K extends string = string, V = unknown> {\n    readonly valueSchema: ZodType<V>;\n    readonly __key?: K;\n}',
+  },
+  {
+    name: 'DshActivityDelegationExecutionSelectionSnapshot',
+    declaration: 'export interface DshActivityDelegationExecutionSelectionSnapshot {\n    readonly provider: \'spawn\';\n    readonly profile: ActivityDelegationProfileSelectionSnapshot;\n    readonly preset: ActivityDelegationPresetSelectionSnapshot;\n}',
   },
   {
     name: 'DshEnvironment',
@@ -6711,6 +7021,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'GrantRecord',
     declaration: 'export interface GrantRecord {\n    readonly kind: \'grant\';\n    readonly payload: unknown;\n}',
+  },
+  {
+    name: 'HomeActivityAssociations',
+    declaration: 'export interface HomeActivityAssociations {\n    readonly workspaceIds: readonly WorkspaceId[];\n    readonly sessionIds: readonly SessionId[];\n}',
   },
   {
     name: 'HookBudget',
@@ -7903,6 +8217,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RecommendationDetails',
     declaration: 'export type RecommendationDetails = {\n    readonly status: \'available\';\n    readonly title: LocalizedText;\n    readonly description: LocalizedText;\n    readonly enabled: boolean;\n} | {\n    readonly status: \'refused\';\n    readonly reason: \'unknown\' | \'unavailable\' | \'not-live-root\' | \'closing\';\n};',
+  },
+  {
+    name: 'RecordActivityReviewRequest',
+    declaration: 'export interface RecordActivityReviewRequest {\n    readonly activityId: ActivityId;\n    readonly delegationId: ActivityDelegationId;\n    readonly disposition: ActivityReviewDisposition;\n    readonly evidence?: Omit<ActivityReviewEvidence, \'id\' | \'recordedAt\' | \'origin\'> | undefined;\n}',
   },
   {
     name: 'RecurringScheduleRecord',
@@ -9135,6 +9453,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SkillViewOptions',
     declaration: 'export interface SkillViewOptions extends SkillLookupOptions {\n    readonly scope?: ScopeKey | undefined;\n}',
+  },
+  {
+    name: 'SpawnActivityDelegationAdmission',
+    declaration: 'export interface SpawnActivityDelegationAdmission extends ActivityDelegationAdmissionBase {\n    readonly childSessionId: SessionId;\n    readonly activationName: string;\n    readonly provider?: \'spawn\' | undefined;\n}',
+  },
+  {
+    name: 'SpawnActivityDelegationRequest',
+    declaration: 'export interface SpawnActivityDelegationRequest extends ActivityDelegationRequestBase {\n    readonly provider: \'spawn\';\n    readonly requestedChildSessionId: SessionId;\n}',
   },
   {
     name: 'SpeechCatalog',

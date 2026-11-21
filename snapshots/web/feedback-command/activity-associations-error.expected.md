@@ -1,0 +1,32 @@
+- banner:
+  - navigation "Session hierarchy": Reply with the single word
+  - text: Standard mode
+  - button "More actions"
+  - button "Open right sidebar"
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+  - button "More conversation views"
+- text: Reply with the single word LIGHTHOUSE and stop. {{clock}}
+- button "Copy"
+- status: Completed
+- button "Completed in {{duration}}"
+- paragraph: LIGHTHOUSE
+- button "Copy"
+- button "Good response"
+- button "Bad response"
+- button "Branch into a new conversation"
+- text: {{clock}}
+- 'button "activity Activity created: Release readiness ID: {{uuid}} Saved only; its objective has not been started. Use /activity open {{uuid}} to view its objective and scope."'
+- text: "Failed activity Activity details must be valid JSON. Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | delegate <activity-id> spawn <task>"
+- 'button "activity Available Workspaces (Workspace ids identify registered directories; no Git root is inferred): Workspace: activity-workspace-two — {{uuid}} Directory: {{linked-workspace-directory}} Directory status: available. Workspace: workspace — {{uuid}} Directory: {{coordinating-workspace-directory}} Directory status: available. Select an id with /activity link <activity-id> workspace <workspace-id>."'
+- 'button "activity Available DSH Sessions (select each Session independently of any Workspace): DSH Session: session-{{uuid}} — created {{timestamp}} Session working directory: {{linked-workspace-directory}} DSH Session: session-{{uuid}} — created {{timestamp}} Session working directory: {{coordinating-workspace-directory}} Select an id with /activity link <activity-id> session <session-id>."'
+- text: "Failed activity No Workspace has id {{uuid}}. Run /activity workspaces to choose a registered Workspace id. Failed activity Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | delegate <activity-id> spawn <task>"
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Add files or run commands"
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash": DeepSeek-V4-Flash
+- button "Send message" [disabled]
+- button "1 turns 1 steps · {{throughput}} tok/s": 1 turns 1 steps{{throughput}} tok/s
+- button "7.8K tok · Cache hit 99%": 7.8K tokCache hit 99%
+- button "6% of context used": 6%

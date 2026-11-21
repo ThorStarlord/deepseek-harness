@@ -8,6 +8,7 @@ const commands: readonly CommandDescriptor[] = [
   { name: 'goal', definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-goal'), description: 'Goal', input: { hint: 'Goal' } },
   { name: 'permission', definitionId: CommandDefinitionId('@deepseek-ai/dsh-permission-presets'), description: 'Permission', input: { hint: 'Preset' } },
   { name: 'feedback', definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-feedback'), description: 'Feedback', input: { hint: 'Feedback' } },
+  { name: 'activity', definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-home-activity'), description: 'Home Activity', input: { hint: 'list | workspaces | sessions' } },
   { name: 'export', definitionId: CommandDefinitionId('@deepseek-ai/dsh-session-log-export'), description: 'Export' },
 ]
 
@@ -76,5 +77,14 @@ describe('SDK query text recognition', () => {
   it('preserves exact-name priority over localized aliases', () => {
     const shadowed = [...commands, { name: '权限', description: 'Another definition' }]
     expect(queryCommand('/权限 read-only', shadowed)).toBeUndefined()
+  })
+
+  it('routes only the registered Home Activity command to native execution', () => {
+    expect(queryCommand('/activity workspaces', commands)).toBe('/activity workspaces')
+    expect(queryCommand('/activity sessions', commands)).toBe('/activity sessions')
+    expect(queryCommand('/activity list', commands)).toBe('/activity list')
+    expect(queryCommand('/activity create {"name":"x"}', commands)).toBe('/activity create {"name":"x"}')
+    expect(queryCommand('/activity list', [])).toBeUndefined()
+    expect(queryCommand('/activity list', [{ name: 'activity', description: 'Scoped command' }])).toBeUndefined()
   })
 })
