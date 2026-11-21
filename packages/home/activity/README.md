@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Save named Activities with objectives and descriptive scope that persist beyond their originating Sessions. The Web and SDK /activity command creates, links, annotates, and reopens Activities across Sessions. Separate records retain context links, delegation requests and reports, user-linked output pointers, user dispositions with attributed evidence, and append-only user corrections; corrections and reviews do not replace provider or specialist facts. Explicit delegation supports DSH child activations and one-shot Codex or Claude Code runs. Creating or opening an Activity never starts its objective, creates a Goal, or grants permissions.
+Save named Activities with objectives and descriptive scope beyond their originating Sessions. The Web and SDK `/activity` command creates, links, annotates, and reopens Activities across Sessions. Separate records retain context links, delegation requests and reports, output pointers, user dispositions with attributed evidence, append-only corrections, and user-supplied external handoffs. Explicit delegation starts a DSH child activation or a one-shot Codex or Claude Code run. Reviews and corrections never replace provider or specialist facts. Creating or opening an Activity never starts work, creates a Goal, or grants permissions. External handoffs preserve source and artifact references without importing transcripts or claiming native execution.
 
 ## Table of Contents
 
@@ -46,6 +46,7 @@ The service declares no configuration fields. A custom composition supplies the 
 - name: '@deepseek-ai/dsh-home-activity'
 - name: '@deepseek-ai/dsh-home-activity/associations'
 - name: '@deepseek-ai/dsh-home-activity/annotations'
+- name: '@deepseek-ai/dsh-home-activity/handoffs'
 ```
 
 The storage providers own their settings; see the [JSON backend](../../storage/storage-json/README.md) and [StorageDomain](../../storage/storage-domain/README.md) references.
@@ -66,6 +67,8 @@ User corrections use a separate version-1 `home_activity_annotations` domain. Ea
 
 Selected Workspace and DSH Session references use the separate version-1 `home_activity_associations` domain. The associations are resolved against their owning registries when displayed; stale references remain explicit until removed. They do not change Workspace records, Session logs, or the Activity record.
 
+User-supplied external handoffs use the separate version-1 `home_activity_handoffs` domain. Each record belongs to an existing Activity and stores a source label, optional user summary or source reference, user-supplied artifact references, and the DSH Session in which the record was added. Supplied text is trimmed, length-bounded, and single-line; control, format, line-separator, and paragraph-separator characters are rejected. Opening the Activity from another Session shows these references as external user input, not imported native execution history. The service does not import transcripts, synchronize external sessions, establish who performed the work, or claim verification or acceptance.
+
 | File | Role |
 |---|---|
 | [`src/types.ts`](src/types.ts) | Activity identity and request types |
@@ -80,6 +83,10 @@ Selected Workspace and DSH Session references use the separate version-1 `home_a
 | [`src/annotation-types.ts`](src/annotation-types.ts) | User-authored annotation revision types |
 | [`src/annotation-spec.ts`](src/annotation-spec.ts) | Versioned annotation record schema and domain |
 | [`src/annotations.ts`](src/annotations.ts) | Separate append-only annotation StorageDomain service |
+| [`src/handoff-types.ts`](src/handoff-types.ts) | External handoff record types |
+| [`src/handoff-spec.ts`](src/handoff-spec.ts) | Versioned external handoff schema |
+| [`src/handoffs.ts`](src/handoffs.ts) | Separate external handoff StorageDomain service |
+| [`tests/handoffs.spec.ts`](tests/handoffs.spec.ts) | External handoff validation and persistence after storage context recreation |
 
 </details>
 
@@ -118,6 +125,8 @@ Activity scope remains descriptive, and delegation does not enforce it as an aut
 - Review evidence and its reported result are user supplied. DSH preserves their source attribution but does not check the source, evidence, or outcome; the current disposition is separate from provider execution status.
 
 Annotation write errors do not confirm whether the revision was persisted. The JSON backend can fail after replacing its file, so close and reopen the backend and domain, then inspect the Activity before deciding whether to retry; the annotation service does not promise a durable rollback. See the [StorageDomain](../../storage/storage-domain/README.md) and [JSON backend](../../storage/storage-json/README.md) failure contracts.
+
+- External handoffs are entered by a user through `/activity handoff add`; they do not import transcripts or synchronize an external agent. Source labels, summaries, and artifact references are user supplied and are not independently verified or accepted.
 
 <a id="dev-note"></a>
 ### Dev Note

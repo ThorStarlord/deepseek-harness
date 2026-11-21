@@ -66,6 +66,8 @@
     - id: home-activity-artifacts
       name: '@deepseek-ai/dsh-home-activity/artifacts'
 
+    - id: home-activity-handoffs
+      name: '@deepseek-ai/dsh-home-activity/handoffs'
     - id: home-activity-reviews
       name: '@deepseek-ai/dsh-home-activity/reviews'
 

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-保存命名 Activity 的目标与描述性范围，使其在原 Session 结束后仍可使用。Web 与 SDK 的 /activity 命令可在不同 Session 间创建、关联、备注和重新打开 Activity。独立记录保存上下文关联、委派请求与报告、用户关联的输出指针、带来源归属证据的用户处置，以及仅追加的用户更正；更正和审核不会替换提供方报告或专家事实。显式委派支持 DSH 子级激活，以及一次性 Codex 或 Claude Code 运行。创建或打开 Activity 不会启动目标、创建 Goal 或授予权限。
+保存命名 Activity、目标与描述性范围，使其可跨 Session 使用。Web 与 SDK 的 `/activity` 命令可在不同 Session 间创建、关联、备注和重新打开 Activity。独立记录保存上下文引用、委派请求与报告、输出指针、带来源证据的用户处置、追加式更正，以及用户提供的外部交接。显式委派可启动 DSH 子级激活，或一次性 Codex、Claude Code 运行。审核和更正不会替换提供方报告或专家事实。创建或打开 Activity 不会启动工作、创建 Goal 或授予权限。外部交接保留来源和产物引用，不导入 transcript，也不声称其为原生执行记录。
 
 
 ## 目录
@@ -47,6 +47,7 @@ Web 和 SDK 配置会将此服务、关联与备注服务、JSON StorageDomain �
 - name: '@deepseek-ai/dsh-home-activity'
 - name: '@deepseek-ai/dsh-home-activity/associations'
 - name: '@deepseek-ai/dsh-home-activity/annotations'
+- name: '@deepseek-ai/dsh-home-activity/handoffs'
 ```
 
 存储提供方拥有各自的设置；请参阅 [JSON 后端](../../storage/storage-json/README.zh.md)和 [StorageDomain](../../storage/storage-domain/README.zh.md)参考。
@@ -67,6 +68,8 @@ Activity 记录使用版本 1 的 home_activities StorageDomain，并保持独�
 
 Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associations` 域中。显示时会通过各自的注册表解析引用；过期引用会明确显示为不可用，直到用户解除关联。关联不会修改 Workspace 记录、Session 日志或 Activity 记录。
 
+用户提供的外部交接保存在独立的版本 1 `home_activity_handoffs` 域中。每条记录属于一个现有 Activity，并保存来源标签、可选的用户摘要或来源引用、用户提供的产物引用，以及记录时所在的 DSH Session。所有文本都会去除首尾空白并限制长度，且必须为单行；控制、格式、行分隔和段落分隔字符会被拒绝。其他 Session 打开 Activity 时，这些引用会显示为外部用户输入，而非导入的原生执行历史。此服务不会导入 transcript、同步外部 Session、确认工作执行者，也不会声称结果已验证或接受。
+
 | 文件 | 职责 |
 |---|---|
 | [`src/types.ts`](src/types.ts) | Activity 身份与请求类型 |
@@ -81,6 +84,10 @@ Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associ
 | [`src/annotation-types.ts`](src/annotation-types.ts) | 用户撰写的备注修订类型 |
 | [`src/annotation-spec.ts`](src/annotation-spec.ts) | 版本化备注记录 schema 和域 |
 | [`src/annotations.ts`](src/annotations.ts) | 独立追加式备注 StorageDomain 服务 |
+| [`src/handoff-types.ts`](src/handoff-types.ts) | 外部交接记录类型 |
+| [`src/handoff-spec.ts`](src/handoff-spec.ts) | 带版本的外部交接 schema |
+| [`src/handoffs.ts`](src/handoffs.ts) | 独立外部交接 StorageDomain 服务 |
+| [`tests/handoffs.spec.ts`](tests/handoffs.spec.ts) | 外部交接校验及存储上下文重建后的持久化 |
 
 </details>
 
@@ -119,6 +126,8 @@ Activity 范围仍是描述性内容；委派不会将其作为授权规则执�
 - 审核证据及其报告结果由用户提供。DSH 会保留其来源信息，但不会检查来源、证据或结果；当前处置与提供方执行状态分开保存。
 
 备注写入错误无法确认修订是否已经持久化。JSON 后端可能在替换文件后才报错，因此请先关闭并重新打开后端和域，再检查 Activity 并决定是否重试；此备注服务不承诺持久回滚。详见 [StorageDomain](../../storage/storage-domain/README.zh.md) 和 [JSON 后端](../../storage/storage-json/README.zh.md)的失败约定。
+
+- 外部交接由用户通过 `/activity handoff add` 输入；不会导入 transcript 或同步外部 agent。来源标签、摘要和产物引用均由用户提供，未经独立验证或接受。
 
 <a id="dev-note"></a>
 ### 开发备注

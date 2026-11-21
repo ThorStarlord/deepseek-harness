@@ -13,6 +13,7 @@ import { executeActivityDelegation, renderActivityDelegation } from './delegatio
 import { executeActivityContinuation } from './continuation-command.ts'
 import { renderActivityNextActions } from './next-actions.ts'
 import { executeAssociationCommand, renderActivityAssociations } from './association-command.ts'
+import { executeActivityHandoffCommand, renderActivityHandoffs } from './handoff-command.ts'
 import { executeActivityAnnotationCommand, renderActivityAnnotations } from './annotation-command.ts'
 import { executeActivityReviewCommand, renderActivityReview } from './review-command.ts'
 
@@ -24,13 +25,14 @@ export const inject = [
   'subagents',
   'homeActivityAssociations',
   'homeActivityArtifacts',
+  'homeActivityHandoffs',
   'homeActivityReviews',
   'homeActivityAnnotations',
   'workspaceRegistry',
   'sessionPersistence',
 ]
 
-const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>'
+const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | handoff add <activity-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>'
 const MAX_INPUT_BYTES = 16_384
 
 type ActivityCommand =
@@ -64,14 +66,16 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.commands.register({
     definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-home-activity'),
     name: 'activity',
-    description: 'Create, list, reopen, and associate saved Activities; correct user-owned coordination notes; record artifact pointers and outcome reviews; explicitly delegate one DSH-native task or one-shot Codex or Claude Code task, or start a new provider request under the saved objective and a selected in-scope statement',
-    input: { hint: 'create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>' },
+    description: 'Create, list, reopen, and associate saved Activities; record external handoffs, artifact pointers, coordination notes, and outcome reviews; explicitly delegate one DSH-native task or one-shot Codex or Claude Code task, or start a new provider request under the saved objective and a selected in-scope statement',
+    input: { hint: 'create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | handoff add <activity-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>' },
     recordInput: false,
     handler: invocation => execute(ctx, invocation),
   }))
 }
 
 async function execute(ctx: Context, invocation: CommandInvocation): Promise<CommandResult> {
+  const handoffResult = await executeActivityHandoffCommand(ctx, invocation)
+  if (handoffResult !== undefined) return handoffResult
   const annotationResult = await executeActivityAnnotationCommand(ctx, invocation)
   if (annotationResult !== undefined) return annotationResult
   const associationResult = await executeAssociationCommand(ctx, invocation)
@@ -150,6 +154,8 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
             ...renderActivityNextActions(delegation, provider => ctx.subagents.getProvider(provider) !== undefined),
             ...renderActivityReview(ctx, activity.id, delegation.id),
           ])),
+        '',
+        ...renderActivityHandoffs(ctx, activity.id),
         '',
         ...await renderActivityAssociations(ctx, activity.id),
         '',

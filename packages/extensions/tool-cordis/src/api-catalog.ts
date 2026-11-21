@@ -1889,6 +1889,27 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'homeActivityHandoffs',
+    summary: 'Stores user-supplied external handoffs independently from execution records.',
+    description: 'Stores user-supplied external handoffs independently from execution records.',
+    methods: [
+      {
+        signature: 'create(request: CreateActivityHandoffRequest): Promise<ActivityHandoff>',
+        description: 'Record the user-supplied summary and references for work performed outside DSH.',
+        parameters: [{ name: 'request', description: 'Existing Activity, source, summary or references, and recording Session.' }],
+        returns: 'The durable handoff explicitly attributed to user input.',
+        throws: ['{ActivityHandoffError} when the Activity is missing or the handoff is invalid.', '{ActivityHandoffStorageError} when persistence cannot confirm the new record.'],
+      },
+      {
+        signature: 'list(activityId: ActivityId): readonly ActivityHandoff[]',
+        description: 'List user-supplied external handoffs for one Activity, newest first.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Detached handoff records.',
+        throws: ['{ActivityHandoffError} when the Activity does not exist.', '{ActivityHandoffStorageError} when handoff storage cannot be read.'],
+      },
+    ],
+  },
+  {
     key: 'homeActivityReviews',
     summary: 'User dispositions and verification evidence stored independently from delegation reports.',
     description: 'User dispositions and verification evidence stored independently from delegation reports.',
@@ -5762,6 +5783,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ActivityDelegationUncertainty {\n    readonly reason: \'restart-before-admission-recorded\' | \'restart-before-report-recorded\' | \'admission-write-failed\' | \'report-write-failed\' | \'startup-result-rejected\' | \'codex-start-outcome-unknown\' | \'claude-code-start-outcome-unknown\';\n    readonly observedAt: string;\n}',
   },
   {
+    name: 'ActivityHandoff',
+    declaration: 'export interface ActivityHandoff {\n    readonly id: ActivityHandoffId;\n    readonly activityId: ActivityId;\n    readonly source: string;\n    readonly summary?: string | undefined;\n    readonly sourceReference?: string | undefined;\n    readonly artifacts: readonly ActivityHandoffArtifact[];\n    readonly recordedInSessionId: SessionId;\n    readonly origin: \'user-supplied-external\';\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'ActivityHandoffArtifact',
+    declaration: 'export interface ActivityHandoffArtifact {\n    readonly label: string;\n    readonly location: string;\n    readonly revision?: string | undefined;\n}',
+  },
+  {
+    name: 'ActivityHandoffId',
+    declaration: 'export type ActivityHandoffId = Branded<\'ActivityHandoffId\'>;',
+  },
+  {
     name: 'ActivityReview',
     declaration: 'export interface ActivityReview {\n    readonly activityId: ActivityId;\n    readonly delegationId: ActivityDelegationId;\n    readonly disposition: ActivityReviewDisposition;\n    readonly evidence: readonly ActivityReviewEvidence[];\n    readonly updatedAt: string;\n    readonly source: \'user-command\';\n}',
   },
@@ -6412,6 +6445,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CreateActivityDelegationRequest',
     declaration: 'export interface CreateActivityDelegationRequest {\n    readonly activityId: ActivityId;\n    readonly provider: \'spawn\' | \'codex\' | \'claude-code\';\n    readonly task: string;\n    readonly parentSessionId: SessionId;\n    readonly executionSelection?: DshActivityDelegationExecutionSelectionSnapshot | undefined;\n}',
+  },
+  {
+    name: 'CreateActivityHandoffRequest',
+    declaration: 'export type CreateActivityHandoffRequest = Pick<ActivityHandoff, \'activityId\' | \'source\' | \'summary\' | \'sourceReference\' | \'artifacts\' | \'recordedInSessionId\'>;',
   },
   {
     name: 'CreateActivityRequest',

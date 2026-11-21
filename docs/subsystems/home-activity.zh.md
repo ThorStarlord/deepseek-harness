@@ -38,6 +38,10 @@ Home Activity 是由用户发起并持久保存的事务，具有稳定身份、
 
 独立的版本 1 home_activity_annotations 域会保存用户撰写的不可变 user-command 修订，并将每条修订关联到同一 Activity 的上一条修订。更正只更新当前协调备注，不会编辑 Activity 字段、提供方报告或专家断言。每个 Activity 最多保留 256 条修订；/activity open 显示当前备注和最近八条。备注文本不接受控制、格式、行分隔或段落分隔字符，以便历史记录保持单行。写入被拒绝后，持久化状态可能不确定；请重启 DSH 并检查已保存历史，再决定是否重试。
 
+## 外部交接
+
+独立的版本 1 `home_activity_handoffs` 域会保存用户提供的来源标签、可选摘要或来源引用、可选产物引用，以及记录交接时所在的 DSH Session。交接至少需要摘要、来源引用或产物引用之一。其他 DSH Session 打开 Activity 时，会将其显示为外部用户输入，而非原生执行历史。此服务不会导入 transcript、同步外部 Session，也不会声称所报告的工作已执行、验证或接受。
+
 ## Cordis API
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
@@ -249,6 +253,34 @@ async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAd
 ```
 
 Source: [`packages/home/activity/src/delegations.ts`](../../packages/home/activity/src/delegations.ts)
+
+<a id="ctxhomeactivityhandoffs--homeactivityhandoffservice"></a>
+
+### `ctx.homeActivityHandoffs` — `HomeActivityHandoffService`
+
+Stores user-supplied external handoffs independently from execution records.
+
+```ts cordis-catalog
+/**
+ * Record the user-supplied summary and references for work performed outside DSH.
+ * @param request - Existing Activity, source, summary or references, and recording Session.
+ * @returns The durable handoff explicitly attributed to user input.
+ * @throws {ActivityHandoffError} when the Activity is missing or the handoff is invalid.
+ * @throws {ActivityHandoffStorageError} when persistence cannot confirm the new record.
+ */
+create(request: CreateActivityHandoffRequest): Promise<ActivityHandoff>
+
+/**
+ * List user-supplied external handoffs for one Activity, newest first.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached handoff records.
+ * @throws {ActivityHandoffError} when the Activity does not exist.
+ * @throws {ActivityHandoffStorageError} when handoff storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityHandoff[]
+```
+
+Source: [`packages/home/activity/src/handoffs.ts`](../../packages/home/activity/src/handoffs.ts)
 
 <a id="ctxhomeactivityreviews--homeactivityreviewservice"></a>
 

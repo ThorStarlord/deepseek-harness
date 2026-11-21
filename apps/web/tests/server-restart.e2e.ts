@@ -128,6 +128,11 @@ class RestartableServer {
 
 type HostRpc = <T>(endpoint: string, args: object) => Promise<T>
 
+/** Run a user-invoked command through the authenticated Host RPC. */
+async function executeActivityCommand(rpc: HostRpc, agentId: string, line: string): Promise<{ result: { kind: string; text?: string } }> {
+  return await rpc('commands/execute', { agentId, line, submittedAttachments: [] })
+}
+
 /** Authenticate against one server process and return its Host RPC caller. */
 async function hostRpc(url: string): Promise<HostRpc> {
   const authenticated = await fetch(url, { redirect: 'manual' })
@@ -396,45 +401,42 @@ it('creates and reopens a named Activity from a new Session after a Web process 
     submittedAttachments: [],
   })
   expect(firstList.result.text).toContain(activityId)
-  const execute = async (rpc: HostRpc, agentId: string, line: string) => await rpc<{ result: { kind: string; text?: string } }>(
-    'commands/execute', { agentId, line, submittedAttachments: [] },
-  )
   for (const workspaceId of [firstWorkspace.workspaceId, secondWorkspace.workspaceId]) {
-    const linked = await execute(first, originalSessionId, `/activity link ${activityId} workspace ${workspaceId}`)
+    const linked = await executeActivityCommand(first, originalSessionId, `/activity link ${activityId} workspace ${workspaceId}`)
     expect(linked.result.kind).toBe('success')
   }
   for (const sessionId of [originalSessionId, linkedSessionId]) {
-    const linked = await execute(first, originalSessionId, `/activity link ${activityId} session ${sessionId}`)
+    const linked = await executeActivityCommand(first, originalSessionId, `/activity link ${activityId} session ${sessionId}`)
     expect(linked.result.kind).toBe('success')
   }
 
-  const dshAdmission = await execute(first, originalSessionId,
+  const dshAdmission = await executeActivityCommand(first, originalSessionId,
     `/activity delegate ${activityId} spawn Summarize the release checklist once for recovery.`)
   expect(dshAdmission.result.kind).toBe('success')
   expect(dshAdmission.result.text).toContain('Delegation admitted: provider spawn')
   let beforeRestartOverview = ''
   await expect.poll(async () => {
-    const opened = await execute(first, originalSessionId, `/activity open ${activityId}`)
+    const opened = await executeActivityCommand(first, originalSessionId, `/activity open ${activityId}`)
     beforeRestartOverview = opened.result.text ?? ''
     return beforeRestartOverview
   }, { timeout: 30_000 }).toContain('Provider-reported output: The DSH child reported a saved recovery summary.')
   const dshDelegationId = /Delegation ([0-9a-f-]{36}): provider spawn/u.exec(beforeRestartOverview)?.[1]
   if (dshDelegationId === undefined) throw new Error('The DSH result did not preserve its delegation identity')
-  const artifact = await execute(first, originalSessionId,
+  const artifact = await executeActivityCommand(first, originalSessionId,
     `/activity artifact add ${activityId} ${dshDelegationId} ${firstWorkspace.workspaceId} {"label":"Recovery summary","location":"reports/recovery.md"}`)
   expect(artifact.result.kind).toBe('success')
   expect(artifact.result.text).toContain('Artifact reference recorded: Recovery summary')
 
-  const codexReport = await execute(first, originalSessionId,
+  const codexReport = await executeActivityCommand(first, originalSessionId,
     `/activity delegate ${activityId} codex Review the release checklist once for recovery.`)
   expect(codexReport.result.kind, codexReport.result.text).toBe('success')
   expect(codexReport.result.text).toContain('Delegation admitted: provider codex')
   await expect.poll(async () => {
-    const opened = await execute(first, originalSessionId, `/activity open ${activityId}`)
+    const opened = await executeActivityCommand(first, originalSessionId, `/activity open ${activityId}`)
     beforeRestartOverview = opened.result.text ?? ''
     return beforeRestartOverview
   }, { timeout: 15_000 }).toContain('Codex-reported output: The external one-shot report was saved.')
-  const codexUnconfirmed = await execute(first, originalSessionId,
+  const codexUnconfirmed = await executeActivityCommand(first, originalSessionId,
     `/activity delegate ${activityId} codex Review the release checklist once for recovery.`)
   expect(codexUnconfirmed.result.kind).toBe('error')
   expect(codexUnconfirmed.result.text).toContain('DSH could not confirm whether Codex started')
@@ -521,7 +523,7 @@ it('creates and reopens a named Activity from a new Session after a Web process 
   expect(overview).toContain('Source location: reports/recovery.md')
   expect(overview).toContain('Outcome: unknown; no provider result was recorded.')
   expect(overview).toContain('do not repeat the task unless you independently confirm it did not start')
-  expect(overview).toContain('Activity does not expose a Codex transcript, resume the run, or retry it')
+  expect(overview).toContain('Activity does not expose its transcript, resume the run, or retry it')
   expect(overview).toContain('does not start work or activate a Goal')
   expect(overview).not.toContain('Status: accepted.')
 
@@ -539,12 +541,83 @@ it('creates and reopens a named Activity from a new Session after a Web process 
   expect(sessionListText).toContain('Select an id with /activity link')
 
   expect(pageErrors).toEqual([])
-  const reopenedFromHost = await second<{ result: { text?: string } }>('commands/execute', {
-    agentId: newParentSessionId, line: `/activity open ${activityId}`, submittedAttachments: [],
-  })
+  const reopenedFromHost = await executeActivityCommand(second, newParentSessionId, `/activity open ${activityId}`)
+  expect(reopenedFromHost.result.kind).toBe('success')
+  expect(reopenedFromHost.result.text).toContain(`ID: ${activityId}`)
+  expect(reopenedFromHost.result.text).toContain('Objective: Prepare the next release for review.')
+  expect(reopenedFromHost.result.text).toContain(`DSH Session: ${originalSessionId}`)
+  expect(reopenedFromHost.result.text).toContain(`DSH Session: ${linkedSessionId}`)
+  expect(reopenedFromHost.result.text).toContain('these links do not assign Sessions to Workspaces')
   expect(reopenedFromHost.result.text).toContain('does not start work or activate a Goal')
   expect((await readFile(startsPath, 'utf8')).trim().split(/\r?\n/u)).toEqual(providerStartsBeforeRestart)
   expect((await readFile(codexStartsPath, 'utf8')).trim().split(/\r?\n/u)).toEqual(codexStartsBeforeRestart)
   expect(modelRequests).toBe(modelRequestsBeforeActivityOpen)
   expect(modelRequestsBeforeRestart).toBeGreaterThan(0)
+})
+
+it('reopens a user-supplied external handoff from a different DSH Session after a Web process restart', async () => {
+  const world = await mkdtemp(join(tmpdir(), 'dsh-home-activity-handoff-restart-'))
+  const server = new RestartableServer(world, 'http://127.0.0.1:9')
+  onTestFinished(async () => {
+    const failures: unknown[] = []
+    await server.stop().catch((error: unknown) => failures.push(error))
+    await rm(world, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
+    if (failures.length > 0) throw new AggregateError(failures, 'Home Activity handoff restart test cleanup failed')
+  })
+  const workspacePath = join(world, 'workspace')
+  await mkdir(workspacePath)
+
+  const first = await hostRpc(await server.start(0))
+  const { workspace } = await first<{ workspace: { workspaceId: string } }>('workspace/create', { request: { path: workspacePath } })
+  const { sessionId: recordingSessionId } = await first<{ sessionId: string }>('session/create', {
+    request: { workspaceId: workspace.workspaceId },
+  })
+  const created = await executeActivityCommand(
+    first,
+    recordingSessionId,
+    '/activity create {"name":"Release readiness","objective":"Prepare the release for review.","boundaries":{"inScope":["Collect external review notes."],"outOfScope":["Do not publish."]}}',
+  )
+  expect(created.result.kind).toBe('success')
+  const activityId = /ID: ([0-9a-f-]{36})/u.exec(created.result.text ?? '')?.[1]
+  if (activityId === undefined) throw new Error('Activity creation did not return its stable id')
+  const details = JSON.stringify({
+    source: 'Claude Code terminal',
+    summary: 'The external run reports two checklist items for follow-up.',
+    sourceReference: 'https://example.invalid/external/review/123',
+    artifacts: [{ label: 'Review notes', location: 'reports/external-review.md', revision: 'a'.repeat(40) }],
+  })
+  const recorded = await executeActivityCommand(
+    first,
+    recordingSessionId,
+    `/activity handoff add ${activityId} ${details}`,
+  )
+  expect(recorded.result.kind).toBe('success')
+  expect(recorded.result.text).toContain('Origin: user-supplied external report')
+  expect(recorded.result.text).toContain(`Recorded in DSH Session: ${recordingSessionId}`)
+  expect(recorded.result.text).toContain('does not import a native Session or confirm external execution')
+  const handoffId = /ID: ([0-9a-f-]{36})/u.exec(recorded.result.text ?? '')?.[1]
+  if (handoffId === undefined) throw new Error('Handoff command did not return its stable id')
+
+  await server.stop()
+  const second = await hostRpc(await server.start(0))
+  const sessionsBeforeOpen = await second<{ items: { sessionId: string; agentAvailable: boolean }[] }>('session/list', { _request: {} })
+  expect(sessionsBeforeOpen.items.some(item => item.sessionId === recordingSessionId && item.agentAvailable)).toBe(false)
+  const { sessionId: readingSessionId } = await second<{ sessionId: string }>('session/create', {
+    request: { workspaceId: workspace.workspaceId },
+  })
+  expect(readingSessionId).not.toBe(recordingSessionId)
+  const opened = await executeActivityCommand(second, readingSessionId, `/activity open ${activityId}`)
+  expect(opened.result.kind).toBe('success')
+  expect(opened.result.text).toContain(`External handoff: Claude Code terminal — ${handoffId}`)
+  expect(opened.result.text).toContain(`Recorded in DSH Session: ${recordingSessionId}`)
+  expect(opened.result.text).toContain('User-supplied summary: The external run reports two checklist items for follow-up.')
+  expect(opened.result.text).toContain('User-supplied source reference: https://example.invalid/external/review/123')
+  expect(opened.result.text).toContain('User-supplied artifact reference: Review notes — reports/external-review.md')
+  expect(opened.result.text).toContain(`Artifact revision: ${'a'.repeat(40)}`)
+  expect(opened.result.text).toContain('not imported native execution history')
+  expect(opened.result.text).toContain('not been independently verified or accepted')
+  const sessionsAfterOpen = await second<{ items: { sessionId: string; agentAvailable: boolean }[] }>('session/list', { _request: {} })
+  expect(sessionsAfterOpen.items.map(item => item.sessionId).sort()).toEqual(
+    sessionsBeforeOpen.items.map(item => item.sessionId).concat(readingSessionId).sort(),
+  )
 })

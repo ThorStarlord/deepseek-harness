@@ -38,6 +38,10 @@ Evidence and its result are user-supplied and are not checked by DSH. Conflictin
 
 The separate version-1 home_activity_annotations domain stores immutable, user-authored user-command revisions, each linked to the prior revision for that Activity. A correction changes only the current coordination note; it does not edit Activity fields, provider reports, or specialist assertions. Each Activity retains at most 256 revisions, and /activity open shows the current note and latest eight. Note text rejects control, format, line, and paragraph separators so history remains line-oriented. A rejected write may leave persistence uncertain; restart DSH and inspect the saved history before deciding whether to retry.
 
+## External handoffs
+
+The separate version-1 `home_activity_handoffs` domain stores a user-supplied source label, optional summary or source reference, optional artifact references, and the DSH Session in which the handoff was recorded. A handoff must contain a summary, source reference, or artifact reference. Opening the Activity from another DSH Session displays it as external user input, not native execution history. The service does not import transcripts, synchronize an external Session, or claim that the reported work was executed, verified, or accepted.
+
 ## Cordis API
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
@@ -249,6 +253,34 @@ async markUnconfirmed( id: ActivityDelegationId, admission: ActivityDelegationAd
 ```
 
 Source: [`packages/home/activity/src/delegations.ts`](../../packages/home/activity/src/delegations.ts)
+
+<a id="ctxhomeactivityhandoffs--homeactivityhandoffservice"></a>
+
+### `ctx.homeActivityHandoffs` — `HomeActivityHandoffService`
+
+Stores user-supplied external handoffs independently from execution records.
+
+```ts cordis-catalog
+/**
+ * Record the user-supplied summary and references for work performed outside DSH.
+ * @param request - Existing Activity, source, summary or references, and recording Session.
+ * @returns The durable handoff explicitly attributed to user input.
+ * @throws {ActivityHandoffError} when the Activity is missing or the handoff is invalid.
+ * @throws {ActivityHandoffStorageError} when persistence cannot confirm the new record.
+ */
+create(request: CreateActivityHandoffRequest): Promise<ActivityHandoff>
+
+/**
+ * List user-supplied external handoffs for one Activity, newest first.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached handoff records.
+ * @throws {ActivityHandoffError} when the Activity does not exist.
+ * @throws {ActivityHandoffStorageError} when handoff storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityHandoff[]
+```
+
+Source: [`packages/home/activity/src/handoffs.ts`](../../packages/home/activity/src/handoffs.ts)
 
 <a id="ctxhomeactivityreviews--homeactivityreviewservice"></a>
 

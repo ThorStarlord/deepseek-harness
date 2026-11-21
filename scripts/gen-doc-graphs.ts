@@ -611,6 +611,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Stores user-supplied output locations and optional revisions linked to one Activity delegation and one of its selected Workspaces, separately from provider-authored reports.',
   },
   {
+    key: 'homeActivityHandoffs',
+    pkg: 'home-activity',
+    title: 'User-supplied external Activity handoffs',
+    mode: 'service',
+    consumers: ['command-home-activity'],
+    note: 'Stores user-supplied external summaries and artifact references with the recording DSH Session; it does not import transcripts or assert execution, verification, or acceptance.',
+  },
+  {
     key: 'homeActivityReviews',
     pkg: 'home-activity',
     title: 'User Activity outcome reviews',

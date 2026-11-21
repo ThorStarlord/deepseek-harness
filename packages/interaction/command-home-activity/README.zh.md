@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 Web 或 SDK session.run() 中使用 /activity 创建、重新打开、关联、备注和审核 Activity，关联产物指针，通过 DSH spawn、Codex 或 Claude Code 显式委派有界任务，或在 Activity 已保存目标和选定的范围内语句下请求一次新的委派。备注和审核与提供方报告及专家断言分开保存。保存或重新打开 Activity 不会启动工作。继续请求是由用户明确启动的新提供方请求，不是恢复先前进程。Codex 和 Claude Code 保留原生身份验证与权限处理；它们是一次性运行，Activity 不能恢复、查看转录或回滚。挂载命令时需启用所需 Home Activity 服务。
+在 Web 或 SDK `session.run()` 中使用 `/activity` 创建、重新打开、关联、备注和审核 Activity，并通过 DSH `spawn`、Codex 或 Claude Code 发起有界委派。命令也可关联输出指针，并记录用户提供的外部交接而不导入 transcript。`/activity continue` 会按已保存目标和用户选择的范围内语句启动一次新委派，不会恢复之前的提供方执行。备注、审核与更正都与提供方报告和专家断言分开保存。保存或重新打开不会启动工作。Codex 和 Claude Code 保留原生身份验证与权限；它们是一次性执行，Activity 不提供 transcript、恢复或回滚能力。
 
 ## 目录
 
@@ -39,7 +39,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity、关联和备
 - name: '@deepseek-ai/dsh-command-home-activity'
 ```
 
-[命令注册表](../commands/README.zh.md)负责直接调用人工命令，[`dsh-home-activity`](../../home/activity/README.zh.md)负责持久记录。
+[命令注册表](../commands/README.zh.md)负责直接调用人工命令，[`dsh-home-activity`](../../home/activity/README.zh.md)负责持久记录。挂载 `@deepseek-ai/dsh-home-activity/handoffs` 可记录用户提供的外部交接。
 
 启用委派的组合还需挂载 `@deepseek-ai/dsh-home-activity/delegations`、`@deepseek-ai/dsh-subagent` 和受支持的提供方。命令支持 `spawn`；启用可选的原生 Codex 或 Claude Code 提供方后，也支持 `codex` 或 `claude-code`。
 
@@ -58,6 +58,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity、关联和备
 | `/activity unlink <activity-id> workspace <workspace-id>` | 删除 Workspace 引用，保留源记录。 |
 | `/activity unlink <activity-id> session <session-id>` | 删除 DSH Session 引用，保留 Session 日志。 |
 | `/activity artifact add <activity-id> <delegation-id> <workspace-id> <JSON>` | 为该 Activity 的委派记录输出指针，并要求所选 Workspace 已关联到同一 Activity。JSON 字段为 `label`、`location` 和可选的 `revision`；缺少修订版时显示为未知。 |
+| `/activity handoff add <activity-id> <JSON>` | 为现有 Activity 记录用户提供的外部交接。JSON 字段为 `source`、可选的 `summary`、可选的 `sourceReference`，以及可选的 `artifacts`（含 `label`、`location` 和可选的 `revision`）。至少需要摘要、来源引用或一个产物引用。 |
 | `/activity delegate <activity-id> spawn <task>` | 保存请求，显式启动一次 DSH 原生子级执行，并分别报告提供方结果。任务最多 4,096 UTF-8 字节。 |
 | `/activity delegate <activity-id> codex <task>` | 保存请求，显式启动一次原生 Codex 执行，并分别报告其结果。此操作为一次性执行，不创建 DSH Session。任务最多 4,096 UTF-8 字节。 |
 | `/activity delegate <activity-id> claude-code <task>` | 保存请求，显式启动一次原生 Claude Code 执行，并分别报告其结果。此操作为一次性执行，不创建 DSH Session。任务最多 4,096 UTF-8 字节。 |
@@ -76,7 +77,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity、关联和备
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-此命令仅供用户明确调用，不是模型工具。创建、列出和打开使用 `ctx.homeActivities`；上下文引用使用 `ctx.homeActivityAssociations`；委派沿用 `ctx.subagents.startActivation` 生命周期，并另行保存持久记录；审核使用 `ctx.homeActivityReviews`。DSH `spawn` 会在启动前捕获启动器的 profile bundle 选择和当前 Agent preset 的确切模块。Codex 和 Claude Code 因其外部运行时不会提供 DSH profile 或 preset 信息而显示为不可用。此命令不会创建 Goal，也不会声称提供方报告已经过验证或接受。
+此命令仅供用户明确调用，不是模型工具。创建、列出和打开使用 `ctx.homeActivities`；上下文引用使用 `ctx.homeActivityAssociations`；委派沿用 `ctx.subagents.startActivation` 生命周期，并另行保存持久记录；审核使用 `ctx.homeActivityReviews`。DSH `spawn` 会在启动前捕获启动器的 profile bundle 选择和当前 Agent preset 的确切模块。Codex 和 Claude Code 因其外部运行时不会提供 DSH profile 或 preset 信息而显示为不可用。此命令不会创建 Goal，也不会声称提供方报告已经过验证或接受。 外部交接使用 ctx.homeActivityHandoffs。
 
 
 
@@ -90,6 +91,7 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity、关联和备
 | [`src/association-command.ts`](src/association-command.ts) | Workspace 和 Session 目录、引用命令与解析 |
 | [`src/artifact-command.ts`](src/artifact-command.ts) | 用户关联的产物指针命令与显示 |
 | [`src/review-command.ts`](src/review-command.ts) | 审核输入、持久化命令与结果显示 |
+| [`src/handoff-command.ts`](src/handoff-command.ts) | 用户提供的外部交接命令与显示 |
 | [`tests/command.spec.ts`](tests/command.spec.ts) | 命令行为、安全失败与不执行断言 |
 | [`apps/web/tests/home-activity-review.e2e.ts`](../../../apps/web/tests/home-activity-review.e2e.ts) | 通过组装后的 Web 应用和命令 RPC 验证处置与证据 |
 | [`tests/delegation.e2e.spec.ts`](tests/delegation.e2e.spec.ts) | 通过宿主调用路径验证提供方委派成功与失败 |
@@ -128,6 +130,8 @@ Activity 范围说明描述请求的工作；它们不会更改提供方权限�
 - 对于待处理或状态不确定的启动，恢复提示只提供检查操作。只有已保存结果支持新工作且提供方路由已注册时，才会提示用户单独、明确地发起新请求；路由注册不代表凭据可用、用户同意、原生权限或已获准入。Activity 不提供停止操作，外部一次性运行没有 Activity 状态查询、转录检查或恢复操作。未知结果会继续保持未解决状态。
 - 产品分类仅使用捕获的 bundle 列表或活动 preset 模块，以及产品提供的元数据。profile patch 和运行时 overlay 不参与分类；稳定标签仅适用于与已发布 profile 模板的 bundle 列表完全相同的情况，未分类的 preset 会显示为不可用。这些标签不代表沙箱隔离、权限强制执行或 Skill 资格。
 - 产物位置、修订版和 Workspace 选择由用户提供。命令不会检查被引用的文件，也不会从 Workspace 目录推断 Git 根目录；缺少的修订版保持未知，指针不验证执行上下文或提供方输出。
+
+- 外部交接的来源标签、摘要和产物引用均由用户提供；命令不会导入外部 transcript、同步外部 Session，也不会验证所报告工作的执行者。
 
 <a id="dev-note"></a>
 ### 开发备注
