@@ -18,6 +18,23 @@ Use applicable design rules for UI changes, including visible loading, error, di
 | Page layout, shared components or global styles | Identify affected relationships and consumers; inspect distinct affected layout, content and state variants in assembled pages. Reuse evidence only for justified equivalents. | Briefly state scope. Preserve the starting version and comparable images when requested or needed to explain broad changes or assess regression risk. |
 | Explicit comprehensive review | Cover the agreed regions and relevant states; distinguish inspected results, defects and uninspected scope. | Use the [review cookbook](../../../docs/cookbook/reviewing-ui-design.md) for coverage records, findings and supporting evidence. A comparison request alone does not require a product-wide audit. |
 
+### Evidence matched to claims
+
+Choose evidence from the changed behavior and claims, not only from whether the change has a GUI. The highest-risk affected claim governs mixed changes. A GIF or screenshot shows rendered states; it does not replace behavior tests, provider evidence, or an independent assessment.
+
+| Claim or risk | Minimum evidence | Live-provider evidence |
+|---|---|---|
+| Presentation, copy, or local interaction | Focused checks for changed behavior and inspection of the assembled page in affected states. Use screenshots for static states and video when sequence or timing matters. | Not required solely because the change is visible in the GUI. |
+| Local persistence or Activity coordination | Focused behavior, restart, invalid-reference, and recovery checks that match the acceptance claims; inspect the actual rendered interaction. | Required only when an acceptance claim depends on provider behavior. |
+| Provider execution, authentication, or external effects | Focused deterministic tests, actual rendered interaction, and the separate technical/security and product/design assessments required by the operative review policy. | Use real-provider evidence for a live-integration claim when accessible. If unavailable, label that behavior unverified and do not imply a live result. |
+| Permissions, identity, destructive effects, or other protected behavior | Meet the owning security, authorization, and regression requirements. Evidence format cannot waive them. | Live evidence does not grant or replace protected authorization. |
+
+If live-provider behavior is part of an issue's acceptance criteria, unavailable live evidence leaves the pull request unqualified until the evidence is obtained or the owner changes the accepted scope. Labeling the behavior unverified does not satisfy that acceptance criterion.
+
+For each evidence item, identify its source and reviewed commit, and distinguish direct observation from interpretation. A fixture, replay, or deterministic provider test supports only the behavior it exercises. Uncertain or mixed-risk changes use the stronger applicable requirements. Evidence selection does not change reviewer qualifications or dispositions. The Stage 1 agent-assisted alternative remains limited to Issues #17–#30 under its implemented decision record.
+
+These evidence rules take effect only when the change adopting them is integrated. They do not alter PRs #33 or #34, which remain subject to their existing qualification requirements, including the exact-tree real-server/real-model GIF.
+
 ### Minimum checks for affected UI
 
 These checks apply even to small changes; optional documentation does not make inspection optional. Open the actual page and inspect the changed element with its directly affected neighbors, rather than judging CSS or an isolated component alone.
@@ -35,7 +52,7 @@ When a before/after comparison is needed, preserve the actual starting implement
 
 Before handoff, review or push, check only new cumulative interactions, missing required checks and invalidated evidence; do not repeat completed verification at each stage. Report results and material gaps accurately. Do not claim full coverage or visual acceptance when required scenes or checks are missing.
 
-These effort levels change only the additional design-review procedure. Existing [client test requirements](../../../packages/client/AGENTS.md) and [GUI PR GIF requirements](../record-browser-gif/SKILL.md#every-gui-pull-request-includes-a-gif) still apply. Designer/product approval remains required when its trigger is met, except for a change explicitly eligible under the owner-authorized [Stage 1 alternative](#owner-authorized-stage-1-agent-assisted-assessment).
+These effort levels change only the additional design-review procedure. Existing [client test requirements](../../../packages/client/AGENTS.md) and [GUI evidence requirements](../record-browser-gif/SKILL.md#when-a-gif-supports-the-evidence-claim) still apply. Designer/product approval remains required when its trigger is met, except for a change explicitly eligible under the owner-authorized [Stage 1 alternative](#owner-authorized-stage-1-agent-assisted-assessment).
 
 ## Select the rule owners
 

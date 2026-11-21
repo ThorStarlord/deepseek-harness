@@ -1,6 +1,6 @@
 ---
 name: record-browser-gif
-description: Record browser or Web UI interaction demos as optimized GIFs using the available browser-control workflow, optional Playwright Videos for higher capture frame rates, and deterministic encoding, then attach the GIF to a pull request with `gh --attach`; publication requires gh v2.99.0 or later, and a GIF over 5 MiB is split into parts. Use when asked to make, record, or generate a GIF that demonstrates a browser workflow, and for every pull request that changes product-user-visible GUI behavior, which MUST include a GIF recorded from the pull request's real server and model flow.
+description: Record browser or Web UI interaction demos as optimized GIFs using the available browser-control workflow, optional Playwright Videos for higher capture frame rates, and deterministic encoding, then attach the GIF to a pull request with `gh --attach`; publication requires gh v2.99.0 or later, and a GIF over 5 MiB is split into parts. Use when asked to make, record, or generate a GIF that demonstrates a browser workflow, or when the operative DSH UI evidence policy requires video for a claim.
 ---
 
 # Record Browser GIF
@@ -9,11 +9,11 @@ Produce a short, truthful UI demonstration as a local GIF, and — only when the
 
 The [archived evidence-chain decision](../../notes/archived/process/2026-08-08-browser-gif-evidence-chain.md) records why one storyboard comes from one isolated run and why publication revalidates both the artifact and the demonstrated pull-request head.
 
-## Every GUI pull request includes a GIF
+## When a GIF supports the evidence claim
 
-A pull request that changes product-user-visible GUI behavior MUST include a demonstration GIF recorded with this skill and embedded in the pull request body via [the attach workflow](#publish-the-gif).
+A GUI change does not require a GIF solely because it is user-visible. Use a GIF when an issue or operative policy requires one, or when a claim depends on a sequence, transition, intermediate state, or timing that static evidence cannot show clearly. Otherwise use the evidence form selected by the [DSH UI evidence policy](../dsh-client-ui-ux/SKILL.md#evidence-matched-to-claims). Actual assembled-page inspection remains required when that policy calls for it.
 
-The recording itself is part of the evidence: use a real server booted from that pull request's branch tree, a real API key, and real model rounds. Never substitute fixture queries, mock transports, synthetic event injection, or test-only hooks unless the user explicitly asked for a fixture recording. Next to the embed, state the exact demonstrated commit SHA, the tree and origin that served it, any mode flags or browser-state exceptions, and whether a real model round ran, so reviewers know exactly what the recording proves.
+When a GIF supports a live provider or model claim, record a real server from the pull request tree using the application's supported credential provider and real provider rounds. Never use a fixture, mock transport, synthetic event injection, or test-only hook as evidence of live behavior. A local presentation or Activity interaction may be recorded from the real application without a model round when the claim does not concern provider behavior. Next to each embed, state the exact demonstrated commit SHA, the tree and origin that served it, mode flags or browser-state exceptions, and whether a real provider round ran. Distinguish what the recording proves from what remains unverified.
 
 ## Keep recording separate from publication
 
@@ -27,8 +27,8 @@ The recording itself is part of the evidence: use a real server booted from that
 A GIF for a specific pull request demonstrates that pull request's tree, so stage per pull request:
 
 1. Require a clean worktree, record its exact commit with `git rev-parse HEAD`, then build that recorded tree — here, `pnpm run build && pnpm run build:web`. A GIF recorded against another commit's build misattributes the evidence.
-2. Boot one server per port from that tree with fresh scratch `DSH_HOME`, `DSH_AGENTS_HOME`, workspace, and session state. Give the browser a fresh isolated context or profile as well; if the browser workflow cannot create one, clear that origin's cookies and site storage before navigation so persisted client state cannot affect the evidence. Real API credentials can be available in `~/.dsh/.credentials.yaml` even when `DEEPSEEK_API_KEY` and the root `.env` are absent. With a scratch `DSH_HOME`, use a recording overlay to set the `dsh-credentials-local` provider's `path` to that existing file's absolute path. Let the application's normal credential provider resolve the key; never echo it.
-3. Treat one storyboard as one evidence run: every published frame comes from that server and those state roots, workspace, session, and model-backed scenario run. If capture automation fails, discard its frames and rerun from fresh roots; never splice frames from separate runs.
+2. Boot one server per port from that tree with fresh scratch `DSH_HOME`, `DSH_AGENTS_HOME`, workspace, and session state. Give the browser a fresh isolated context or profile as well; if the browser workflow cannot create one, clear that origin's cookies and site storage before navigation so persisted client state cannot affect the evidence. For live provider claims, use an owner-controlled supported demo credential source through the application's normal provider. Do not reuse or migrate an unsupported legacy store. A per-run provider-path overlay may reference a supported demo-only store; document that credential and any Web Connection signing record are shared when the same store is reused. Never expose the key or its value in a command, log, screenshot, or artifact.
+3. Treat one storyboard as one evidence run: every published frame comes from that server and those state roots, workspace, session, and one scenario run. Include a real model round when the evidence claim requires provider behavior. If capture automation fails, discard its frames and rerun from fresh roots; never splice frames from separate runs.
 4. When switching between pull requests, stop the old server by PID or an exact match on its command line. A broad `pkill -f` pattern can match and kill the shell that launched it — including your own.
 
 ## Record the flow
