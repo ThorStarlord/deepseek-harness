@@ -334,16 +334,16 @@ export function summarizeTrace(events: TraceEvent[], runId: string): TraceSummar
   const runDurationMs = runStartEpoch === undefined || runFinishEpoch === undefined || runClockReversed
     ? undefined
     : runFinishEpoch - runStartEpoch
-  const run: RunSummary | undefined = start === undefined ? undefined : {
+  const runReference = start ?? finish
+  const run: RunSummary | undefined = runReference === undefined ? undefined : {
     runId,
-    taskId: start.taskId,
-    agentId: start.agentId,
-    ...(start.parentRunId === undefined ? {} : { parentRunId: start.parentRunId }),
-    startedAt: start.timestamp,
-    startedProcessId: start.processId,
+    taskId: runReference.taskId,
+    agentId: runReference.agentId,
+    ...(runReference.parentRunId === undefined ? {} : { parentRunId: runReference.parentRunId }),
+    ...(start === undefined ? {} : { startedAt: start.timestamp, startedProcessId: start.processId }),
     ...(finish === undefined ? {} : { finishedAt: finish.timestamp, finishedProcessId: finish.processId }),
-    ...(finish === undefined || runDurationMs === undefined ? {} : { durationMs: runDurationMs }),
-    status: finish === undefined ? 'incomplete' : runClockReversed ? 'clock-reversed' : 'complete',
+    ...(runDurationMs === undefined ? {} : { durationMs: runDurationMs }),
+    status: start === undefined || finish === undefined ? 'incomplete' : runClockReversed ? 'clock-reversed' : 'complete',
   }
   const descendants = descendantRunIds(events, runId)
   const childRuns = descendants.map(childId => summarizeRun(events, childId))
@@ -461,19 +461,20 @@ export function summarizeTrace(events: TraceEvent[], runId: string): TraceSummar
 function summarizeRun(events: TraceEvent[], runId: string): RunSummary {
   const started = events.find((event): event is RunEvent => event.runId === runId && event.event === 'run-started')
   const finished = [...events].reverse().find((event): event is RunEvent => event.runId === runId && event.event === 'run-finished')
-  if (started === undefined) return { runId, taskId: 'unknown', agentId: 'unknown', status: 'incomplete' }
+  const reference = started ?? finished
+  if (reference === undefined) return { runId, taskId: 'unknown', agentId: 'unknown', status: 'incomplete' }
+  const clockReversed = started !== undefined && finished !== undefined && Date.parse(finished.timestamp) < Date.parse(started.timestamp)
   return {
     runId,
-    taskId: started.taskId,
-    agentId: started.agentId,
-    ...(started.parentRunId === undefined ? {} : { parentRunId: started.parentRunId }),
-    startedAt: started.timestamp,
-    startedProcessId: started.processId,
+    taskId: reference.taskId,
+    agentId: reference.agentId,
+    ...(reference.parentRunId === undefined ? {} : { parentRunId: reference.parentRunId }),
+    ...(started === undefined ? {} : { startedAt: started.timestamp, startedProcessId: started.processId }),
     ...(finished === undefined ? {} : { finishedAt: finished.timestamp, finishedProcessId: finished.processId }),
-    ...(finished === undefined || Date.parse(finished.timestamp) < Date.parse(started.timestamp)
+    ...(started === undefined || finished === undefined || clockReversed
       ? {}
       : { durationMs: Date.parse(finished.timestamp) - Date.parse(started.timestamp) }),
-    status: finished === undefined ? 'incomplete' : Date.parse(finished.timestamp) < Date.parse(started.timestamp) ? 'clock-reversed' : 'complete',
+    status: started === undefined || finished === undefined ? 'incomplete' : clockReversed ? 'clock-reversed' : 'complete',
   }
 }
 
@@ -491,7 +492,7 @@ function formatDuration(value: number | undefined): string {
 }
 
 function formatTimestamp(timestamp: string | undefined, processId: number | undefined): string {
-  return timestamp === undefined ? 'unknown' : `${timestamp} (pid ${processId ?? 'unknown'})`
+  return timestamp === undefined ? 'unknown' : `${timestamp} (recorder pid ${processId ?? 'unknown'})`
 }
 
 /** Render recorded time, overlap, waits, and unattributed time separately.
@@ -501,7 +502,7 @@ function formatTimestamp(timestamp: string | undefined, processId: number | unde
 export function renderTraceReport(summary: TraceSummary): string {
   const lines = ['Development run timing report', '']
   if (summary.run === undefined) lines.push('Run wall duration: unknown (no run start event recorded)')
-  else lines.push(`Run ${summary.run.runId} (${summary.run.taskId}, ${summary.run.agentId}): ${formatDuration(summary.run.durationMs)}${summary.run.status === 'incomplete' ? ' (end unknown)' : summary.run.status === 'clock-reversed' ? ' (wall timestamps reversed)' : ''}; start ${formatTimestamp(summary.run.startedAt, summary.run.startedProcessId)}, end ${formatTimestamp(summary.run.finishedAt, summary.run.finishedProcessId)}.`)
+  else lines.push(`Run ${summary.run.runId} (${summary.run.taskId}, ${summary.run.agentId}): ${formatDuration(summary.run.durationMs)}${summary.run.status === 'incomplete' ? summary.run.startedAt === undefined ? ' (start unknown)' : ' (end unknown)' : summary.run.status === 'clock-reversed' ? ' (wall timestamps reversed)' : ''}; start ${formatTimestamp(summary.run.startedAt, summary.run.startedProcessId)}, end ${formatTimestamp(summary.run.finishedAt, summary.run.finishedProcessId)}.`)
   lines.push('Source: explicit local dev:trace events; command arguments and output are not captured.')
   lines.push(`Recorded operation time: ${formatDuration(summary.completedOperationDurationMs)} cumulative across monotonic command durations and bracketed wall spans; overlaps may be counted more than once.`)
   lines.push(`Observed operation wall-clock union: ${formatDuration(summary.operationWallUnionMs)}; concurrent operation overlap: ${formatDuration(summary.concurrentOperationWallMs)} (cross-process timestamps).`)

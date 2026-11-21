@@ -133,7 +133,7 @@ describe('development run trace', () => {
     expect(summary.unattributedWallMs).toBe(2000)
     expect(report).toContain('implementation/subagent-1 (child-a): 7.0 s')
     expect(report).toContain('Observed subagent run wall-clock union: 8.0 s across 2 complete interval(s); concurrent subagent overlap: 4.0 s; 0 incomplete or reversed interval(s) remain unknown')
-    expect(report).toContain('start 2026-11-21T12:00:01.000Z (pid 100), end 2026-11-21T12:00:08.000Z (pid 100)')
+    expect(report).toContain('start 2026-11-21T12:00:01.000Z (recorder pid 100), end 2026-11-21T12:00:08.000Z (recorder pid 100)')
   })
 
   it('measures manually bracketed host waits as wall spans', () => {
@@ -188,7 +188,34 @@ describe('development run trace', () => {
     expect(report).toContain('unfinished: unknown (duration basis unknown), incomplete; end and outcome unknown')
     expect(report).toContain('Run time outside observed operation and subagent intervals: unknown')
     expect(report).toContain('Observed subagent run wall-clock union: 0 ms across 0 complete interval(s); concurrent subagent overlap: 0 ms; 1 incomplete or reversed interval(s) remain unknown')
-    expect(report).toContain('implementation/subagent-1 (child-incomplete): unknown (start 2026-11-21T12:00:01.000Z (pid 100), end unknown)')
+    expect(report).toContain('implementation/subagent-1 (child-incomplete): unknown (start 2026-11-21T12:00:01.000Z (recorder pid 100), end unknown)')
+  })
+
+  it('preserves finish timestamps and recorder process ids when run starts are missing', () => {
+    const childFinish = {
+      ...run('run-finished', '2026-11-21T12:00:03.000Z'),
+      runId: 'child-finished',
+      parentRunId: 'run-a',
+      taskId: 'review',
+      agentId: 'subagent-1',
+    }
+    const events = parseTraceEvents([
+      JSON.stringify(run('run-finished', '2026-11-21T12:00:02.000Z')),
+      JSON.stringify(childFinish),
+    ].join('\n'))
+
+    const summary = summarizeTrace(events, 'run-a')
+    const report = renderTraceReport(summary)
+    expect(summary.run).toMatchObject({
+      runId: 'run-a', taskId: 'issue-36', status: 'incomplete',
+      finishedAt: '2026-11-21T12:00:02.000Z', finishedProcessId: 100,
+    })
+    expect(summary.childRuns[0]).toMatchObject({
+      runId: 'child-finished', taskId: 'review', status: 'incomplete',
+      finishedAt: '2026-11-21T12:00:03.000Z', finishedProcessId: 100,
+    })
+    expect(report).toContain('Run run-a (issue-36, coordinator): unknown (start unknown); start unknown, end 2026-11-21T12:00:02.000Z (recorder pid 100)')
+    expect(report).toContain('review/subagent-1 (child-finished): unknown (start unknown, end 2026-11-21T12:00:03.000Z (recorder pid 100))')
   })
 
   it('keeps monotonic duration but marks reversed wall timestamps unknown', () => {
