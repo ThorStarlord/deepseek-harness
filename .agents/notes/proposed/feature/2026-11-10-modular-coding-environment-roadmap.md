@@ -32,6 +32,20 @@ The owner-confirmed multi-model Windows pilot is complete. It establishes a mult
 | Session history and context | [Session logs](../../../../packages/session/README.md), [Session queries](../../../../packages/session-query/README.md), [context](../../../../packages/context/README.md), [compaction](../../../../packages/compaction/README.md), and feedback and telemetry packages support reconstruction and observation. | They are not, by themselves, cross-repository semantic memory or an adaptive learning policy. |
 | Execution controls | DSH provides credential, approval, and [sandbox](../../../../packages/sandbox/README.md) capabilities alongside provider-specific native controls. | A parent’s policy is not proven to constrain every native child process; permission and evidence rules must be explicit at each integration. |
 
+### Roadmap evidence checkpoint
+
+The roadmap tracks demonstrated developer outcomes, not package presence or local test success alone. This checkpoint distinguishes merged capabilities, unmerged candidate changes, unpublished local work, and unqualified user journeys; it does not revise the provisional priority order.
+
+| Priority | Evidence available | User outcome not yet established |
+| --- | --- | --- |
+| 1 — Multi-repository | [PR #8](https://github.com/ThorStarlord/deepseek-harness/pull/8) merged a read-only cross-repository analysis workflow. | One authorized conversation completing coordinated changes and review across selected repositories is not demonstrated. |
+| 2 — Reusable workflows | [PRs #9–#12](https://github.com/ThorStarlord/deepseek-harness/pulls?q=is%3Apr+is%3Amerged) merged bounded code review, evidence-aware reporting, test-driven guidance, and a composed Web development workflow. | Individual slices do not qualify portability across native agent hosts or one end-to-end multi-agent development experience. |
+| 3 — Delegated work | [PR #13](https://github.com/ThorStarlord/deepseek-harness/pull/13) contains child-turn outcomes and cold-read provenance corrections but awaits product/design review. A read-only reconciliation command has been reported on an unpublished local branch. | Neither workstream is integrated as a complete delegate-inspect-reconcile-authorized-continue experience; reported restart and real-model evidence covers bounded cases. |
+| 4 — Adaptation and learning | DSH already provides routing, Session history, context, and feedback mechanisms. | Source-linked adaptive decisions and corrected memory affecting authorized later work have not been qualified as one product experience. |
+| 5 — Optional advanced integration | Sensemaking and mission-control remain optional candidates, not adopted DSH runtime owners. | Neither integration has an accepted ownership decision and verified end-to-end benefit. |
+
+A pending PR's passing tests do not make its behavior available on canonical master. An unpublished local command is not a reviewed product capability. Keep transient commit details, environment diagnostics, and recording attempts in their owning verification records instead of treating them as roadmap status.
+
 ### Candidate source repositories
 
 These candidates are sources for selective evaluation. The references below support only the stated capability descriptions; they do not claim DSH integration or prove that upstream behavior is portable. A repository license applies to that repository's material, not automatically to separate hosted services or dependencies.
@@ -107,6 +121,16 @@ The order of repository selection, worktree ownership, and branch integration fo
 ### Selecting the next bounded responsibility
 
 Choose one user or maintainer outcome from this roadmap only when repository evidence supports it. Inspect the current package owner and its documented behavior first. Check the candidate source and license when external material matters. Separate existing mechanisms from the actual gap, and state integrations, permissions, and source attribution before choosing a design. Define a small, observable acceptance result and the relevant repository-prescribed verification. If authority, dependency, or user value is unresolved, record that decision boundary instead of implementing an assumption.
+
+### Priority 3 lessons and strategic reassessment
+
+Recovery investigations distinguish persisted Session events, synthetic cold-read closers, current repository observations, and interpretations. A durable `tool/call` without a durable result remains uncertain even if the intended file exists now: a matching postcondition does not prove which operation caused it. Cold inspection must not replay side effects, promote reconstructed evidence to a durable outcome, or grant continuation authority.
+
+Those investigations also showed that existing Session persistence, repair, query, and subagent mechanisms already cover much of the needed behavior; introduce infrastructure only for a demonstrated missing responsibility. Deterministic tests, OS-process restart probes, genuine model-backed Web runs, reviewed PRs, and integrated user workflows establish different claims. A difficult recording, unmerged branch, or unanswered product/design review is a qualification or publication dependency, not proof of a new runtime defect.
+
+A succession of individually warranted fixes can consume engineering effort without delivering the complete product experience. Before choosing further Priority 3 construction, reassess all five priorities against a coherent developer workflow from intent and authorized delegation to an attributable, inspectable engineering result. Separate existing mechanisms, merged capabilities, unpublished work, missing integrations, unqualified behavior, and review or environment constraints. Select the next bounded responsibility for its contribution to end-to-end user value rather than proximity to the previous subtask; this is a strategic checkpoint, not a mandatory analysis gate for every change.
+
+One possible comparison workflow is a developer assigning a bounded task to specialized agents across explicitly selected repositories and receiving reviewable changes with source and permission attribution. This is a candidate for evaluation, not an adopted reprioritization or authority to couple DSH to Dark Factory.
 
 ## Alternatives considered
 
