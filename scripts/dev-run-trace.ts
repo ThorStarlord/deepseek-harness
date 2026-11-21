@@ -1,6 +1,6 @@
 /** Record and report local development operation timing without command contents. */
 
-import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeSync } from 'node:fs'
 import { execa } from 'execa'
 import { performance } from 'node:perf_hooks'
 import { dirname, resolve } from 'node:path'
@@ -632,6 +632,16 @@ function appendEvent(trace: string, event: TraceEvent): void {
   }
 }
 
+/** Reject a start event that would make the same run and operation ambiguous. */
+function assertOperationStartAvailable(trace: string, runId: string, operationId: string): void {
+  if (!existsSync(trace)) return
+  const events = parseTraceEvents(readFileSync(trace, 'utf8'))
+  const alreadyStarted = events.some(event =>
+    (event.event === 'operation-started' || event.event === 'span-started')
+    && event.runId === runId && event.operationId === operationId)
+  if (alreadyStarted) throw new Error(`Operation ${operationId} already has a start event in run ${runId}`)
+}
+
 async function runCommand(trace: string, options: CliOptions, command: string[]): Promise<number> {
   const operationId = options.operationId
   const activity = options.activity
@@ -639,6 +649,7 @@ async function runCommand(trace: string, options: CliOptions, command: string[])
   if (operationId === undefined || activity === undefined || executable === undefined) {
     throw new Error('run mode requires an operation, activity, and command')
   }
+  assertOperationStartAvailable(trace, options.runId, operationId)
   const startedAt = new Date().toISOString()
   const monotonicStart = performance.now()
   const common = {
@@ -705,6 +716,7 @@ async function main(args: string[]): Promise<void> {
     const operationId = options.operationId
     const activity = options.activity
     if (operationId === undefined || activity === undefined) throw new Error('span-start requires an operation and activity')
+    assertOperationStartAvailable(options.trace, options.runId, operationId)
     appendEvent(options.trace, {
       version: FORMAT_VERSION,
       event: 'span-started',
