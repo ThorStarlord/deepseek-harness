@@ -706,6 +706,11 @@ describe('read-only multi-repository coordination', () => {
     await f.parent.whenIdle()
     const result = f.parent.session.snapshotEvents().find(event => event.type === 'tool/result')
     const content = result?.type === 'tool/result' ? JSON.stringify(result.data) : ''
+    expect(content).toContain('"stagedCount"')
+    expect(content).toContain('"unstagedCount"')
+    expect(content).toContain('"untrackedCount"')
+    expect(content).toContain('"observedAtStart"')
+    expect(content).toContain('"observedAtEnd"')
     expect(content).toContain('"sourceChanged":true')
     expect(content).toContain('"sourceChanged":false')
     expect(content).toContain('findings as potentially stale')

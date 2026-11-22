@@ -109,6 +109,9 @@
     - id: home-activity-annotations
       name: '@deepseek-ai/dsh-home-activity/annotations'
 
+    - id: home-activity-strategic-episodes
+      name: '@deepseek-ai/dsh-home-activity/strategic-episodes'
+
     - id: command-home-activity
       name: '@deepseek-ai/dsh-command-home-activity'
 

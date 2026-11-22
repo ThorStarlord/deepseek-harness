@@ -2,7 +2,7 @@
 
 English | [中文](home-activity.zh.md)
 
-A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope, and creation time. It is independent of any Session; creating or opening one does not start its objective. StorageDomain records keep Activity data separate from context links, requested delegation facts, user-linked output pointers, user reviews and evidence, and append-only user annotation history. The Web /activity command creates, lists, opens, associates, annotates, links outputs, records reviews, and explicitly delegates bounded tasks.
+A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope, and creation time. It is independent of any Session; creating or opening one does not start its objective. StorageDomain records keep Activity data separate from context links, requested delegation facts, user-linked output pointers, user reviews and evidence, append-only user annotation history, and advisory strategic episodes. The Web /activity command creates, lists, opens, associates, annotates, links outputs, records reviews, requests strategic assessments, and explicitly delegates bounded tasks.
 
 ## Saved intent
 
@@ -41,6 +41,10 @@ The separate version-1 home_activity_annotations domain stores immutable, user-a
 ## External handoffs
 
 The separate version-1 `home_activity_handoffs` domain stores a user-supplied source label, optional summary or source reference, optional artifact references, and the DSH Session in which the handoff was recorded. A handoff must contain a summary, source reference, or artifact reference. Opening the Activity from another DSH Session displays it as external user input, not native execution history. The service does not import transcripts, synchronize an external Session, or claim that the reported work was executed, verified, or accepted.
+
+## Strategic briefs
+
+The separate version-1 `home_activity_strategic_episodes` domain appends agent-authored advisory briefs without changing Activity intent, annotations, or delegation facts. `/activity assess` loads the existing Sensemaking Skills and explicitly selected Workspaces; repository reads use the existing read-only coordinator after its separate one-shot approval. Each episode retains the Activity objective, originating Session, Workspace ids, coordinator-reported Git revisions and observation times, whether staged, unstaged, or untracked source files were present, source references, loaded Skill content digests, findings, alternatives, uncertainties, and a recommendation or no-selection. The recorder binds repository ids and source metadata to matching successful coordinator tool-result metadata in the originating Session; it does not independently verify source contents, citations, or findings. Unavailable, dirty, changed, or stability-unknown sources require an incomplete brief. A later brief supersedes the recommendation without removing the earlier episode. `/activity open` shows the latest brief and `/activity brief` retrieves a selected historical revision without re-reading repositories; a later saved observation makes earlier applicability uncertain, and no later observation leaves current applicability unconfirmed. `/activity assess cancel` prevents saving an unfinished brief but cannot stop reads already approved and running.
 
 ## Cordis API
 
@@ -319,4 +323,30 @@ list(activityId: ActivityId): readonly ActivityReview[]
 ```
 
 Source: [`packages/home/activity/src/reviews.ts`](../../packages/home/activity/src/reviews.ts)
+
+<a id="ctxhomeactivitystrategicepisodes--homeactivitystrategicepisodeservice"></a>
+
+### `ctx.homeActivityStrategicEpisodes` — `HomeActivityStrategicEpisodeService`
+
+Stores append-only agent-authored strategic assessments independently from Activity intent and user notes.
+
+```ts cordis-catalog
+/** Append a completed or explicitly incomplete agent-authored brief.
+ * @param request - Activity, Session, request, Skills, repository observations, and report content.
+ * @returns The saved episode, or the prior episode for a repeated request id.
+ * @throws {ActivityStrategicEpisodeError} when the Activity is unknown, report content is invalid, or the episode limit is reached.
+ * @throws {ActivityStrategicEpisodeStorageError} when episode storage cannot confirm the read or write.
+ */
+record(request: RecordActivityStrategicEpisodeRequest): Promise<ActivityStrategicEpisode>
+
+/** List historical assessments without checking repositories or starting work.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached episodes for the Activity, oldest first.
+ * @throws {ActivityStrategicEpisodeError} when the Activity does not exist.
+ * @throws {ActivityStrategicEpisodeStorageError} when episode storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityStrategicEpisode[]
+```
+
+Source: [`packages/home/activity/src/strategic-episodes.ts`](../../packages/home/activity/src/strategic-episodes.ts)
 <!-- END GENERATED cordis-surface -->

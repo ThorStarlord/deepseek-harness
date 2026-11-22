@@ -9,6 +9,12 @@ import { StorageError } from '@deepseek-ai/dsh-storage'
 import { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { ActivityError, ActivityId, createActivityRequestSchema } from '@deepseek-ai/dsh-home-activity'
+import {
+  cancelActivityStrategicAssessment,
+  executeActivityStrategicAssessment,
+  registerActivityStrategicBriefTool,
+  renderActivityStrategicEpisodes,
+} from './strategic-command.ts'
 import { executeActivityDelegation, renderActivityDelegation } from './delegation-command.ts'
 import { executeActivityContinuation } from './continuation-command.ts'
 import { renderActivityNextActions } from './next-actions.ts'
@@ -20,7 +26,10 @@ import { executeActivityReviewCommand, renderActivityReview } from './review-com
 export const name = 'command-home-activity'
 export const inject = [
   'commands',
+  'tools',
+  'agents',
   'homeActivities',
+  'homeActivityStrategicEpisodes',
   'homeActivityDelegations',
   'subagents',
   'homeActivityAssociations',
@@ -32,13 +41,16 @@ export const inject = [
   'sessionPersistence',
 ]
 
-const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | handoff add <activity-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>'
+const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | brief <activity-id> <revision> | assess cancel | assess <activity-id> <workspace-id> <workspace-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | handoff add <activity-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>'
 const MAX_INPUT_BYTES = 16_384
 
 type ActivityCommand =
   | { readonly kind: 'list' }
   | { readonly kind: 'create'; readonly input: string }
   | { readonly kind: 'open'; readonly id: string }
+  | { readonly kind: 'brief'; readonly id: string; readonly revision: number }
+  | { readonly kind: 'cancel-assessment' }
+  | { readonly kind: 'assess'; readonly id: string; readonly workspaces: readonly [string, string] }
   | { readonly kind: 'delegate'; readonly input: string }
   | { readonly kind: 'continue'; readonly input: string }
   | { readonly kind: 'invalid'; readonly message: string }
@@ -54,6 +66,16 @@ function parseCommand(rawInput: string): ActivityCommand {
   if (create?.[1] !== undefined) return { kind: 'create', input: create[1] }
   const open = /^open\s+(\S+)$/u.exec(input)
   if (open?.[1] !== undefined) return { kind: 'open', id: open[1] }
+  const brief = /^brief\s+(\S+)\s+([1-9][0-9]*)$/u.exec(input)
+  if (brief?.[1] !== undefined && brief[2] !== undefined) {
+    const revision = Number(brief[2])
+    if (Number.isSafeInteger(revision)) return { kind: 'brief', id: brief[1], revision }
+  }
+  if (input === 'assess cancel') return { kind: 'cancel-assessment' }
+  const assess = /^assess\s+(\S+)\s+(\S+)\s+(\S+)$/u.exec(input)
+  if (assess?.[1] !== undefined && assess[2] !== undefined && assess[3] !== undefined) {
+    return { kind: 'assess', id: assess[1], workspaces: [assess[2], assess[3]] }
+  }
   const delegate = /^delegate\s+([\s\S]+)$/u.exec(input)
   if (delegate?.[1] !== undefined) return { kind: 'delegate', input: delegate[1] }
   const continuation = /^continue\s+([\s\S]+)$/u.exec(input)
@@ -66,11 +88,12 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.commands.register({
     definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-home-activity'),
     name: 'activity',
-    description: 'Create, list, reopen, and associate saved Activities; record external handoffs, artifact pointers, coordination notes, and outcome reviews; explicitly delegate one DSH-native task or one-shot Codex or Claude Code task, or start a new provider request under the saved objective and a selected in-scope statement',
-    input: { hint: 'create <JSON> | list | open <activity-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | handoff add <activity-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>' },
+    description: 'Create, list, reopen, associate, and explicitly assess saved Activities; record external handoffs, artifact pointers, coordination notes, and outcome reviews; explicitly delegate one DSH-native task or one-shot Codex or Claude Code task, or start a new provider request under the saved objective and a selected in-scope statement',
+    input: { hint: 'create <JSON> | list | open <activity-id> | brief <activity-id> <revision> | assess cancel | assess <activity-id> <workspace-id> <workspace-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | handoff add <activity-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>' },
     recordInput: false,
     handler: invocation => execute(ctx, invocation),
   }))
+  ctx.effect(() => registerActivityStrategicBriefTool(ctx), 'Activity Strategic Brief recorder')
 }
 
 async function execute(ctx: Context, invocation: CommandInvocation): Promise<CommandResult> {
@@ -84,8 +107,21 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
   if (reviewResult !== undefined) return reviewResult
   const command = parseCommand(invocation.rawInput)
   if (command.kind === 'invalid') return { kind: 'error', text: command.message }
+  if (command.kind === 'cancel-assessment') return cancelActivityStrategicAssessment(ctx, invocation)
   if (command.kind === 'delegate') return executeActivityDelegation(ctx, invocation, command.input)
   if (command.kind === 'continue') return executeActivityContinuation(ctx, invocation, command.input)
+  if (command.kind === 'assess') {
+    const parsedId = z.uuid().safeParse(command.id)
+    if (!parsedId.success) return { kind: 'error', text: `Activity id must be a UUID. ${USAGE}` }
+    const workspaceIds = command.workspaces.map(id => z.uuid().safeParse(id))
+    if (workspaceIds.some(result => !result.success)) return { kind: 'error', text: `Workspace ids must be UUIDs. ${USAGE}` }
+    return executeActivityStrategicAssessment(
+      ctx,
+      invocation,
+      ActivityId(parsedId.data),
+      workspaceIds.map(result => result.data) as [string, string],
+    )
+  }
   if (command.kind === 'create') {
     let value: unknown
     try {
@@ -131,6 +167,20 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
     if (!parsedId.success) return { kind: 'error', text: `Activity id must be a UUID. ${USAGE}` }
     const activity = ctx.homeActivities.get(ActivityId(parsedId.data))
     if (activity === undefined) return { kind: 'error', text: `No saved Activity has id ${command.id}.` }
+    const strategicEpisodes = ctx.homeActivityStrategicEpisodes.list(activity.id)
+    if (command.kind === 'brief') {
+      if (!strategicEpisodes.some(episode => episode.revision === command.revision)) {
+        return { kind: 'error', text: `Activity ${activity.id} has no saved strategic brief revision ${command.revision}.` }
+      }
+      return {
+        kind: 'success',
+        text: [
+          `Activity: ${activity.name}`,
+          `ID: ${activity.id}`,
+          ...renderActivityStrategicEpisodes(strategicEpisodes, activity.id, command.revision),
+        ].join('\n'),
+      }
+    }
     const delegations = ctx.homeActivityDelegations.list(activity.id)
     return {
       kind: 'success',
@@ -144,6 +194,8 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
         ...activity.boundaries.outOfScope.map(item => `Out of scope: ${item}`),
         '',
         ...renderActivityAnnotations(ctx, activity.id),
+        '',
+        ...renderActivityStrategicEpisodes(strategicEpisodes, activity.id),
         '',
         'Delegations:',
         ...(delegations.length === 0

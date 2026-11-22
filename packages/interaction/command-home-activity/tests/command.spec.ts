@@ -11,12 +11,14 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
+import { createToolResultMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Workspace } from '@deepseek-ai/dsh-workspace/types'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { Agent as DshAgent } from '@deepseek-ai/dsh-agent'
+import type { ToolDefinition, ToolRegistrationOptions } from '@deepseek-ai/dsh-tools'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import Storage, { StorageError } from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
@@ -37,6 +39,7 @@ import HomeActivityAnnotationService, {
   ActivityAnnotationError,
   ActivityAnnotationStorageError,
 } from '@deepseek-ai/dsh-home-activity/annotations'
+import HomeActivityStrategicEpisodeService from '@deepseek-ai/dsh-home-activity/strategic-episodes'
 import type { ActivityAnnotation, ActivityAnnotationId } from '@deepseek-ai/dsh-home-activity/annotations'
 import * as commandHomeActivity from '../src/index.ts'
 
@@ -84,6 +87,7 @@ async function harness() {
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(CommandRuntime)
   await ctx.plugin(HomeActivityService)
+  await ctx.plugin(HomeActivityStrategicEpisodeService)
   await ctx.plugin(HomeActivityDelegations)
   const workspaces = new Map<string, Workspace>([
     ['00000000-0000-4000-8000-000000000011', workspace('00000000-0000-4000-8000-000000000011', 'Project one')],
@@ -100,6 +104,13 @@ async function harness() {
     list: () => [...workspaces.values()],
   }
   ctx.provide('workspaceRegistry', workspaceRegistry as never)
+  const registeredTools = new Map<string, { definition: ToolDefinition; options: ToolRegistrationOptions }>()
+  ctx.provide('tools', {
+    register(definition: ToolDefinition, options: ToolRegistrationOptions = {}) {
+      registeredTools.set(definition.name, { definition, options })
+      return () => { registeredTools.delete(definition.name) }
+    },
+  } as never)
   ctx.provide('sessionPersistence', persistence as never)
   await ctx.plugin(HomeActivityAssociationService)
   await ctx.plugin(HomeActivityArtifactService)
@@ -121,12 +132,31 @@ async function harness() {
     persistence,
     workspaceRegistry,
     commandFiber,
+    registeredTools,
+    steeredMessages: primary.steeredMessages,
+    skills: primary.skills,
   }
 }
 
 function createAgent(ctx: Context, id: ReturnType<typeof SessionId>) {
   const session = ctx.sessions.create(id)
   const inbox = createInboxStub()
+  const steeredMessages: import('@deepseek-ai/dsh-session').UserMessage[] = []
+  const agentContext = new Context()
+  const skills = {
+    async get(name: string) {
+      if (name !== 'using-sensemaking' && name !== 'multi-repository-strategic-analysis') return undefined
+      return {
+        name,
+        content: `Loaded test content for ${name}.`,
+        provider: 'test-skills',
+        source: 'custom',
+        invocation: { userInvocable: true, modelInvocable: true },
+        path: `C:\\skills\\${name}\\SKILL.md`,
+      }
+    },
+  }
+  agentContext.provide('skills', skills as never)
   let status: AgentStatus = 'idle'
   const agent: Agent = {
     id: session.id,
@@ -134,18 +164,18 @@ function createAgent(ctx: Context, id: ReturnType<typeof SessionId>) {
     session,
     model: unsupportedModel(),
     inbox,
-    ctx: new Context(),
+    ctx: agentContext,
     get status() { return status },
     send: () => {},
     followup: () => {},
-    steer: () => {},
+    steer: (message) => { steeredMessages.push(message) },
     inject(input) { this.inbox.append('next-step', input) },
     cancel() { status = 'idle' },
     runMaintenance: task => task(new AbortController().signal),
     whenIdle() { return Promise.resolve() },
   }
   ctx.agents.enter(agent)
-  return { agent, session }
+  return { agent, session, steeredMessages, skills }
 }
 
 function workspace(id: string, title: string): Workspace {
@@ -173,7 +203,7 @@ async function run(test: Awaited<ReturnType<typeof harness>>, suffix: string, ag
 it('registers a discoverable command and creates, lists, and reopens without starting work', async () => {
   const test = await harness()
   expect(commandHomeActivity.inject).toEqual([
-    'commands', 'homeActivities', 'homeActivityDelegations', 'subagents',
+    'commands', 'tools', 'agents', 'homeActivities', 'homeActivityStrategicEpisodes', 'homeActivityDelegations', 'subagents',
     'homeActivityAssociations', 'homeActivityArtifacts', 'homeActivityHandoffs',
     'homeActivityReviews', 'homeActivityAnnotations',
     'workspaceRegistry', 'sessionPersistence',
@@ -182,11 +212,19 @@ it('registers a discoverable command and creates, lists, and reopens without sta
     command.definitionId === '@deepseek-ai/dsh-command-home-activity',
   )
   if (descriptor === undefined) throw new Error('Activity command was not registered')
+  const sessionEventTypes: string[] = []
+  test.ctx.on('session/event', (session, event) => {
+    if (session === test.session) sessionEventTypes.push(event.type)
+  })
   expect(descriptor.name).toBe('activity')
   expect(descriptor.description).toContain('DSH-native task')
   expect(descriptor.description).toContain('coordination notes')
   expect(descriptor.description).toContain('one-shot Codex or Claude Code task')
   expect(descriptor.input?.hint).toContain('artifact add <activity-id> <delegation-id> <workspace-id> <JSON>')
+  expect(descriptor.input?.hint).toContain('assess <activity-id> <workspace-id> <workspace-id>')
+  expect(descriptor.input?.hint).toContain('assess cancel')
+  expect(descriptor.input?.hint).toContain('brief <activity-id> <revision>')
+  expect(descriptor.input?.hint).toContain('brief <activity-id> <revision>')
   expect(descriptor.input?.hint).toContain('handoff add <activity-id> <JSON>')
   expect(descriptor.input?.hint).toContain('continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>')
   expect(descriptor.input?.hint).toContain('review set <activity-id> <delegation-id> <JSON>')
@@ -205,10 +243,243 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   expect(opened.text).toContain('In scope 1: Review release notes')
   expect(opened.text).toContain('Out of scope: Do not publish')
   expect(opened.text).toContain('runtime permissions are unchanged')
-  expect(test.session.snapshotEvents().filter(event => event.type.startsWith('goal/'))).toEqual([])
-  expect(test.session.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toEqual([])
+  expect(sessionEventTypes.some(type => type.startsWith('goal/') || type === 'turn/start' || type === 'turn/end')).toBe(false)
   await test.commandFiber.dispose()
   expect(test.ctx.commands.find(test.agent, 'activity')).toBeUndefined()
+})
+
+it('requires an explicit assessment command and steers the active Agent with loaded Sensemaking Skills', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Sensemaking integration',
+    objective: 'Improve the practical integration of Sensemaking capabilities into DeepSeek Harness development workflows.',
+    boundaries: { inScope: ['Assess selected repository sources.'], outOfScope: ['Do not start implementation.'] },
+  })
+  const startActivation = vi.spyOn(test.ctx.subagents, 'startActivation')
+  const selectedIds = [...test.workspaces.keys()]
+  const started = await run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`)
+
+  expect(started).toMatchObject({ kind: 'success' })
+  expect(started.text).toContain('Advisory assessment queued')
+  expect(started.text).toContain('ask separately before reading')
+  expect(test.steeredMessages).toHaveLength(1)
+  const message = test.steeredMessages[0]
+  if (message === undefined) throw new Error('The explicit assessment did not steer the active Agent')
+  const text = message.content.map(block => block.type === 'text' ? block.text : '').join('\n')
+  expect(text).toContain(activity.objective)
+  expect(text).toContain('Loaded test content for using-sensemaking.')
+  expect(text).toContain('Loaded test content for multi-repository-strategic-analysis.')
+  expect(text).toContain('coordinate_repositories')
+  expect(text).toContain('Do not start implementation')
+  expect(test.registeredTools.get('record_activity_strategic_brief')?.options.when).toBeDefined()
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
+  expect(startActivation).not.toHaveBeenCalled()
+
+  const recorder = test.registeredTools.get('record_activity_strategic_brief')?.definition
+  if (recorder?.execute === undefined) throw new Error('Activity Strategic Brief recorder was not registered')
+  const requestId = /Request ID: ([0-9a-f-]{36})/u.exec(text)?.[1]
+  if (requestId === undefined) throw new Error('The assessment request id was not included in its Session instruction')
+  const workspaceRows = [...test.workspaces.values()]
+  const briefData = (firstRevision: string, secondRevision: string, status: 'complete' | 'incomplete' = 'complete') => JSON.stringify({
+    status,
+    repositories: workspaceRows.map((workspace, index) => ({
+      workspaceId: workspace.id,
+      title: workspace.title,
+      status: 'observed',
+      revision: index === 0 ? firstRevision : secondRevision,
+      workingTree: 'clean',
+      sourceChanged: false,
+      observedAtStart: '2000-01-01T00:00:00.000Z',
+      observedAtEnd: '2000-01-01T00:00:10.000Z',
+    })),
+    evidence: workspaceRows.map((workspace, index) => ({
+      id: `E${index + 1}`,
+      workspaceId: workspace.id,
+      revision: index === 0 ? firstRevision : secondRevision,
+      path: index === 0 ? 'packages/home/activity/README.md' : 'skills/using-sensemaking/SKILL.md',
+      note: `Coordinator result for ${workspace.title}.`,
+    })),
+    findings: [{ kind: 'source-observation', category: 'capability', statement: 'Both selected repositories were inspected.', evidenceIds: ['E1', 'E2'] }],
+    alternatives: [
+      { name: 'Reuse existing Skills', consequence: 'Keeps one reasoning policy.', evidenceIds: ['E1', 'E2'], uncertaintyIds: ['U1'] },
+      { name: 'Add a native adapter', consequence: 'Adds a new integration surface.', evidenceIds: ['E1', 'E2'], uncertaintyIds: ['U1'] },
+    ],
+    uncertainties: [{ id: 'U1', statement: 'More evidence may change the choice.', evidenceIds: ['E1', 'E2'] }],
+    recommendation: { disposition: 'INVESTIGATE', responsibility: 'Compare the loaded Skill retrieval path.', rationale: 'The coordinator result identifies the source revisions.', scope: 'within-activity', evidenceIds: ['E1', 'E2'], uncertaintyIds: ['U1'] },
+  })
+  const executeRecorder = (briefJson: string) => recorder.execute?.(
+    { requestId, briefJson },
+    { agent: test.agent, callId: ToolCallId('strategic-recorder-call'), signal: new AbortController().signal } as never,
+  )
+
+  await expect(executeRecorder(briefData('a'.repeat(40), 'b'.repeat(40))))
+    .rejects.toThrow('requires a successful read-only coordinator result')
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
+
+  const coordinatorCallId = ToolCallId('strategic-coordinator-call')
+  const coordinatorCall = test.session.append('tool/call', {
+    turn: 1,
+    step: 1,
+    callId: coordinatorCallId,
+    name: 'coordinate_repositories',
+    arguments: JSON.stringify({ repositories: workspaceRows.map(workspace => workspace.path), task: 'read selected repositories' }),
+  })
+  test.session.append('tool/result', {
+    turn: 1,
+    step: 1,
+    message: createToolResultMessage({ callId: coordinatorCallId, content: [{ type: 'text', text: 'Read-only results' }], isError: false }),
+    meta: { repositories: workspaceRows.map((workspace, index) => ({
+      workspaceId: workspace.id,
+      root: workspace.path,
+      head: index === 0 ? 'a'.repeat(40) : 'b'.repeat(40),
+      execution: 'result',
+      childSessionId: `child-${index}`,
+      runId: `run-${index}`,
+      sourceChanged: false,
+      stagedCount: index === 0 ? 1 : 0,
+      unstagedCount: 0,
+      untrackedCount: 0,
+      observedAtStart: `2026-11-22T10:00:0${index}.000Z`,
+      observedAtEnd: `2026-11-22T10:00:1${index}.000Z`,
+    })) },
+  }, { surfaceOp: 'append', sourceEventSeqs: [coordinatorCall.seq] })
+  await expect(executeRecorder(briefData('a'.repeat(40), 'b'.repeat(40))))
+    .rejects.toThrow('cannot be complete when a selected Workspace has uncommitted source changes')
+  await expect(executeRecorder(briefData('c'.repeat(40), 'b'.repeat(40), 'incomplete'))).rejects.toThrow('evidence must cite the observed revision')
+  let resolveWrite!: () => void
+  let signalWriteStarted!: () => void
+  const writeGate = new Promise<void>((resolve) => { resolveWrite = resolve })
+  const writeStarted = new Promise<void>((resolve) => { signalWriteStarted = resolve })
+  const originalRecord = test.ctx.homeActivityStrategicEpisodes.record.bind(test.ctx.homeActivityStrategicEpisodes)
+  vi.spyOn(test.ctx.homeActivityStrategicEpisodes, 'record').mockImplementation(async (request) => {
+    signalWriteStarted()
+    await writeGate
+    return originalRecord(request)
+  })
+  const saveRequest = executeRecorder(briefData('a'.repeat(40), 'b'.repeat(40), 'incomplete'))
+  await writeStarted
+  const cancelDuringSave = await run(test, ' assess cancel')
+  expect(cancelDuringSave.kind).toBe('error')
+  expect(cancelDuringSave.text).toContain('save has already started')
+  resolveWrite()
+  const saved = await saveRequest
+  expect(saved).toMatchObject({ saved: true, revision: 1 })
+  const episode = test.ctx.homeActivityStrategicEpisodes.list(activity.id)[0]
+  expect(episode).toMatchObject({
+    objective: activity.objective,
+    status: 'incomplete',
+    originSessionId: String(test.session.id),
+    repositories: [
+      { workspaceId: workspaceRows[0]?.id, revision: 'a'.repeat(40), status: 'observed', workingTree: 'dirty', sourceChanged: false },
+      { workspaceId: workspaceRows[1]?.id, revision: 'b'.repeat(40), status: 'observed' },
+    ],
+  })
+  expect(typeof episode?.requestedAt).toBe('string')
+  expect(episode?.repositories[0]?.observedAtStart).toBe('2026-11-22T10:00:00.000Z')
+  expect(episode?.repositories[0]?.observedAtEnd).toBe('2026-11-22T10:00:10.000Z')
+  expect(episode?.repositories[0]?.observedAtStart).not.toBe('2000-01-01T00:00:00.000Z')
+  expect(episode?.repositories[0]?.workingTree).toBe('dirty')
+  if (episode === undefined) throw new Error('The strategic episode was not saved')
+  await test.ctx.homeActivityStrategicEpisodes.record({
+    activityId: activity.id,
+    originSessionId: String(test.secondarySession.id),
+    requestId: randomUUID(),
+    skillDigests: episode.skillDigests,
+    status: 'complete',
+    repositories: episode.repositories.map(repository => ({ ...repository, workingTree: 'clean', sourceChanged: false })),
+    evidence: episode.evidence,
+    findings: episode.findings,
+    alternatives: episode.alternatives,
+    uncertainties: episode.uncertainties,
+    recommendation: episode.recommendation,
+    requestedAt: new Date().toISOString(),
+  })
+  const reopened = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+  expect(reopened.text).toContain('Latest Activity Strategic Brief (agent-authored; not independently verified or user-accepted):')
+  expect(reopened.text).toContain(`1 earlier brief remains saved; run /activity brief ${activity.id} <revision> to inspect one.`)
+  expect(reopened.text).toContain('Recommendation: INVESTIGATE — Compare the loaded Skill retrieval path. (within-activity) [Evidence: E1, E2; uncertainty: U1]')
+  expect(reopened.text).not.toContain('Assessment 1:')
+  const historical = await run(test, ` brief ${activity.id} 1`, test.secondaryAgent)
+  expect(historical.text).toContain('Activity Strategic Brief revision 1')
+  expect(historical.text).toContain('working tree dirty')
+  expect(historical.text).toContain('a later saved observation is at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+  expect(historical.text).toContain('Uncertainty U1: More evidence may change the choice. [Evidence: E1, E2]')
+  expect((await run(test, ` brief ${activity.id} 3`, test.secondaryAgent)).text)
+    .toContain('has no saved strategic brief revision 3')
+  expect(reopened.text).toContain('this is the latest saved observation; current repository state has not been checked since then')
+  expect(startActivation).not.toHaveBeenCalled()
+})
+
+it('serializes same-Session assessment setup and lets the user discard an unfinished brief', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Sensemaking integration', objective: 'Assess selected repository sources.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  const [first, concurrent] = await Promise.all([
+    run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`),
+    run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`),
+  ])
+  expect([first.kind, concurrent.kind].sort()).toEqual(['error', 'success'])
+  const recorder = test.registeredTools.get('record_activity_strategic_brief')
+  if (recorder?.options.when === undefined) throw new Error('The request-scoped recorder has no visibility condition')
+  expect(recorder.options.when({ agent: test.agent } as never)).toBe(true)
+
+  const canceled = await run(test, ' assess cancel')
+  expect(canceled.text).toContain('It cannot be saved')
+  expect(canceled.text).toContain('does not stop repository reads')
+  expect(recorder.options.when({ agent: test.agent } as never)).toBe(false)
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
+})
+
+it('cancels assessment setup while Sensemaking Skills are loading', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Sensemaking integration', objective: 'Assess selected repository sources.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  let releaseSkills!: () => void
+  let reportLoading!: () => void
+  const skillsGate = new Promise<void>((resolve) => { releaseSkills = resolve })
+  const skillsLoading = new Promise<void>((resolve) => { reportLoading = resolve })
+  const getSkill = test.skills.get.bind(test.skills)
+  vi.spyOn(test.skills, 'get').mockImplementation(async (name) => {
+    reportLoading()
+    await skillsGate
+    return getSkill(name)
+  })
+
+  const preparing = run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`)
+  await skillsLoading
+  const canceled = await run(test, ' assess cancel')
+  expect(canceled.kind).toBe('success')
+  expect(canceled.text).toContain('Canceled Activity Strategic Brief setup')
+  releaseSkills()
+  const preparationResult = await preparing
+  expect(preparationResult.kind).toBe('error')
+  expect(preparationResult.text).toContain('setup was canceled')
+  expect(test.steeredMessages).toEqual([])
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
+})
+
+it('rejects invalid repository selections before loading Skills or steering the Agent', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Source review', objective: 'Read only the selected sources.',
+    boundaries: { inScope: ['Read source.'], outOfScope: ['Write source.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  const repeated = await run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[0]}`)
+  const unknown = await run(test, ` assess ${activity.id} ${selectedIds[0]} 00000000-0000-4000-8000-000000000099`)
+
+  expect(repeated.kind).toBe('error')
+  expect(repeated.text).toContain('two distinct')
+  expect(unknown.kind).toBe('error')
+  expect(unknown.text).toContain('Both selected Workspace IDs')
+  expect(test.steeredMessages).toEqual([])
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
 })
 
 it('rejects continuation without an explicit existing in-scope selection before starting work', async () => {

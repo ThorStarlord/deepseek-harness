@@ -2,7 +2,7 @@
 
 [English](home-activity.md) | 中文
 
-Home Activity 是由用户发起并持久保存的事务，具有稳定身份、名称、目标、描述性范围和创建时间。它独立于任何 Session；创建或打开 Activity 不会启动目标。StorageDomain 记录将 Activity 与上下文关联、明确请求的委派事实、用户关联的输出指针、用户审核及证据、仅追加的用户备注历史分开保存。Web /activity 命令可创建、列出、打开、关联、备注、关联输出、记录审核，并显式委派有界任务。
+Home Activity 是由用户发起并持久保存的事务，具有稳定身份、名称、目标、描述性范围和创建时间。它独立于任何 Session；创建或打开 Activity 不会启动目标。StorageDomain 记录将 Activity 与上下文关联、明确请求的委派事实、用户关联的输出指针、用户审核及证据、仅追加的用户备注历史和建议性战略记录分开保存。Web /activity 命令可创建、列出、打开、关联、备注、关联输出、记录审核、请求战略评估，并显式委派有界任务。
 
 ## 已保存意图
 
@@ -41,6 +41,10 @@ Home Activity 是由用户发起并持久保存的事务，具有稳定身份、
 ## 外部交接
 
 独立的版本 1 `home_activity_handoffs` 域会保存用户提供的来源标签、可选摘要或来源引用、可选产物引用，以及记录交接时所在的 DSH Session。交接至少需要摘要、来源引用或产物引用之一。其他 DSH Session 打开 Activity 时，会将其显示为外部用户输入，而非原生执行历史。此服务不会导入 transcript、同步外部 Session，也不会声称所报告的工作已执行、验证或接受。
+
+## 战略简报
+
+独立的版本 1 `home_activity_strategic_episodes` 域会追加由 agent 撰写的建议性简报，不改变 Activity 意图、备注或委派事实。`/activity assess` 会加载现有 Sensemaking Skills 和明确选择的 Workspace；仓库读取使用现有只读协调工具，并须另行获得一次性批准。每条记录保留 Activity 目标、来源 Session、Workspace id、由协调工具报告的 Git 修订和观察时间、是否存在暂存、未暂存或未跟踪的来源文件、来源引用、已加载 Skill 内容摘要、发现、替代方案、不确定性，以及建议或不选择。记录器会将仓库 id 和来源元数据绑定到来源 Session 中匹配的成功协调器工具结果；但不会独立验证来源内容、引用或发现。来源不可用、存在未提交变更、观察期间变化或稳定性未知时，简报必须标为不完整。后续简报会取代建议，但保留早期记录。`/activity open` 显示最新简报，`/activity brief` 可检索指定的历史版本，不会重新读取仓库；后续保存的观察会让早期适用性变得不确定，没有后续观察时当前适用性仍未确认。`/activity assess cancel` 会阻止保存未完成简报，但不会停止已获准并正在运行的读取。
 
 ## Cordis API
 
@@ -319,4 +323,30 @@ list(activityId: ActivityId): readonly ActivityReview[]
 ```
 
 Source: [`packages/home/activity/src/reviews.ts`](../../packages/home/activity/src/reviews.ts)
+
+<a id="ctxhomeactivitystrategicepisodes--homeactivitystrategicepisodeservice"></a>
+
+### `ctx.homeActivityStrategicEpisodes` — `HomeActivityStrategicEpisodeService`
+
+Stores append-only agent-authored strategic assessments independently from Activity intent and user notes.
+
+```ts cordis-catalog
+/** Append a completed or explicitly incomplete agent-authored brief.
+ * @param request - Activity, Session, request, Skills, repository observations, and report content.
+ * @returns The saved episode, or the prior episode for a repeated request id.
+ * @throws {ActivityStrategicEpisodeError} when the Activity is unknown, report content is invalid, or the episode limit is reached.
+ * @throws {ActivityStrategicEpisodeStorageError} when episode storage cannot confirm the read or write.
+ */
+record(request: RecordActivityStrategicEpisodeRequest): Promise<ActivityStrategicEpisode>
+
+/** List historical assessments without checking repositories or starting work.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached episodes for the Activity, oldest first.
+ * @throws {ActivityStrategicEpisodeError} when the Activity does not exist.
+ * @throws {ActivityStrategicEpisodeStorageError} when episode storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityStrategicEpisode[]
+```
+
+Source: [`packages/home/activity/src/strategic-episodes.ts`](../../packages/home/activity/src/strategic-episodes.ts)
 <!-- END GENERATED cordis-surface -->

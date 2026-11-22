@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Save named Activities with objectives and descriptive scope beyond their originating Sessions. The Web and SDK `/activity` command creates, links, annotates, and reopens Activities across Sessions. Separate records retain context links, delegation requests and reports, output pointers, user dispositions with attributed evidence, append-only corrections, and user-supplied external handoffs. Explicit delegation starts a DSH child activation or a one-shot Codex or Claude Code run. Reviews and corrections never replace provider or specialist facts. Creating or opening an Activity never starts work, creates a Goal, or grants permissions. External handoffs preserve source and artifact references without importing transcripts or claiming native execution.
+Save named Activities with objectives and descriptive scope beyond their Sessions. The Web and SDK `/activity` command reopens them across Sessions and records selected Workspace and Session links, annotations, delegations, reports, handoffs, and reviews. An explicit `/activity assess` can save an advisory strategic brief for later Sessions. Creating or opening an Activity never starts work, activates a Goal, or grants permissions; external handoffs do not become native execution records.
 
 ## Table of Contents
 
@@ -46,6 +46,7 @@ The service declares no configuration fields. A custom composition supplies the 
 - name: '@deepseek-ai/dsh-home-activity'
 - name: '@deepseek-ai/dsh-home-activity/associations'
 - name: '@deepseek-ai/dsh-home-activity/annotations'
+- name: '@deepseek-ai/dsh-home-activity/strategic-episodes'
 - name: '@deepseek-ai/dsh-home-activity/handoffs'
 ```
 
@@ -65,6 +66,8 @@ Activity records use the version-1 `home_activities` StorageDomain and remain in
 
 User corrections use a separate version-1 `home_activity_annotations` domain. Each immutable `user-command` revision supersedes only the previous annotation for that Activity and leaves Activity and delegation records unchanged; the domain retains up to 256 revisions. Note text rejects control, format, line, and paragraph separators so displayed history remains line-oriented.
 
+Strategic briefs use a separate append-only version-1 `home_activity_strategic_episodes` domain. A record retains the Activity objective, originating DSH Session, explicit Workspace ids, agent-authored findings and alternatives, repository-relative source references, coordinator-reported Git revisions and observation times, whether tracked and unignored working files had staged, unstaged, or untracked changes, loaded Sensemaking Skill content digests, uncertainties, and a recommendation or explicit no-selection. The recorder binds repository identities and source metadata to matching successful coordinator tool-result metadata in the originating Session; it does not independently verify repository contents or the findings. A brief is incomplete if a selected Workspace was unavailable, had uncommitted source changes, changed during observation, or has unknown source stability. A repeated recorder call with the same request id returns the existing episode; later assessments append a superseding episode and preserve earlier source history. Opening an Activity shows its latest brief; `/activity brief <activity-id> <revision>` opens an earlier one without checking current repositories or repeating an assessment.
+
 Selected Workspace and DSH Session references use the separate version-1 `home_activity_associations` domain. The associations are resolved against their owning registries when displayed; stale references remain explicit until removed. They do not change Workspace records, Session logs, or the Activity record.
 
 User-supplied external handoffs use the separate version-1 `home_activity_handoffs` domain. Each record belongs to an existing Activity and stores a source label, optional user summary or source reference, user-supplied artifact references, and the DSH Session in which the record was added. Supplied text is trimmed, length-bounded, and single-line; control, format, line-separator, and paragraph-separator characters are rejected. Opening the Activity from another Session shows these references as external user input, not imported native execution history. The service does not import transcripts, synchronize external sessions, establish who performed the work, or claim verification or acceptance.
@@ -83,6 +86,9 @@ User-supplied external handoffs use the separate version-1 `home_activity_handof
 | [`src/annotation-types.ts`](src/annotation-types.ts) | User-authored annotation revision types |
 | [`src/annotation-spec.ts`](src/annotation-spec.ts) | Versioned annotation record schema and domain |
 | [`src/annotations.ts`](src/annotations.ts) | Separate append-only annotation StorageDomain service |
+| [`src/strategic-episode-types.ts`](src/strategic-episode-types.ts) | Strategic episode and evidence-reference types |
+| [`src/strategic-episode-spec.ts`](src/strategic-episode-spec.ts) | Versioned strategic episode schema and domain |
+| [`src/strategic-episodes.ts`](src/strategic-episodes.ts) | Append-only Activity Strategic Brief persistence service |
 | [`src/handoff-types.ts`](src/handoff-types.ts) | External handoff record types |
 | [`src/handoff-spec.ts`](src/handoff-spec.ts) | Versioned external handoff schema |
 | [`src/handoffs.ts`](src/handoffs.ts) | Separate external handoff StorageDomain service |
@@ -104,11 +110,11 @@ User-supplied external handoffs use the separate version-1 `home_activity_handof
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as the service persists Activity records without adding model context or tools.
+None, as this package exposes persistence services to the application but does not add model instructions or tools.
 
 #### KV Cache effect
 
-None; creating or opening an Activity does not add model input. A delegated child Session makes its own provider requests.
+Activity storage itself adds no model input; an explicit command may put selected records into the active Session as described in `command-home-activity`.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>
@@ -123,6 +129,7 @@ Activity scope remains descriptive, and delegation does not enforce it as an aut
 - Activity views classify only known provider stop reasons; unknown values remain unknown. They show the saved report source and time, and the uncertainty source category and observation time when available. DSH has no freshness check for a saved report, so it may be stale; opening an Activity does not query later provider state or retry work.
 - Artifact references are user-linked pointers. They do not copy or inspect output, prove its producer, verify contents, or trigger cross-Workspace writes, merges, or releases. A missing source revision remains unknown.
 - Review evidence and its reported result are user supplied. DSH preserves their source attribution but does not check the source, evidence, or outcome; the current disposition is separate from provider execution status.
+- Strategic episodes are agent-authored reports, not independent verification or user acceptance. Assessment requires both Sensemaking Skills to be loadable and exactly two registered Workspaces because the existing coordinator supports two repositories. The recorder binds repository ids, `HEAD` revisions, observation times, and working-tree cleanliness metadata to a matching successful coordinator result in the originating Session, but does not independently verify source contents, citations, or findings. Unavailable, dirty, changed, or stability-unknown sources require an incomplete brief. `/activity open` shows the latest brief and `/activity brief` retrieves an earlier saved revision; neither command checks current repositories.
 
 Annotation write errors do not confirm whether the revision was persisted. The JSON backend can fail after replacing its file, so close and reopen the backend and domain, then inspect the Activity before deciding whether to retry; the annotation service does not promise a durable rollback. See the [StorageDomain](../../storage/storage-domain/README.md) and [JSON backend](../../storage/storage-json/README.md) failure contracts.
 
