@@ -43,6 +43,7 @@ interface PendingAssessment {
   saveStarted: boolean
   saved: boolean
   cancelled: boolean
+  turnEnded: boolean
 }
 
 interface CoordinatorRepository {
@@ -97,12 +98,16 @@ export function registerActivityStrategicBriefTool(ctx: Context): () => void {
     captureCoordinatorEvent(pending, session.id, event)
     if (event.type === 'turn/end') {
       const request = pending.get(String(session.id))
-      if (request !== undefined
-        && (request.saved || request.cancelled || request.expiresAt <= Date.now())) {
-        pending.delete(String(session.id))
+      if (request !== undefined) {
+        request.turnEnded = true
+        if (!request.saved && !request.saveStarted) request.cancelled = true
       }
-      disposeDrainedRegistration()
     }
+    const request = pending.get(String(session.id))
+    if (request?.turnEnded && !request.saveStarted && request.coordinatorCallIds.size === 0) {
+      pending.delete(String(session.id))
+    }
+    disposeDrainedRegistration()
   })
   let disposeRequested = false
   let resourcesDisposed = false
@@ -193,7 +198,7 @@ export async function executeActivityStrategicAssessment(
   if (ctx.tools.get(COORDINATION_TOOL, invocation.agent) === undefined) {
     return {
       kind: 'error',
-      text: 'The read-only multi-repository coordinator is unavailable in this DSH profile. No repository analysis or assessment guard was started.',
+      text: 'The read-only multi-repository coordinator is unavailable to this Agent. Check whether the active profile or Agent tool restrictions include it. No repository analysis or assessment guard was started.',
     }
   }
   const sessionId = String(invocation.agent.session.id)
@@ -267,6 +272,7 @@ export async function executeActivityStrategicAssessment(
     saveStarted: false,
     saved: false,
     cancelled: false,
+    turnEnded: false,
   }
   releasePreparingAssessment(ctx, sessionId, preparation)
   pending.set(sessionId, request)

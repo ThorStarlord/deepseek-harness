@@ -511,6 +511,25 @@ it('releases an assessment after an errored or unattributed coordinator result w
   }
 })
 
+it('discards an assessment when its turn ends without an attributable coordinator result', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Sensemaking integration', objective: 'Assess selected repository sources.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+  expect(guardDenial(test, 'shell', 'strategic-shell-after-empty-assessment-turn')).toBeUndefined()
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  expect(test.steeredMessages).toHaveLength(2)
+})
+
 it('rejects assessment before setup when the active profile has no repository coordinator', async () => {
   const test = await harness()
   test.setCoordinatorAvailable(false)
@@ -523,7 +542,8 @@ it('rejects assessment before setup when the active profile has no repository co
   const result = await run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`)
 
   expect(result).toMatchObject({ kind: 'error' })
-  expect(result.text).toContain('coordinator is unavailable in this DSH profile')
+  expect(result.text).toContain('coordinator is unavailable to this Agent')
+  expect(result.text).toContain('Agent tool restrictions')
   expect(getSkill).not.toHaveBeenCalled()
   expect(test.steeredMessages).toEqual([])
   expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
@@ -547,7 +567,7 @@ it('serializes same-Session assessment setup and lets the user discard an unfini
   expect(recorder.options.when({ agent: test.agent } as never)).toBe(false)
 
   const workspaceRows = [...test.workspaces.values()]
-  test.session.append('tool/call', {
+  const coordinatorCall = test.session.append('tool/call', {
     turn: 1,
     step: 1,
     callId: ToolCallId('strategic-inflight-coordinator'),
@@ -561,6 +581,17 @@ it('serializes same-Session assessment setup and lets the user discard an unfini
   expect(recorder.options.when({ agent: test.agent } as never)).toBe(false)
   expect(guardDenial(test, 'coordinate_repositories', 'strategic-retry-after-cancel')).toContain('canceled')
   expect(guardDenial(test, 'shell', 'guard-shell-after-cancel')).toContain('canceled')
+  test.session.append('tool/result', {
+    turn: 1,
+    step: 1,
+    message: createToolResultMessage({
+      callId: coordinatorCall.data.callId,
+      content: [{ type: 'text', text: 'The approved repository read completed after cancellation.' }],
+      isError: false,
+    }),
+    meta: {},
+  }, { surfaceOp: 'append', sourceEventSeqs: [coordinatorCall.seq] })
+  expect(guardDenial(test, 'shell', 'guard-shell-after-canceled-read')).toContain('canceled')
   test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   expect(guardDenial(test, 'shell', 'guard-shell-after-canceled-turn')).toBeUndefined()
   expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
@@ -640,11 +671,30 @@ it('keeps the active request guard until its turn ends when the command plugin i
   const selectedIds = [...test.workspaces.keys()]
   await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
     .resolves.toMatchObject({ kind: 'success' })
+  const workspaces = [...test.workspaces.values()]
+  const coordinatorCall = test.session.append('tool/call', {
+    turn: 1,
+    step: 1,
+    callId: ToolCallId('strategic-coordinator-during-plugin-removal'),
+    name: 'coordinate_repositories',
+    arguments: JSON.stringify({ repositories: workspaces.map(workspace => workspace.path), task: 'read selected repositories' }),
+  })
   await test.commandFiber.dispose()
 
   expect(test.registeredTools.has('record_activity_strategic_brief')).toBe(false)
   expect(guardDenial(test, 'shell', 'guard-shell-after-plugin-removal')).toContain('was canceled')
   test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'guard-shell-after-plugin-removal-in-flight')).toContain('was canceled')
+  test.session.append('tool/result', {
+    turn: 1,
+    step: 1,
+    message: createToolResultMessage({
+      callId: coordinatorCall.data.callId,
+      content: [{ type: 'text', text: 'The approved read ended after its owner was removed.' }],
+      isError: true,
+    }),
+    meta: {},
+  }, { surfaceOp: 'append', sourceEventSeqs: [coordinatorCall.seq] })
   expect(guardDenial(test, 'shell', 'guard-shell-after-plugin-removal-turn-end')).toBeUndefined()
 })
 
