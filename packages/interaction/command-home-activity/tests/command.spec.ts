@@ -18,7 +18,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { Agent as DshAgent } from '@deepseek-ai/dsh-agent'
-import type { ToolDefinition, ToolRegistrationOptions } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition, ToolGuard, ToolRegistrationOptions } from '@deepseek-ai/dsh-tools'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import Storage, { StorageError } from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
@@ -105,10 +105,15 @@ async function harness() {
   }
   ctx.provide('workspaceRegistry', workspaceRegistry as never)
   const registeredTools = new Map<string, { definition: ToolDefinition; options: ToolRegistrationOptions }>()
+  const toolGuards: ToolGuard[] = []
   ctx.provide('tools', {
     register(definition: ToolDefinition, options: ToolRegistrationOptions = {}) {
       registeredTools.set(definition.name, { definition, options })
       return () => { registeredTools.delete(definition.name) }
+    },
+    guard(guard: ToolGuard) {
+      toolGuards.push(guard)
+      return () => { toolGuards.splice(toolGuards.indexOf(guard), 1) }
     },
   } as never)
   ctx.provide('sessionPersistence', persistence as never)
@@ -133,6 +138,7 @@ async function harness() {
     workspaceRegistry,
     commandFiber,
     registeredTools,
+    toolGuards,
     steeredMessages: primary.steeredMessages,
     skills: primary.skills,
   }
@@ -200,6 +206,26 @@ async function run(test: Awaited<ReturnType<typeof harness>>, suffix: string, ag
   return execution.result
 }
 
+function guardDenial(
+  test: Awaited<ReturnType<typeof harness>>,
+  name: string,
+  callId: string,
+  agent: Agent = test.agent,
+): string | undefined {
+  const execution = {
+    name,
+    callId: ToolCallId(callId),
+    arguments: {},
+    agent,
+    signal: new AbortController().signal,
+  } as never
+  for (const guard of test.toolGuards) {
+    const denial = guard(execution)
+    if (denial !== undefined) return denial
+  }
+  return undefined
+}
+
 it('registers a discoverable command and creates, lists, and reopens without starting work', async () => {
   const test = await harness()
   expect(commandHomeActivity.inject).toEqual([
@@ -242,6 +268,7 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   expect(opened.text).toContain('Objective: Prepare the next release for review.')
   expect(opened.text).toContain('In scope 1: Review release notes')
   expect(opened.text).toContain('Out of scope: Do not publish')
+  expect(opened.text).toContain('Use /activity workspaces to see registered Workspace ids, then run /activity assess')
   expect(opened.text).toContain('runtime permissions are unchanged')
   expect(sessionEventTypes.some(type => type.startsWith('goal/') || type === 'turn/start' || type === 'turn/end')).toBe(false)
   await test.commandFiber.dispose()
@@ -261,7 +288,9 @@ it('requires an explicit assessment command and steers the active Agent with loa
 
   expect(started).toMatchObject({ kind: 'success' })
   expect(started.text).toContain('Advisory assessment queued')
-  expect(started.text).toContain('ask separately before reading')
+  expect(started.text).toContain('separate one-shot approval of the exact task and two selected Workspaces')
+  expect(started.text).toContain('one read-only DSH child Session per Workspace')
+  expect(started.text).toContain('cannot implement or mutate either repository')
   expect(test.steeredMessages).toHaveLength(1)
   const message = test.steeredMessages[0]
   if (message === undefined) throw new Error('The explicit assessment did not steer the active Agent')
@@ -271,6 +300,10 @@ it('requires an explicit assessment command and steers the active Agent with loa
   expect(text).toContain('Loaded test content for multi-repository-strategic-analysis.')
   expect(text).toContain('coordinate_repositories')
   expect(text).toContain('Do not start implementation')
+  expect(guardDenial(test, 'shell', 'guard-shell-before-read')).toContain('Activity Strategic Brief is active')
+  expect(guardDenial(test, 'coordinate_repositories', 'guard-coordinator-before-read')).toContain('permits one coordinator call')
+  const siblingAgent = { ...test.agent, id: brandString('sibling-agent') } as Agent
+  expect(guardDenial(test, 'shell', 'guard-sibling-shell', siblingAgent)).toContain('another Agent')
   expect(test.registeredTools.get('record_activity_strategic_brief')?.options.when).toBeDefined()
   expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
   expect(startActivation).not.toHaveBeenCalled()
@@ -324,6 +357,9 @@ it('requires an explicit assessment command and steers the active Agent with loa
     name: 'coordinate_repositories',
     arguments: JSON.stringify({ repositories: workspaceRows.map(workspace => workspace.path), task: 'read selected repositories' }),
   })
+  expect(guardDenial(test, 'coordinate_repositories', String(coordinatorCallId))).toBeUndefined()
+  expect(guardDenial(test, 'coordinate_repositories', 'strategic-second-coordinator-call'))
+    .toContain('permits one coordinator call')
   test.session.append('tool/result', {
     turn: 1,
     step: 1,
@@ -343,6 +379,8 @@ it('requires an explicit assessment command and steers the active Agent with loa
       observedAtEnd: `2026-11-22T10:00:1${index}.000Z`,
     })) },
   }, { surfaceOp: 'append', sourceEventSeqs: [coordinatorCall.seq] })
+  expect(guardDenial(test, 'record_activity_strategic_brief', 'guard-recorder-after-read')).toBeUndefined()
+  expect(test.registeredTools.get('record_activity_strategic_brief')?.options.when?.({ agent: test.agent } as never)).toBe(true)
   await expect(executeRecorder(briefData('a'.repeat(40), 'b'.repeat(40))))
     .rejects.toThrow('cannot be complete when a selected Workspace has uncommitted source changes')
   await expect(executeRecorder(briefData('c'.repeat(40), 'b'.repeat(40), 'incomplete'))).rejects.toThrow('evidence must cite the observed revision')
@@ -364,6 +402,10 @@ it('requires an explicit assessment command and steers the active Agent with loa
   resolveWrite()
   const saved = await saveRequest
   expect(saved).toMatchObject({ saved: true, revision: 1 })
+  expect(guardDenial(test, 'shell', 'guard-shell-after-save')).toContain('is saved')
+  expect(await run(test, ' assess cancel')).toMatchObject({ kind: 'success', text: 'This Activity Strategic Brief is already saved.' })
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'guard-shell-after-turn-end')).toBeUndefined()
   const episode = test.ctx.homeActivityStrategicEpisodes.list(activity.id)[0]
   expect(episode).toMatchObject({
     objective: activity.objective,
@@ -402,6 +444,9 @@ it('requires an explicit assessment command and steers the active Agent with loa
   const historical = await run(test, ` brief ${activity.id} 1`, test.secondaryAgent)
   expect(historical.text).toContain('Activity Strategic Brief revision 1')
   expect(historical.text).toContain('working tree dirty')
+  expect(historical.text).toContain('HEAD is only the committed base')
+  expect(historical.text).toContain('citation may refer to staged or working-tree content not retained here')
+  expect(historical.text).toContain('observed 2026-11-22T10:00:00.000Z to 2026-11-22T10:00:10.000Z')
   expect(historical.text).toContain('a later saved observation is at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
   expect(historical.text).toContain('Uncertainty U1: More evidence may change the choice. [Evidence: E1, E2]')
   expect((await run(test, ` brief ${activity.id} 3`, test.secondaryAgent)).text)
@@ -424,12 +469,25 @@ it('serializes same-Session assessment setup and lets the user discard an unfini
   expect([first.kind, concurrent.kind].sort()).toEqual(['error', 'success'])
   const recorder = test.registeredTools.get('record_activity_strategic_brief')
   if (recorder?.options.when === undefined) throw new Error('The request-scoped recorder has no visibility condition')
-  expect(recorder.options.when({ agent: test.agent } as never)).toBe(true)
+  expect(recorder.options.when({ agent: test.agent } as never)).toBe(false)
+
+  const workspaceRows = [...test.workspaces.values()]
+  test.session.append('tool/call', {
+    turn: 1,
+    step: 1,
+    callId: ToolCallId('strategic-inflight-coordinator'),
+    name: 'coordinate_repositories',
+    arguments: JSON.stringify({ repositories: workspaceRows.map(workspace => workspace.path), task: 'read selected repositories' }),
+  })
 
   const canceled = await run(test, ' assess cancel')
   expect(canceled.text).toContain('It cannot be saved')
-  expect(canceled.text).toContain('does not stop repository reads')
+  expect(canceled.text).toContain('does not stop reads that were already approved and running')
   expect(recorder.options.when({ agent: test.agent } as never)).toBe(false)
+  expect(guardDenial(test, 'coordinate_repositories', 'strategic-retry-after-cancel')).toContain('canceled')
+  expect(guardDenial(test, 'shell', 'guard-shell-after-cancel')).toContain('canceled')
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'guard-shell-after-canceled-turn')).toBeUndefined()
   expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
 })
 

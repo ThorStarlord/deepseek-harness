@@ -180,7 +180,6 @@ export const activityStrategicEpisodeRecordSchema = z.object({
   }
 }) satisfies z.ZodType<ActivityStrategicEpisode>
 
-/** Model-authored brief fields validated before the service adds DSH provenance. */
 /** Validates agent-authored report content before DSH adds trusted episode metadata. */
 export const recordActivityStrategicEpisodeRequestSchema = z.object({
   status: z.enum(['complete', 'incomplete']),

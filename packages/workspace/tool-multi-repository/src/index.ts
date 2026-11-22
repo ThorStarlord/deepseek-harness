@@ -489,14 +489,14 @@ async function repositoryReadApprovalDecision(
         `Repository 1: ${selection[0]}`,
         `Repository 2: ${selection[1]}`,
         `Task: ${args.task}`,
-        'This approval grants no write, shell, process, child-delegation, or sandbox-mode-change capability.',
+        'After approval, this starts one read-only DSH child Session per repository. These Sessions have no write, shell, process, further delegation, or sandbox-mode-change capability.',
       ].join('\n'),
       zh: [
         '是否允许只读分析以下两个仓库？',
         `仓库 1：${selection[0]}`,
         `仓库 2：${selection[1]}`,
         `任务：${args.task}`,
-        '此批准不授予写入、Shell、进程、子代理委派或更改沙箱模式的能力。',
+        '批准后，每个仓库会启动一个只读 DSH 子级 Session。这些 Session 不具备写入、Shell、进程、进一步委派或更改沙箱模式的能力。',
       ].join('\n'),
     },
   }

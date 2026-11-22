@@ -75,7 +75,11 @@ interface Fixture {
   readonly childAgents: Map<string, Agent>
   readonly starts: Array<{ readonly id: string; readonly runId: string }>
   readonly ends: string[]
-  readonly approvalRequests: Array<{ readonly toolName: string; readonly reason?: string }>
+  readonly approvalRequests: Array<{
+    readonly toolName: string
+    readonly reason?: string
+    readonly displayReason?: { readonly en: string; readonly [locale: string]: string }
+  }>
   readonly workspaces: Workspace[]
 }
 
@@ -125,7 +129,11 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
   const childRepositories = new Map<string, 'alpha' | 'beta'>()
   const starts: Array<{ readonly id: string; readonly runId: string }> = []
   const ends: string[] = []
-  const approvalRequests: Array<{ readonly toolName: string; readonly reason?: string }> = []
+  const approvalRequests: Array<{
+    readonly toolName: string
+    readonly reason?: string
+    readonly displayReason?: { readonly en: string; readonly [locale: string]: string }
+  }> = []
   const childSteps = new Map<string, number>()
   const parentCalls = { value: 0 }
   const dispatch = (request: GenerateOptions): StreamChunk[] => {
@@ -297,6 +305,7 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
     approvalRequests.push({
       toolName: request.toolName,
       ...(request.reason === undefined ? {} : { reason: request.reason }),
+      ...(request.displayReason === undefined ? {} : { displayReason: request.displayReason }),
     })
     return Promise.resolve(options.approval ?? 'allowed-once')
   })
@@ -564,6 +573,8 @@ describe('read-only multi-repository coordination', () => {
     expect(f.approvalRequests).toHaveLength(1)
     expect(f.approvalRequests[0]?.reason).toContain(f.alphaPath.replaceAll('\\', '\\\\'))
     expect(f.approvalRequests[0]?.reason).toContain(f.betaPath.replaceAll('\\', '\\\\'))
+    expect(f.approvalRequests[0]?.displayReason?.en).toContain('one read-only DSH child Session per repository')
+    expect(f.approvalRequests[0]?.displayReason?.zh).toContain('每个仓库会启动一个只读 DSH 子级 Session')
     expect(f.starts).toHaveLength(2)
     expect(f.ends).toHaveLength(2)
     expect(new Set(f.starts.map(start => start.id)).size).toBe(2)

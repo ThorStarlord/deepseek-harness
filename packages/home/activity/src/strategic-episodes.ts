@@ -1,4 +1,6 @@
-/** Durable, append-only Activity Strategic Briefs with source provenance. @module @deepseek-ai/dsh-home-activity/strategic-episodes */
+/** Durable, append-only Activity Strategic Briefs with attributed source references.
+ * @module @deepseek-ai/dsh-home-activity/strategic-episodes
+ */
 
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'

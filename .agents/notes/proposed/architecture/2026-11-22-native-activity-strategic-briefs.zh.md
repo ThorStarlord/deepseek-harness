@@ -10,7 +10,7 @@ Home Activity 会跨 Session 保存用户发起的工作，Sensemaking Skills �
 
 ## 提案
 
-将每份 Activity Strategic Brief 保存为独立、仅追加的版本 1 Activity 域。用户显式请求 `/activity assess` 后，系统应加载现有 Sensemaking Skills，并在另行获得批准后使用现有只读多仓库协调器；保存由 Agent 撰写的建议，并附上 Activity、Session、所选 Workspace、Skill 摘要、来源引用和协调器报告的修订。记录器应将 Workspace 身份、修订和观察时间绑定到来源 DSH Session 中匹配的协调器结果，同时明确来源内容和发现仍由 Agent 负责。打开 Activity 只显示历史简报，不会重新评估。该操作不应更改活动 Agent 的工具、提供方权限或执行配置。
+将每份 Activity Strategic Brief 保存为独立、仅追加的版本 1 Activity 域。用户显式请求 `/activity assess` 后，系统应加载现有 Sensemaking Skills，并在针对确切任务和所选 Workspace 另行获得一次性批准后，使用现有协调器为每个仓库启动一个只读 DSH 子级 Session；这些分析 Session 不能实现或修改仓库。系统保存由 Agent 撰写的建议，并附上 Activity、来源 Session、所选 Workspace、Skill 摘要、来源引用和协调器报告的修订。记录器应将 Workspace 身份、修订和观察时间绑定到来源 DSH Session 中匹配的协调器结果，同时明确来源内容和发现仍由 Agent 负责。打开 Activity 只显示历史简报，不会重新评估。请求级工具守卫会在评估保存或取消且当前轮次结束前，阻止请求 Session 中无关的模型工具调用；Agent 已配置的权限保持不变。未提交来源必须标为不完整；`HEAD` 只表示已提交的基准，简报不会快照暂存区或工作树文件内容。
 
 ## 考虑过的替代方案
 
@@ -33,4 +33,4 @@ Home Activity 会跨 Session 保存用户发起的工作，Sensemaking Skills �
 
 ## 风险
 
-活动 Agent 保留现有工具权限；评估指令不会创建硬性执行沙箱。协调器元数据记录 DSH 报告的内容，但不会独立验证仓库内容、引用或战略结论。观察期间来源发生变化或来源稳定性未知时，记录必须保持不完整。后续建议会保留历史简报；打开 Activity 不会证明其当前仍适用。
+请求级守卫会在评估轮次期间阻止无关工具调用，但不会更改已配置权限或提供操作系统级只读隔离。协调器元数据记录 DSH 报告的内容，但不会独立验证仓库内容、引用或战略结论。观察期间来源发生变化或来源稳定性未知时，记录必须保持不完整。后续建议会保留历史简报；打开 Activity 不会证明其当前仍适用。
