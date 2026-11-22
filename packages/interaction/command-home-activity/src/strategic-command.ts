@@ -152,7 +152,19 @@ function activityStrategicToolGuard(
       return 'Activity Strategic Brief Skills are loading; model tool calls are blocked until setup completes or is canceled.'
     }
     if (request === undefined) return undefined
-    if (request.cancelled) return 'This Activity Strategic Brief was canceled; no model tool calls can continue in this turn.'
+    if (request.cancelled) {
+      if (request.coordinatorCallIds.size > 0) {
+        return request.turnEnded
+          ? 'This Activity Strategic Brief was canceled. Its in-flight coordinator call must return before the guard is released.'
+          : 'This Activity Strategic Brief was canceled. Its in-flight coordinator call must return and the current turn must end before the guard is released.'
+      }
+      if (request.saveStarted) {
+        return request.turnEnded
+          ? 'This Activity Strategic Brief was canceled. Its save must settle before the guard is released.'
+          : 'This Activity Strategic Brief was canceled. Its save must settle and the current turn must end before the guard is released.'
+      }
+      return 'This Activity Strategic Brief was canceled; no model tool calls can continue until the current turn ends.'
+    }
     if (request.saved) return 'This Activity Strategic Brief is saved; no further model tool calls can run before the turn ends.'
     if (request.expiresAt <= Date.now() && request.coordinatorCallIds.size === 0 && !request.saveStarted) {
       request.cancelled = true

@@ -582,6 +582,7 @@ it('serializes same-Session assessment setup and lets the user discard an unfini
   expect(recorder.options.when({ agent: test.agent } as never)).toBe(false)
   expect(guardDenial(test, 'coordinate_repositories', 'strategic-retry-after-cancel')).toContain('canceled')
   expect(guardDenial(test, 'shell', 'guard-shell-after-cancel')).toContain('canceled')
+  expect(guardDenial(test, 'shell', 'guard-shell-after-cancel')).toContain('in-flight coordinator call must return')
   test.session.append('tool/result', {
     turn: 1,
     step: 1,
@@ -685,7 +686,7 @@ it('keeps the active request guard until its turn ends when the command plugin i
   expect(test.registeredTools.has('record_activity_strategic_brief')).toBe(false)
   expect(guardDenial(test, 'shell', 'guard-shell-after-plugin-removal')).toContain('was canceled')
   test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-  expect(guardDenial(test, 'shell', 'guard-shell-after-plugin-removal-in-flight')).toContain('was canceled')
+  expect(guardDenial(test, 'shell', 'guard-shell-after-plugin-removal-in-flight')).toContain('in-flight coordinator call must return before the guard is released')
   test.session.append('tool/result', {
     turn: 1,
     step: 1,
