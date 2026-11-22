@@ -78,6 +78,7 @@ type ActivityStrategicPendingRequests = Map<string, PendingAssessment>
  */
 export function registerActivityStrategicBriefTool(ctx: Context): () => void {
   const pending: ActivityStrategicPendingRequests = new Map()
+  const preparing = getPreparingAssessments(ctx)
   const tool = createRecordTool(ctx, pending)
   const disposeGuard = ctx.tools.guard(activityStrategicToolGuard(ctx, pending))
   const disposeTool = ctx.tools.register(tool, {
@@ -92,7 +93,7 @@ export function registerActivityStrategicBriefTool(ctx: Context): () => void {
         && request.coordinatorReports.length > 0
     },
   })
-  const disposeSessionEvents = ctx.on('session/event', (session, event) => {
+  const disposeSessionEvents = ctx.root.on('session/event', (session, event) => {
     captureCoordinatorEvent(pending, session.id, event)
     if (event.type === 'turn/end') {
       const request = pending.get(String(session.id))
@@ -100,16 +101,29 @@ export function registerActivityStrategicBriefTool(ctx: Context): () => void {
         && (request.saved || request.cancelled || request.expiresAt <= Date.now())) {
         pending.delete(String(session.id))
       }
+      disposeDrainedRegistration()
     }
   })
-  const dispose = (): void => {
-    pending.clear()
-    getPreparingAssessments(ctx).clear()
-    preparingAssessmentsByContext.delete(ctx)
-    pendingRequestsByContext.delete(ctx)
+  let disposeRequested = false
+  let resourcesDisposed = false
+  const disposeDrainedRegistration = (): void => {
+    if (!disposeRequested || resourcesDisposed || pending.size > 0 || preparing.size > 0) return
+    resourcesDisposed = true
     disposeSessionEvents()
-    disposeTool()
     disposeGuard()
+    if (pendingRequestsByContext.get(ctx) === pending) pendingRequestsByContext.delete(ctx)
+    if (preparingAssessmentsByContext.get(ctx) === preparing) preparingAssessmentsByContext.delete(ctx)
+    preparationSettledByContext.delete(ctx)
+    pending.clear()
+  }
+  preparationSettledByContext.set(ctx, disposeDrainedRegistration)
+  const dispose = (): void => {
+    if (disposeRequested) return
+    disposeRequested = true
+    disposeTool()
+    for (const preparation of preparing.values()) preparation.controller.abort()
+    for (const request of pending.values()) request.cancelled = true
+    disposeDrainedRegistration()
   }
   registerActivityStrategicPendingRequests(ctx, pending)
   return dispose
@@ -176,6 +190,12 @@ export async function executeActivityStrategicAssessment(
     return { kind: 'error', text: 'Both selected Workspace IDs must be registered in DSH. No repository was read.' }
   }
   const selected = workspaces as [Workspace, Workspace]
+  if (ctx.tools.get(COORDINATION_TOOL, invocation.agent) === undefined) {
+    return {
+      kind: 'error',
+      text: 'The read-only multi-repository coordinator is unavailable in this DSH profile. No repository analysis or assessment guard was started.',
+    }
+  }
   const sessionId = String(invocation.agent.session.id)
   const pending = getActivityStrategicPendingRequests(ctx)
   prunePending(pending)
@@ -187,7 +207,10 @@ export async function executeActivityStrategicAssessment(
     return { kind: 'error', text: 'Too many Activity Strategic Brief requests are waiting for this application.' }
   }
 
-  const preparation: PreparingAssessment = { agentId: String(invocation.agent.id), controller: new AbortController() }
+  const preparation: PreparingAssessment = {
+    agentId: String(invocation.agent.id),
+    controller: new AbortController(),
+  }
   preparing.set(sessionId, preparation)
   const cwd = invocation.agent.session.header.cwd
   const signal = AbortSignal.any([invocation.signal, preparation.controller.signal])
@@ -200,7 +223,7 @@ export async function executeActivityStrategicAssessment(
     ])
     signal.throwIfAborted()
   } catch (error: unknown) {
-    if (preparing.get(sessionId) === preparation) preparing.delete(sessionId)
+    releasePreparingAssessment(ctx, sessionId, preparation)
     if (preparation.controller.signal.aborted) {
       return { kind: 'error', text: 'The Activity Strategic Brief setup was canceled before repository analysis started.' }
     }
@@ -208,7 +231,7 @@ export async function executeActivityStrategicAssessment(
     return { kind: 'error', text: 'Sensemaking Skills could not be loaded. No strategic assessment was started.' }
   }
   if (skills[0] === undefined || skills[1] === undefined) {
-    if (preparing.get(sessionId) === preparation) preparing.delete(sessionId)
+    releasePreparingAssessment(ctx, sessionId, preparation)
     const missing = SENSEMAKING_SKILLS.filter((_, index) => skills[index] === undefined)
     return {
       kind: 'error',
@@ -221,7 +244,7 @@ export async function executeActivityStrategicAssessment(
   ] as const
   const combinedSkillBytes = definitions.reduce((total, definition) => total + Buffer.byteLength(definition.skill.content, 'utf8'), 0)
   if (combinedSkillBytes > MAX_BRIEF_BYTES) {
-    if (preparing.get(sessionId) === preparation) preparing.delete(sessionId)
+    releasePreparingAssessment(ctx, sessionId, preparation)
     return { kind: 'error', text: 'Loaded Sensemaking Skill instructions exceed the assessment context limit. No assessment was started.' }
   }
 
@@ -245,7 +268,7 @@ export async function executeActivityStrategicAssessment(
     saved: false,
     cancelled: false,
   }
-  if (preparing.get(sessionId) === preparation) preparing.delete(sessionId)
+  releasePreparingAssessment(ctx, sessionId, preparation)
   pending.set(sessionId, request)
 
   const skillInstructions = definitions.map(({ name, skill }) => [
@@ -418,6 +441,7 @@ export function renderActivityStrategicEpisodes(
 
 const pendingRequestsByContext = new WeakMap<Context, ActivityStrategicPendingRequests>()
 const preparingAssessmentsByContext = new WeakMap<Context, Map<string, PreparingAssessment>>()
+const preparationSettledByContext = new WeakMap<Context, () => void>()
 
 function registerActivityStrategicPendingRequests(ctx: Context, pending: ActivityStrategicPendingRequests): void {
   pendingRequestsByContext.set(ctx, pending)
@@ -430,6 +454,13 @@ function getPreparingAssessments(ctx: Context): Map<string, PreparingAssessment>
     preparingAssessmentsByContext.set(ctx, preparing)
   }
   return preparing
+}
+
+function releasePreparingAssessment(ctx: Context, sessionId: string, preparation: PreparingAssessment): void {
+  const preparing = getPreparingAssessments(ctx)
+  if (preparing.get(sessionId) !== preparation) return
+  preparing.delete(sessionId)
+  preparationSettledByContext.get(ctx)?.()
 }
 
 function getActivityStrategicPendingRequests(ctx: Context): ActivityStrategicPendingRequests {
@@ -457,9 +488,16 @@ function captureCoordinatorEvent(
   if (event.type !== 'tool/result') return
   const callId = String(event.data.message.toolCallId)
   if (!request.coordinatorCallIds.delete(callId)) return
-  if (event.data.message.isError || request.cancelled || request.saved || request.expiresAt <= Date.now()) return
+  if (request.cancelled || request.saved) return
+  if (event.data.message.isError || request.expiresAt <= Date.now()) {
+    request.cancelled = true
+    return
+  }
   const repositories = readCoordinatorRepositories(event.data.meta)
-  if (repositories === undefined) return
+  if (repositories === undefined) {
+    request.cancelled = true
+    return
+  }
   request.coordinatorReports.push({ repositories })
   if (request.coordinatorReports.length > 8) request.coordinatorReports.shift()
 }

@@ -106,6 +106,14 @@ async function harness() {
   ctx.provide('workspaceRegistry', workspaceRegistry as never)
   const registeredTools = new Map<string, { definition: ToolDefinition; options: ToolRegistrationOptions }>()
   const toolGuards: ToolGuard[] = []
+  const coordinatorTool: ToolDefinition = {
+    name: 'coordinate_repositories',
+    description: 'Read the explicitly selected Workspaces.',
+    parameters: {},
+    output: { schema: { type: 'object' }, render: () => [] },
+    async execute() { return {} },
+  }
+  let coordinatorAvailable = true
   ctx.provide('tools', {
     register(definition: ToolDefinition, options: ToolRegistrationOptions = {}) {
       registeredTools.set(definition.name, { definition, options })
@@ -114,6 +122,10 @@ async function harness() {
     guard(guard: ToolGuard) {
       toolGuards.push(guard)
       return () => { toolGuards.splice(toolGuards.indexOf(guard), 1) }
+    },
+    get(name: string) {
+      if (name === 'coordinate_repositories') return coordinatorAvailable ? coordinatorTool : undefined
+      return registeredTools.get(name)?.definition
     },
   } as never)
   ctx.provide('sessionPersistence', persistence as never)
@@ -139,6 +151,7 @@ async function harness() {
     commandFiber,
     registeredTools,
     toolGuards,
+    setCoordinatorAvailable(available: boolean) { coordinatorAvailable = available },
     steeredMessages: primary.steeredMessages,
     skills: primary.skills,
   }
@@ -455,6 +468,68 @@ it('requires an explicit assessment command and steers the active Agent with loa
   expect(startActivation).not.toHaveBeenCalled()
 })
 
+it('releases an assessment after an errored or unattributed coordinator result without retrying', async () => {
+  for (const isError of [true, false]) {
+    const test = await harness()
+    const activity = await test.ctx.homeActivities.create({
+      name: 'Sensemaking integration', objective: 'Assess selected repository sources.',
+      boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+    })
+    const selectedIds = [...test.workspaces.keys()]
+    const queued = await run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`)
+    expect(queued.kind).toBe('success')
+    expect(test.steeredMessages).toHaveLength(1)
+
+    const workspaceRows = [...test.workspaces.values()]
+    const call = test.session.append('tool/call', {
+      turn: 1,
+      step: 1,
+      callId: ToolCallId(`strategic-failed-coordinator-${String(isError)}`),
+      name: 'coordinate_repositories',
+      arguments: JSON.stringify({ repositories: workspaceRows.map(workspace => workspace.path), task: 'read selected repositories' }),
+    })
+    test.session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId: call.data.callId,
+        content: [{ type: 'text', text: 'No complete attributed repository result.' }],
+        isError,
+      }),
+      meta: {},
+    }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+
+    expect(guardDenial(test, 'shell', `strategic-shell-after-coordinator-${String(isError)}`)).toContain('was canceled')
+    expect(test.registeredTools.get('record_activity_strategic_brief')?.options.when?.({ agent: test.agent } as never)).toBe(false)
+    expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
+    test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(guardDenial(test, 'shell', `strategic-shell-after-turn-${String(isError)}`)).toBeUndefined()
+
+    const retried = await run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`)
+    expect(retried.kind).toBe('success')
+    expect(test.steeredMessages).toHaveLength(2)
+  }
+})
+
+it('rejects assessment before setup when the active profile has no repository coordinator', async () => {
+  const test = await harness()
+  test.setCoordinatorAvailable(false)
+  const getSkill = vi.spyOn(test.skills, 'get')
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Sensemaking integration', objective: 'Assess selected repository sources.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  const result = await run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`)
+
+  expect(result).toMatchObject({ kind: 'error' })
+  expect(result.text).toContain('coordinator is unavailable in this DSH profile')
+  expect(getSkill).not.toHaveBeenCalled()
+  expect(test.steeredMessages).toEqual([])
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
+  expect(guardDenial(test, 'shell', 'guard-shell-without-coordinator')).toBeUndefined()
+})
+
 it('serializes same-Session assessment setup and lets the user discard an unfinished brief', async () => {
   const test = await harness()
   const activity = await test.ctx.homeActivities.create({
@@ -520,6 +595,57 @@ it('cancels assessment setup while Sensemaking Skills are loading', async () => 
   expect(preparationResult.text).toContain('setup was canceled')
   expect(test.steeredMessages).toEqual([])
   expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
+})
+
+it('aborts Skill setup when its command plugin is removed before queueing', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Sensemaking integration', objective: 'Assess selected repository sources.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  let releaseSkills!: () => void
+  let reportLoading!: () => void
+  const skillsGate = new Promise<void>((resolve) => { releaseSkills = resolve })
+  const skillsLoading = new Promise<void>((resolve) => { reportLoading = resolve })
+  const getSkill = test.skills.get.bind(test.skills)
+  vi.spyOn(test.skills, 'get').mockImplementation(async (name) => {
+    reportLoading()
+    await skillsGate
+    return getSkill(name)
+  })
+
+  const preparing = run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`)
+  await skillsLoading
+  await test.commandFiber.dispose()
+  expect(guardDenial(test, 'shell', 'guard-shell-after-setup-plugin-removal')).toContain('Skills are loading')
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'guard-shell-after-setup-turn-end')).toContain('Skills are loading')
+  releaseSkills()
+
+  const result = await preparing
+  expect(result.kind).toBe('error')
+  expect(result.text).toContain('setup was canceled')
+  expect(test.steeredMessages).toEqual([])
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
+  expect(guardDenial(test, 'shell', 'guard-shell-after-setup-plugin-removal-settled')).toBeUndefined()
+})
+
+it('keeps the active request guard until its turn ends when the command plugin is removed', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Sensemaking integration', objective: 'Assess selected repository sources.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  await test.commandFiber.dispose()
+
+  expect(test.registeredTools.has('record_activity_strategic_brief')).toBe(false)
+  expect(guardDenial(test, 'shell', 'guard-shell-after-plugin-removal')).toContain('was canceled')
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'guard-shell-after-plugin-removal-turn-end')).toBeUndefined()
 })
 
 it('rejects invalid repository selections before loading Skills or steering the Agent', async () => {

@@ -22,6 +22,10 @@ Home Activity 会跨 Session 保存用户发起的工作，Sensemaking Skills �
 
 **通过活动 Agent 的通用文件工具读取仓库？** 不采用，因为这些工具无法确立所选 Workspace 范围、来源修订或协调器另行请求的一次性读取批准。
 
+## 迁移兼容性
+
+参考合约检查的提交为 Sensemaking Skills `91dfc13bd5cd695d9b94dd54c25664cbefe0317b`、Superagent `6337fc823ce20251c8de8085948165c81aaa701e` 和 Dark Factory `60d50c3ee555556223be6be7e26726c7cbef4f6b`。Sensemaking 由当前 Agent 负责战略判断，Skills 负责方法；本集成加载这些 Skills 并使用现有协调器，不复制语义知识库，也不添加自动路由器。Superagent 会对来源 Trigger 去重，并将其路由到 Evaluation 或已订阅的 Ticket；已接受的 Evaluation 会建立 Ticket Mandate 和 Assignment，后者保留执行报告及恢复责任。Dark Factory 则分别保留经授权的 Goal 修订、当前 Strategic Frontier、显式 Campaign Grant、证据准入、受保护的集成和恢复。Stage 2A 保留 Activity 身份、目标、来源集身份、历史建议，以及建议与执行的分离。它不会创建 Trigger、Evaluation、Mandate、Ticket、Assignment、Goal 修订、Frontier、Grant、Campaign 或集成记录；这些生命周期语义的迁移仍然延后。
+
 ## 验收标准
 
 - 用户在评估前明确选择一个已保存 Activity 和恰好两个已注册 Workspace。

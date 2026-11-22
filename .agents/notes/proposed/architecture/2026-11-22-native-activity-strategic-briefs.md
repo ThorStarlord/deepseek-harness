@@ -22,6 +22,10 @@ Store each Activity Strategic Brief as an append-only version-1 Activity domain.
 
 **Read repositories through the active Agent's general file tools?** Rejected because those tools do not establish the selected Workspace scope, source revisions, or the coordinator's separate one-shot read approval.
 
+## Migration compatibility
+
+The reference contracts were inspected at Sensemaking Skills `91dfc13bd5cd695d9b94dd54c25664cbefe0317b`, Superagent `6337fc823ce20251c8de8085948165c81aaa701e`, and Dark Factory `60d50c3ee555556223be6be7e26726c7cbef4f6b`. Sensemaking keeps the active agent responsible for strategic judgment and its Skills responsible for method; this integration loads those Skills and uses the existing coordinator without copying its semantic knowledge store or adding an automatic router. Superagent intake deduplicates and routes source Triggers to Evaluations or subscribed Tickets; accepted evaluations establish Ticket mandates and Assignments, whose reports and recovery retain execution ownership. Dark Factory separately preserves authorized Goal revisions, a current Strategic Frontier, explicit Campaign grants, evidence admission, protected integration, and recovery. Stage 2A preserves Activity identity, objective, source-set identity, historical recommendations, and advice-versus-execution separation. It creates no Trigger, Evaluation, Mandate, Ticket, Assignment, Goal revision, Frontier, Grant, Campaign, or integration record; migration of those lifecycle semantics remains deferred.
+
 ## Acceptance criteria
 
 - A user explicitly selects a saved Activity and exactly two registered Workspaces before assessment.
