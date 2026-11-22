@@ -168,7 +168,7 @@ function activityStrategicToolGuard(
         ? undefined
         : 'A strategic brief can be recorded only after the selected repository coordinator returns a result.'
     }
-    return 'An Activity Strategic Brief is active. Only its approved read-only repository coordinator and brief recorder may run; cancel it to prevent saving, and normal model tools resume after the current turn ends.'
+    return 'An Activity Strategic Brief is active. Only its approved read-only repository coordinator and brief recorder may run; cancel it to prevent saving. Normal model tools resume after the current turn ends and any approved repository read returns.'
   }
 }
 
@@ -322,7 +322,7 @@ export async function executeActivityStrategicAssessment(
   }
   return {
     kind: 'success',
-    text: `Advisory assessment queued for Activity ${activity.id}. Before reading, DSH asks for separate one-shot approval of the exact task and two selected Workspaces. After approval, the existing coordinator starts one read-only DSH child Session per Workspace; these Sessions cannot implement or mutate either repository. While the brief is pending, a runtime guard blocks every other model tool call; this does not change configured permissions. Use /activity assess cancel to prevent saving; approved reads already running continue, and other model tools remain blocked until the current turn ends. Normal tool use resumes after the brief is saved or canceled and the turn ends. Open the Activity later to inspect the saved brief.`,
+    text: `Advisory assessment queued for Activity ${activity.id}. Before reading, DSH asks for separate one-shot approval of the exact task and two selected Workspaces. After approval, the existing coordinator starts one read-only DSH child Session per Workspace; these Sessions cannot implement or mutate either repository. While the brief is pending, a runtime guard blocks every other model tool call; this does not change configured permissions. Use /activity assess cancel to prevent saving; approved reads already running continue. Other model tools remain blocked until the current turn ends and any approved coordinator call returns. Normal tool use resumes after the brief is saved or canceled, the turn ends, and any approved coordinator call returns. Open the Activity later to inspect the saved brief.`,
   }
 }
 
@@ -351,7 +351,7 @@ export function cancelActivityStrategicAssessment(ctx: Context, invocation: Comm
     request.cancelled = true
     return {
       kind: 'success',
-      text: `Canceled unfinished Activity Strategic Brief request ${request.requestId}. It cannot be saved, and no new repository read can start. This does not stop reads that were already approved and running; other model tool calls remain blocked until the current turn ends. No implementation or external provider task was started by cancellation.`,
+      text: `Canceled unfinished Activity Strategic Brief request ${request.requestId}. It cannot be saved, and no new repository read can start. This does not stop reads that were already approved and running; other model tool calls remain blocked until the current turn ends and any approved coordinator call returns. No implementation or external provider task was started by cancellation.`,
     }
   }
   const preparation = getPreparingAssessments(ctx).get(sessionId)

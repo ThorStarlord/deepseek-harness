@@ -52,7 +52,7 @@ Web 和 SDK profile 会通过命令注册表、工具注册表、持久化 Activ
 | `/activity open <activity-id>` | 显示已保存的目标、描述性范围（范围内语句从 1 开始编号，供继续命令选择）、当前用户备注和最近修订、最新战略简报、上下文引用、委派记录、已捕获的 profile 和 preset 选择，以及依据已保存生命周期事实和当前已注册提供方路由提供的只读后续操作。较早的简报修订仍会保存，可用 `/activity brief <activity-id> <revision>` 查看。路由注册不代表凭据就绪、用户同意、原生权限或提供方已准入。 |
 | `/activity brief <activity-id> <revision>` | 查看指定的已保存战略简报修订及其证据和不确定性引用。视图会显示后续保存的观察，不会重新读取仓库。 |
 | `/activity assess <activity-id> <workspace-id> <workspace-id>` | 明确请求对恰好两个已注册 Workspace 进行建议性战略评估。如果当前 profile 未挂载只读协调器，或 Agent 的工具限制排除了它，DSH 会在加载 Skills 或启用请求守卫前报告该问题。否则，DSH 会把两个 Sensemaking Skills 加载到活动 Agent 的记录任务中。读取前，现有协调器会针对确切任务和所选 Workspace 另行请求一次性批准；获得批准后，它会为每个 Workspace 启动一个只读 DSH 子级 Session，且不提供实现或仓库修改工具。仅适用于该请求的工具会保存结构化简报，并将仓库 id、修订和观察时间绑定到来源 Session 中匹配的成功协调器工具结果元数据；内容、引用和发现仍由 Agent 撰写。 |
-| `/activity assess cancel` | 丢弃当前 Session 尚未完成的简报请求，阻止该请求保存结果，但不会停止已获准并正在运行的仓库读取。 |
+| `/activity assess cancel` | 丢弃当前 Session 尚未完成的简报请求，阻止该请求保存结果，但不会停止已获准并正在运行的仓库读取。其他模型工具调用会继续被阻止，直到当前轮次结束且已获准的协调器调用返回。 |
 | `/activity annotate <activity-id> <JSON>` | 追加一条用户撰写的协调备注或更正，不修改提供方报告或专家断言。JSON 必须包含 `text`；`/activity open` 会单独显示当前备注和保留的修订历史。 |
 | `/activity workspaces` | 列出注册 Workspace 的名称、id 和目录。可以使用两个 id 请求评估，也可以将 Workspace 关联到 Activity。 |
 | `/activity sessions` | 列出已存储的 DSH Session 及可用摘要元数据。 |

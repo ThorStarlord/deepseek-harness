@@ -578,6 +578,7 @@ it('serializes same-Session assessment setup and lets the user discard an unfini
   const canceled = await run(test, ' assess cancel')
   expect(canceled.text).toContain('It cannot be saved')
   expect(canceled.text).toContain('does not stop reads that were already approved and running')
+  expect(canceled.text).toContain('until the current turn ends and any approved coordinator call returns')
   expect(recorder.options.when({ agent: test.agent } as never)).toBe(false)
   expect(guardDenial(test, 'coordinate_repositories', 'strategic-retry-after-cancel')).toContain('canceled')
   expect(guardDenial(test, 'shell', 'guard-shell-after-cancel')).toContain('canceled')
