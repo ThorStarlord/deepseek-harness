@@ -26,6 +26,7 @@ description: "DSH 设计判断参考：对齐、空间分组、信息层级、�
 - [7. 图标光学](#icon-optics)
 - [8. 控件几何与圆角关系](#geometry)
 - [复现与比较](#reproduce)
+- [PR #53 Activity Strategic Brief 审查](#case-strategic-brief-review)
 - [外部参考与 DSH 的取舍](#references)
 - [开发备注](#dev-note)
 
@@ -415,6 +416,11 @@ DSH 的视觉审查优先关注对齐与空间分组。先识别任务和语义�
 本地维护的生产组件 fixture 可提供固定内容与状态的隔离示例。实际应用截图应来自本次要审查的整页或整个弹窗，包含相关区域与状态。fixture 只能证明它所渲染的条件，不能决定或完成审查范围。
 
 这些组件中的尺寸是对应案例的证据，不是通用设计常数。共享数值仍由[样式参考](web-styling.zh.md)、[圆角标准](ui-radius.zh.md)及组件归属方定义。新增使用位置或任务不同时，应补充证据，不能脱离条件照抄案例数值。
+
+<a id="case-strategic-brief-review"></a>
+## PR #53 Activity Strategic Brief 审查
+
+PR #53 修改了用户可见的 Activity 交互。组装后的 Web 确定性运行支持有关请求处理、归属、显示、持久化和跨 Session 恢复的主张；它不能证明真实模型成功完成分析，也不能证明比较性战略效果。[一次性审查例外](../.agents/skills/dsh-client-ui-ux/SKILL.md#one-time-pr-53-exception)仅允许对此 PR 使用两份独立 agent 评估；PR 必须将其标明为 agent 评估，而非人类批准。本例不会为其他改动创建可复用的例外。
 
 <a id="references"></a>
 ## 外部参考与 DSH 的取舍
