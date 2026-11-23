@@ -70,7 +70,7 @@ Activity 记录使用版本 1 的 home_activities StorageDomain，并保持独�
 
 战略简报保存在独立、只追加的版本 1 `home_activity_strategic_episodes` 域中。记录保留 Activity 目标、来源 DSH Session、明确选择的 Workspace id、agent 撰写的发现与替代方案、仓库相对来源引用、协调器报告的 Git 修订和观察时间、已跟踪及未忽略工作文件是否包含暂存、未暂存或未跟踪变更、已加载 Sensemaking Skill 内容摘要、不确定性以及建议或明确的不选择。记录器会将仓库身份和来源元数据绑定到来源 Session 中匹配的成功协调器工具结果；但不会独立验证仓库内容或发现。若选定的 Workspace 不可用、存在未提交来源变更、观察期间发生变化或来源稳定性未知，简报必须标为不完整。同一请求 id 的重复记录调用会返回已有记录；后续评估会追加新的后继记录并保留旧来源历史。打开 Activity 显示最新简报；`/activity brief <activity-id> <revision>` 可打开更早的版本，且不会检查当前仓库或重复执行评估。
 
-战略重议保存在独立、只追加的版本 1 `home_activity_strategic_deliberations` 域中。每条 agent 撰写的记录都关联到确切的简报 id 和修订版本、后续 Session、问题、Skill 摘要、既有证据的处理、不确定性复核，以及有范围限制的责任建议或不选择。记录器会针对所选的已保存简报验证每个证据和不确定性 id。后续决策会追加并保留旧记录；不会改写简报、确认来源当前状态、记录所有者批准或授权执行。
+战略重议保存在独立、只追加的版本 1 `home_activity_strategic_deliberations` 域中。每条 agent 撰写的记录都关联到确切的简报 id 和修订版本、后续 Session、问题、Skill 摘要、既有证据的处理、不确定性复核，以及有范围限制的责任建议或不选择。下一项责任决定必须引用或明确拒绝至少一项历史证据。记录器会针对所选的已保存简报验证每个证据和不确定性 id。后续决策会追加并保留旧记录；不会改写简报、确认来源当前状态、记录所有者批准或授权执行。
 
 Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associations` 域中。显示时会通过各自的注册表解析引用；过期引用会明确显示为不可用，直到用户解除关联。关联不会修改 Workspace 记录、Session 日志或 Activity 记录。
 

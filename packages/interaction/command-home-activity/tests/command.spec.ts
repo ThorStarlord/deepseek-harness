@@ -438,7 +438,7 @@ it('cancels an unfinished reconsideration without saving or starting work', asyn
   const source = await saveSourceBrief(test, activity.id)
   const queued = await run(test, ` consider ${activity.id} ${source.revision} Is this still warranted?`)
   expect(queued.kind).toBe('success')
-  expect((await run(test, ' consider cancel')).text).toContain('Canceled this unfinished strategic reconsideration')
+  expect((await run(test, ' consider cancel')).text).toContain('An active model turn may still finish, but the recorder and execution tools remain blocked.')
   expect(test.ctx.homeActivityStrategicDeliberations.list(activity.id)).toEqual([])
   expect(guardDenial(test, 'shell', 'reentry-after-cancel')).toContain('canceled or could not be confirmed')
 })

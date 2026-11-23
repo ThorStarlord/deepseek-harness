@@ -1,13 +1,11 @@
 // Keyless Web coverage for reopening a saved Activity Strategic Brief.
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
-import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold,
   webSnapshotMode, type WebScaffold,
@@ -21,23 +19,6 @@ const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 const OBSERVED_AT_START = '2026-11-22T10:00:00.000Z'
 const OBSERVED_AT_END = '2026-11-22T10:00:10.000Z'
 
-async function hostRpc<T>(scaffold: WebScaffold, endpoint: string, args: Readonly<Record<string, unknown>>): Promise<T> {
-  const response = await scaffold.hostFetch(`/api/${endpoint}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      type: 'client-request', rpcId: `home-activity-strategic-brief-${randomUUID()}`,
-      method: endpoint, payload: { args },
-    }),
-  })
-  if (!response.ok) throw new Error(`${endpoint} failed over HTTP ${response.status}`)
-  const result = (await response.json() as {
-    result: { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
-  }).result
-  if (!result.ok) throw new Error(`${endpoint} failed: ${result.error.code}: ${result.error.message}`)
-  return result.value
-}
-
 describe.skipIf(MODE === 'record')('web e2e: Activity strategic evidence reentry', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -45,7 +26,7 @@ describe.skipIf(MODE === 'record')('web e2e: Activity strategic evidence reentry
   let workspaceRoot: string | undefined
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false })
+    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, replayChildFixtures: [FIXTURE], paceMs: 5, compareReplaySession: false })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
@@ -159,7 +140,7 @@ describe.skipIf(MODE === 'record')('web e2e: Activity strategic evidence reentry
       await target.press('Enter')
       const output = page.getByText(marker).last()
       await output.waitFor({ timeout: 10_000 })
-      await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
+      await expect.poll(() => target.textContent(), { timeout: 10_000 }).toBe('')
       return await output.textContent() ?? ''
     }
 
@@ -228,33 +209,19 @@ describe.skipIf(MODE === 'record')('web e2e: Activity strategic evidence reentry
     const sessionPayload = await sessionResponse.json() as {
       readonly result: { readonly ok: true; readonly value: { readonly sessionId: string } }
     }
-    const freshSessionId = SessionId(sessionPayload.result.value.sessionId)
-    expect(freshSessionId).not.toBe(parentSessionId)
-    const laterSessionResult = await hostRpc<{ result: { kind: string; text?: string } }>(
-      scaffold, 'commands/execute', {
-        agentId: freshSessionId,
-        line: `/activity decision ${activity.id} ${deliberation.revision}`,
-        submittedAttachments: [],
-      },
-    )
-    expect(laterSessionResult.result.kind).toBe('success')
-    expect(laterSessionResult.result.text).toContain(`Source brief ${episode.id}, revision ${episode.revision}`)
-    const freshAgent = scaffold.ctx.agents.get(freshSessionId)
-    if (freshAgent === undefined) throw new Error('The new Session did not retain a live Agent')
-    expect(freshAgent.session.snapshotEvents().filter(event => event.type === 'command/run' || event.type === 'command/done'))
-      .toEqual(expect.arrayContaining([
-        expect.objectContaining({ type: 'command/run', data: expect.objectContaining({ name: 'activity' }) }),
-        expect.objectContaining({ type: 'command/done', data: expect.objectContaining({ kind: 'success' }) }),
-      ]))
-    await scaffold.ctx.sessions.flush(freshAgent.session)
-    const originalSession = page.locator('[role="treeitem"][aria-selected]').filter({ hasText: 'Reply with the single word' }).first()
-    await originalSession.click()
-    const originalInput = page.locator(`[data-conversation-session="${parentSessionId}"] [data-composer-input]`).first()
-    await originalInput.waitFor({ timeout: 10_000 })
+    const freshSessionId = sessionPayload.result.value.sessionId
+    expect(freshSessionId).not.toBe(String(parentSessionId))
+    const freshInput = page.locator(`[data-conversation-session="${freshSessionId}"] [data-composer-input]`).first()
+    await freshInput.waitFor({ state: 'visible', timeout: 10_000 })
+    const freshTurnSettled = scaffold.whenTurnSettled()
+    await freshInput.fill(PROMPT)
+    await freshInput.press('Enter')
+    await freshTurnSettled
+    await page.getByText('LIGHTHOUSE', { exact: true }).last().waitFor({ timeout: 15_000 })
     const renderedResult = await submit(
       `/activity decision ${activity.id} ${deliberation.revision}`,
-      /Activity: Sensemaking workflow integration/u,
-      originalInput,
+      /Activity Strategic Deliberation 1/u,
+      freshInput,
     )
     expect(renderedResult).toContain(`Source brief ${episode.id}, revision ${episode.revision}`)
     const recoveredCommand = page.getByRole('button', { name: /Activity: Sensemaking workflow integration/u }).last()

@@ -258,7 +258,7 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
           return { kind: 'error', text: 'The deliberation save has started and cannot be canceled safely. Inspect /activity decisions before retrying.' }
         }
         request.cancelled = true
-        return { kind: 'success', text: 'Canceled this unfinished strategic reconsideration. No record will be saved and no execution was started.' }
+        return { kind: 'success', text: 'Canceled the pending reconsideration record. An active model turn may still finish, but the recorder and execution tools remain blocked. No record will be saved and no execution was started.' }
       }
       const setup = preparing.get(sessionId)
       if (setup === undefined || setup.agentId !== String(agent.id)) {

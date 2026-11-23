@@ -67,6 +67,9 @@ function validateConclusion(
     && (value.proposedResponsibility === null || value.scope !== 'within-activity')) {
     context.addIssue({ code: 'custom', message: 'a next responsibility must be bounded within the Activity' })
   }
+  if (value.outcome === 'next-responsibility' && value.evidenceUses.length === 0) {
+    context.addIssue({ code: 'custom', message: 'a next responsibility must cite or explicitly reject historical evidence' })
+  }
   if (value.outcome === 'no-selection' && value.proposedResponsibility !== null) {
     context.addIssue({ code: 'custom', message: 'a no-selection outcome cannot name a proposed responsibility' })
   }
@@ -93,7 +96,7 @@ function validateConclusion(
 /** Validates one advisory conclusion before its source attribution is persisted. */
 export const activityStrategicDeliberationConclusionSchema = conclusionObjectSchema.superRefine(validateConclusion)
 
-/** Strict model-authored request fields before the persistence service binds provenance. */
+/** Strict model-authored request fields before the persistence service binds the source brief identity. */
 export const recordActivityStrategicDeliberationRequestSchema = conclusionObjectSchema.extend({
   activityId: activityIdSchema,
   originSessionId: z.string().min(1).max(256),

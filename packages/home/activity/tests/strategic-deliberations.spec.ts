@@ -175,6 +175,11 @@ it('rejects a missing exact source revision and evidence identifiers from anothe
   })).rejects.toMatchObject({ code: 'invalid-deliberation' })
   await expect(ctx.homeActivityStrategicDeliberations.record({
     ...reconsider(activity.id, source),
+    requestId: '00000000-0000-4000-8000-000000000059',
+    evidenceUses: [],
+  })).rejects.toMatchObject({ code: 'invalid-deliberation' })
+  await expect(ctx.homeActivityStrategicDeliberations.record({
+    ...reconsider(activity.id, source),
     requestId: '00000000-0000-4000-8000-000000000056',
     outcome: 'owner-decision',
     disposition: 'adapt',
