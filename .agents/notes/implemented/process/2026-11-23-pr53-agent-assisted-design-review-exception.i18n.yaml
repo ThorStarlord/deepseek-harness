@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-11-23-pr53-agent-assisted-design-review-exception.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-11-23-pr53-agent-assisted-design-review-exception.md
+/agent-note-one-time-agent-assisted-design-review-for-pr-53:
+  en: 74da7863f5ed22ce
+  zh: fe9ece4627d20948
+/agent-note-one-time-agent-assisted-design-review-for-pr-53/problem:
+  en: 3bea766e503209ea
+  zh: acf876d9ee388131
+/agent-note-one-time-agent-assisted-design-review-for-pr-53/decision:
+  en: f9ea11bcb142cc24
+  zh: e20350cda6d09399
+/agent-note-one-time-agent-assisted-design-review-for-pr-53/alternatives-considered:
+  en: 1d51ed50e00cf59e
+  zh: b30c0f760971c51c
+/agent-note-one-time-agent-assisted-design-review-for-pr-53/consequences:
+  en: 23f101dcb09f266e
+  zh: 76237ec3861e732c
