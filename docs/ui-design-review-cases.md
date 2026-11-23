@@ -26,6 +26,7 @@ Consult the relevant cases when a design relationship is unclear. Ordinary chang
 - [7. Icon optics](#icon-optics)
 - [8. Control geometry and corner relationships](#geometry)
 - [Reproduce and compare](#reproduce)
+- [PR #53 Activity Strategic Brief review](#case-strategic-brief-review)
 - [External references and what DSH adopts](#references)
 - [Dev Note](#dev-note)
 
@@ -415,6 +416,11 @@ Image: Microsoft Fluent 2, linked from its original source. In DSH, apply the fl
 Locally maintained production-component fixtures can supply isolated examples for repeatable content and state. Derive actual application captures from the whole page or modal under review, including its relevant regions and states. A fixture establishes only what it renders; it does not determine or complete the review scope.
 
 The dimensions found in these components are evidence about those examples, not universal design constants. The [style reference](web-styling.md), [radius standard](ui-radius.md), and component owners retain authority over shared values. Extend the evidence for new consumers or a different task rather than copying an example's number without its conditions.
+
+<a id="case-strategic-brief-review"></a>
+## PR #53 Activity Strategic Brief review
+
+PR #53 changes a user-visible Activity interaction. Its assembled-Web deterministic run supports claims about request handling, attribution, display, persistence, and cross-Session recovery; it does not establish successful live-model analysis or comparative strategic effectiveness. The [one-time review exception](../.agents/skills/dsh-client-ui-ux/SKILL.md#one-time-pr-53-exception) accepts two independent agent assessments for this PR only; the PR must identify them as agent assessments rather than human approval. This case creates no reusable exception for other changes.
 
 <a id="references"></a>
 ## External references and what DSH adopts
