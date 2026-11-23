@@ -47,6 +47,7 @@ The service declares no configuration fields. A custom composition supplies the 
 - name: '@deepseek-ai/dsh-home-activity/associations'
 - name: '@deepseek-ai/dsh-home-activity/annotations'
 - name: '@deepseek-ai/dsh-home-activity/strategic-episodes'
+- name: '@deepseek-ai/dsh-home-activity/strategic-deliberations'
 - name: '@deepseek-ai/dsh-home-activity/handoffs'
 ```
 
@@ -67,6 +68,8 @@ Activity records use the version-1 `home_activities` StorageDomain and remain in
 User corrections use a separate version-1 `home_activity_annotations` domain. Each immutable `user-command` revision supersedes only the previous annotation for that Activity and leaves Activity and delegation records unchanged; the domain retains up to 256 revisions. Note text rejects control, format, line, and paragraph separators so displayed history remains line-oriented.
 
 Strategic briefs use a separate append-only version-1 `home_activity_strategic_episodes` domain. A record retains the Activity objective, originating DSH Session, explicit Workspace ids, agent-authored findings and alternatives, repository-relative source references, coordinator-reported Git revisions and observation times, whether tracked and unignored working files had staged, unstaged, or untracked changes, loaded Sensemaking Skill content digests, uncertainties, and a recommendation or explicit no-selection. The recorder binds repository identities and source metadata to matching successful coordinator tool-result metadata in the originating Session; it does not independently verify repository contents or the findings. A brief is incomplete if a selected Workspace was unavailable, had uncommitted source changes, changed during observation, or has unknown source stability. For a dirty Workspace, `HEAD` identifies only the committed base; staged and working-tree source contents are not snapshotted, so a cited path may refer to content that is not recoverable from the saved episode. A repeated recorder call with the same request id returns the existing episode; later assessments append a superseding episode and preserve earlier source history. Opening an Activity shows its latest brief; `/activity brief <activity-id> <revision>` opens an earlier one without checking current repositories or repeating an assessment.
+
+Strategic deliberations use a separate append-only version-1 `home_activity_strategic_deliberations` domain. Each agent-authored record links an exact brief id and revision to a later Session, question, decision, Skill digests, prior evidence treatment, uncertainty review, and a bounded responsibility or no-selection. The recorder verifies every cited evidence and uncertainty id against the selected saved episode. Later decisions append and preserve earlier ones; they do not rewrite the episode, establish current source state, record owner approval, or authorize execution.
 
 Selected Workspace and DSH Session references use the separate version-1 `home_activity_associations` domain. The associations are resolved against their owning registries when displayed; stale references remain explicit until removed. They do not change Workspace records, Session logs, or the Activity record.
 
@@ -89,6 +92,9 @@ User-supplied external handoffs use the separate version-1 `home_activity_handof
 | [`src/strategic-episode-types.ts`](src/strategic-episode-types.ts) | Strategic episode and evidence-reference types |
 | [`src/strategic-episode-spec.ts`](src/strategic-episode-spec.ts) | Versioned strategic episode schema and domain |
 | [`src/strategic-episodes.ts`](src/strategic-episodes.ts) | Append-only Activity Strategic Brief persistence service |
+| [`src/strategic-deliberation-types.ts`](src/strategic-deliberation-types.ts) | Strategic deliberation and historical evidence treatment types |
+| [`src/strategic-deliberation-spec.ts`](src/strategic-deliberation-spec.ts) | Versioned strategic deliberation schema and domain |
+| [`src/strategic-deliberations.ts`](src/strategic-deliberations.ts) | Append-only reconsideration persistence service |
 | [`src/handoff-types.ts`](src/handoff-types.ts) | External handoff record types |
 | [`src/handoff-spec.ts`](src/handoff-spec.ts) | Versioned external handoff schema |
 | [`src/handoffs.ts`](src/handoffs.ts) | Separate external handoff StorageDomain service |
@@ -114,7 +120,7 @@ None, as this package exposes persistence services to the application but does n
 
 #### KV Cache effect
 
-Activity storage itself adds no model input; an explicit command may put selected records into the active Session as described in `command-home-activity`.
+Activity storage itself adds no model input. Explicit `/activity consider` places the selected Activity intent, exact historical brief, and loaded Sensemaking Skills into the logged active Session; only the resulting structured advisory decision is persisted.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>
@@ -130,6 +136,7 @@ Activity scope remains descriptive, and delegation does not enforce it as an aut
 - Artifact references are user-linked pointers. They do not copy or inspect output, prove its producer, verify contents, or trigger cross-Workspace writes, merges, or releases. A missing source revision remains unknown.
 - Review evidence and its reported result are user supplied. DSH preserves their source attribution but does not check the source, evidence, or outcome; the current disposition is separate from provider execution status.
 - Strategic episodes are agent-authored reports, not independent verification or user acceptance. Assessment requires both Sensemaking Skills to be loadable and exactly two registered Workspaces because the existing coordinator supports two repositories. The recorder binds repository ids, `HEAD` revisions, observation times, and working-tree cleanliness metadata to a matching successful coordinator result in the originating Session, but does not independently verify source contents, citations, or findings. For dirty sources, `HEAD` is the committed base only and the episode does not preserve staged or working-tree file contents. Unavailable, dirty, changed, or stability-unknown sources require an incomplete brief. `/activity open` shows the latest brief and `/activity brief` retrieves an earlier saved revision; neither command checks current repositories.
+- Strategic deliberations are advisory and use saved brief evidence only. Their request-scoped guard blocks repository reads and execution tools; freshness is not checked, and a recommendation does not establish currentness, owner approval, verification, acceptance, or execution authority. Live strategic effectiveness is not established by persistence or rendering tests.
 
 Annotation write errors do not confirm whether the revision was persisted. The JSON backend can fail after replacing its file, so close and reopen the backend and domain, then inspect the Activity before deciding whether to retry; the annotation service does not promise a durable rollback. See the [StorageDomain](../../storage/storage-domain/README.md) and [JSON backend](../../storage/storage-json/README.md) failure contracts.
 

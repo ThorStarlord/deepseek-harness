@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold,
   webSnapshotMode, type WebScaffold,
@@ -37,18 +38,7 @@ async function hostRpc<T>(scaffold: WebScaffold, endpoint: string, args: Readonl
   return result.value
 }
 
-async function executeCommand(
-  scaffold: WebScaffold,
-  agentId: string,
-  line: string,
-): Promise<{ readonly kind: string; readonly text?: string }> {
-  const value = await hostRpc<{ result: { kind: string; text?: string } }>(
-    scaffold, 'commands/execute', { agentId, line, submittedAttachments: [] },
-  )
-  return value.result
-}
-
-describe.skipIf(MODE === 'record')('web e2e: Home Activity Strategic Brief recovery', () => {
+describe.skipIf(MODE === 'record')('web e2e: Activity strategic evidence reentry', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
@@ -72,7 +62,7 @@ describe.skipIf(MODE === 'record')('web e2e: Home Activity Strategic Brief recov
     }
   })
 
-  it('renders a saved source-attributed brief and recovers it in another Session without starting work', async () => {
+  it('renders and recovers a source-linked reconsideration in another Session without starting work', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-home-activity-strategic-brief'))
     const input = page.locator('[data-composer-input]').first()
     const settled = scaffold.whenTurnSettled()
@@ -164,9 +154,9 @@ describe.skipIf(MODE === 'record')('web e2e: Home Activity Strategic Brief recov
     expect(episode.revision).toBe(1)
 
     const startActivation = vi.spyOn(scaffold.ctx.subagents, 'startActivation')
-    const submit = async (line: string, marker: RegExp) => {
-      await input.fill(line)
-      await input.press('Enter')
+    const submit = async (line: string, marker: RegExp, target = input) => {
+      await target.fill(line)
+      await target.press('Enter')
       const output = page.getByText(marker).last()
       await output.waitFor({ timeout: 10_000 })
       await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
@@ -199,18 +189,97 @@ describe.skipIf(MODE === 'record')('web e2e: Home Activity Strategic Brief recov
     await mkdir(new URL('./snapshots/home-activity-strategic-brief/', import.meta.url), { recursive: true })
     await compareOrRefreshGolden(EXPECTED, snapshot, MODE)
 
+    const deliberation = await scaffold.ctx.homeActivityStrategicDeliberations.record({
+      activityId: activity.id,
+      originSessionId: 'later-deterministic-session',
+      requestId: '00000000-0000-4000-8000-000000000032',
+      sourceEpisodeId: episode.id,
+      sourceEpisodeRevision: episode.revision,
+      decisionQuestion: 'Which bounded next responsibility is warranted by this historical evidence?',
+      outcome: 'next-responsibility',
+      disposition: 'adapt',
+      proposedResponsibility: 'Use the existing Sensemaking Skills for one explicit assessment and record any retrieval gap.',
+      scope: 'within-activity',
+      rationale: 'The prior recommendation remains useful as a hypothesis, but the source observations are historical and do not establish current provider behavior. Reuse the existing method for one bounded assessment, then reconsider only if its source-attributed result identifies a material retrieval gap.',
+      evidenceUses: [
+        { evidenceId: 'E1', treatment: 'supports', rationale: 'The saved Activity and brief provide a durable point of reentry.' },
+        { evidenceId: 'E2', treatment: 'limits', rationale: 'The Skill describes an analysis method but does not prove the current runtime can retrieve it successfully.' },
+      ],
+      uncertaintyReviews: [
+        { uncertaintyId: 'U1', treatment: 'remains-open', rationale: 'No live strategic assessment or current source read occurred in this deterministic recovery scenario.' },
+      ],
+      newUncertainties: [
+        { id: 'N1', statement: 'The currently installed DSH profile may expose a different Skill set than the historical brief recorded.', evidenceIds: ['E2'] },
+        { id: 'N2', statement: 'A later real assessment may identify decision-time retrieval friction that this saved record cannot establish.', evidenceIds: ['E1', 'E2'] },
+      ],
+      skillDigests: [
+        { name: 'using-sensemaking', provider: 'deterministic-web-fixture', digest: '3'.repeat(64) },
+        { name: 'strategic-repository-analysis', provider: 'deterministic-web-fixture', digest: '4'.repeat(64) },
+      ],
+      requestedAt: '2026-11-22T10:01:00.000Z',
+    })
+
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    const freshSession = await hostRpc<{ sessionId: string }>(
-      scaffold, 'session/create', { request: { workspaceId: harnessWorkspace.id } },
+    const [sessionResponse] = await Promise.all([
+      page.waitForResponse('**/api/session/create'),
+      page.getByRole('button', { name: 'New session', exact: true }).last().click(),
+    ])
+    const sessionPayload = await sessionResponse.json() as {
+      readonly result: { readonly ok: true; readonly value: { readonly sessionId: string } }
+    }
+    const freshSessionId = SessionId(sessionPayload.result.value.sessionId)
+    expect(freshSessionId).not.toBe(parentSessionId)
+    const laterSessionResult = await hostRpc<{ result: { kind: string; text?: string } }>(
+      scaffold, 'commands/execute', {
+        agentId: freshSessionId,
+        line: `/activity decision ${activity.id} ${deliberation.revision}`,
+        submittedAttachments: [],
+      },
     )
-    expect(freshSession.sessionId).not.toBe(parentSessionId)
-    const reopened = await executeCommand(scaffold, freshSession.sessionId, `/activity open ${activity.id}`)
-    expect(reopened.kind).toBe('success')
-    expect(reopened.text).toContain('Latest Activity Strategic Brief')
-    expect(reopened.text).toContain('Recommendation: INVESTIGATE')
-    expect(reopened.text).toContain(`Assessment 1: complete; recorded ${episode.recordedAt}`)
+    expect(laterSessionResult.result.kind).toBe('success')
+    expect(laterSessionResult.result.text).toContain(`Source brief ${episode.id}, revision ${episode.revision}`)
+    const freshAgent = scaffold.ctx.agents.get(freshSessionId)
+    if (freshAgent === undefined) throw new Error('The new Session did not retain a live Agent')
+    expect(freshAgent.session.snapshotEvents().filter(event => event.type === 'command/run' || event.type === 'command/done'))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: 'command/run', data: expect.objectContaining({ name: 'activity' }) }),
+        expect.objectContaining({ type: 'command/done', data: expect.objectContaining({ kind: 'success' }) }),
+      ]))
+    await scaffold.ctx.sessions.flush(freshAgent.session)
+    const originalSession = page.locator('[role="treeitem"][aria-selected]').filter({ hasText: 'Reply with the single word' }).first()
+    await originalSession.click()
+    const originalInput = page.locator(`[data-conversation-session="${parentSessionId}"] [data-composer-input]`).first()
+    await originalInput.waitFor({ timeout: 10_000 })
+    const renderedResult = await submit(
+      `/activity decision ${activity.id} ${deliberation.revision}`,
+      /Activity: Sensemaking workflow integration/u,
+      originalInput,
+    )
+    expect(renderedResult).toContain(`Source brief ${episode.id}, revision ${episode.revision}`)
+    const recoveredCommand = page.getByRole('button', { name: /Activity: Sensemaking workflow integration/u }).last()
+    await recoveredCommand.waitFor({ timeout: 15_000 })
+    await recoveredCommand.click()
+    const renderedDecision = page.locator('pre').filter({ hasText: 'Activity Strategic Deliberation 1' }).last()
+    await renderedDecision.waitFor({ state: 'visible', timeout: 10_000 })
+    const recoveredText = await renderedDecision.textContent() ?? ''
+    expect(recoveredText).toContain(`Source brief ${episode.id}, revision ${episode.revision}`)
+    expect(recoveredText).toContain('Historical evidence considered:')
+    expect(recoveredText).toContain('E2 (limits)')
+    expect(recoveredText).toContain('Prior uncertainties:')
+    expect(recoveredText).toContain('New uncertainties:')
+    expect(recoveredText).toContain('Current repositories, source files, and changed observations were not checked.')
+    const scrollCue = page.locator('[class*="scrollCue"]')
+    await expect.poll(() => scrollCue.isVisible()).toBe(true)
+    expect(await renderedDecision.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true)
+    expect(await renderedDecision.getAttribute('tabindex')).toBe('0')
+    expect(await renderedDecision.getAttribute('aria-label')).toBe('Scroll for more output')
+    await renderedDecision.evaluate((element) => { element.scrollTop = element.scrollHeight })
+    await expect.poll(() => scrollCue.isVisible()).toBe(false)
+    await renderedDecision.evaluate((element) => { element.scrollTop = 0 })
+    await expect.poll(() => scrollCue.isVisible()).toBe(true)
     expect(scaffold.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([episode])
+    expect(scaffold.ctx.homeActivityStrategicDeliberations.list(activity.id)).toEqual([deliberation])
     expect(startActivation).not.toHaveBeenCalled()
   }, 60_000)
 })

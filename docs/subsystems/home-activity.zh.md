@@ -2,7 +2,7 @@
 
 [English](home-activity.md) | 中文
 
-Home Activity 是由用户发起并持久保存的事务，具有稳定身份、名称、目标、描述性范围和创建时间。它独立于任何 Session；创建或打开 Activity 不会启动目标。StorageDomain 记录将 Activity 与上下文关联、明确请求的委派事实、用户关联的输出指针、用户审核及证据、仅追加的用户备注历史和建议性战略记录分开保存。Web /activity 命令可创建、列出、打开、关联、备注、关联输出、记录审核、请求战略评估，并显式委派有界任务。
+Home Activity 是由用户发起并持久保存的事务，具有稳定身份、名称、目标、描述性范围和创建时间。它独立于任何 Session；创建或打开 Activity 不会启动目标。StorageDomain 记录将 Activity 与上下文关联、明确请求的委派事实、用户关联的输出指针、用户审核及证据、仅追加的用户备注历史、战略记录和战略重议分开保存。Web /activity 命令可创建、列出、打开、关联、备注、关联输出、记录审核、请求战略评估、重议已选历史简报，并显式委派有界任务。
 
 ## 已保存意图
 
@@ -45,6 +45,10 @@ Home Activity 是由用户发起并持久保存的事务，具有稳定身份、
 ## 战略简报
 
 独立的版本 1 `home_activity_strategic_episodes` 域会追加由 agent 撰写的建议性简报，不改变 Activity 意图、备注或委派事实。`/activity assess` 会加载现有 Sensemaking Skills 和明确选择的 Workspace；仓库读取使用现有只读协调工具，并须另行获得一次性批准。每条记录保留 Activity 目标、来源 Session、Workspace id、由协调工具报告的 Git 修订和观察时间、是否存在暂存、未暂存或未跟踪的来源文件、来源引用、已加载 Skill 内容摘要、发现、替代方案、不确定性，以及建议或不选择。记录器会将仓库 id 和来源元数据绑定到来源 Session 中匹配的成功协调器工具结果；但不会独立验证来源内容、引用或发现。来源不可用、存在未提交变更、观察期间变化或稳定性未知时，简报必须标为不完整。后续简报会取代建议，但保留早期记录。`/activity open` 显示最新简报，`/activity brief` 可检索指定的历史版本，不会重新读取仓库；后续保存的观察会让早期适用性变得不确定，没有后续观察时当前适用性仍未确认。`/activity assess cancel` 会阻止保存未完成简报，但不会停止已获准并正在运行的读取。
+
+## 战略重议
+
+独立的版本 1 `home_activity_strategic_deliberations` 域会追加 agent 撰写的建议性重议记录，并关联到确切的战略 episode id 和修订版本。`/activity consider <activity-id> <brief-revision> <decision-question>` 会将 Activity 意图、所选 episode、历史来源观察、证据 id、发现、替代方案、不确定性和建议加载到当前 Session，并使用现有 Sensemaking Skills。请求级守卫只允许重议记录工具；它会阻止仓库读取、协调器调用、提供方和委派。重议记录会保存其来源 Session、Skill 摘要、问题、处置、结果、理由、既有证据和不确定性的处理，以及有界责任建议或不选择。它不会修改简报、Activity、来源仓库、权限或所有者决策记录。`/activity decisions` 列出修订，`/activity decision <activity-id> <decision-revision>` 重新打开其中一条，`/activity open` 显示最新决策摘要。重议只使用已保存的历史证据；它不会确认来源当前状态、独立验证、所有者批准、用户接受或执行授权。若存储写入状态不确定，应在重试前检查已保存决策。
 
 ## Cordis API
 
@@ -323,6 +327,32 @@ list(activityId: ActivityId): readonly ActivityReview[]
 ```
 
 Source: [`packages/home/activity/src/reviews.ts`](../../packages/home/activity/src/reviews.ts)
+
+<a id="ctxhomeactivitystrategicdeliberations--homeactivitystrategicdeliberationservice"></a>
+
+### `ctx.homeActivityStrategicDeliberations` — `HomeActivityStrategicDeliberationService`
+
+Stores append-only agent deliberations separately from Activity briefs and owner decisions.
+
+```ts cordis-catalog
+/** Append an advisory conclusion against one exact saved brief revision.
+ * @param request - Activity, source brief, Session, Skill, and conclusion data.
+ * @returns The saved deliberation, or the prior record for a repeated request id.
+ * @throws {ActivityStrategicDeliberationError} when identities, cited evidence, or conclusion data are invalid.
+ * @throws {ActivityStrategicDeliberationStorageError} when storage cannot confirm a read or write.
+ */
+record(request: RecordActivityStrategicDeliberationRequest): Promise<ActivityStrategicDeliberation>
+
+/** List advisory reconsiderations without inspecting repositories or starting execution.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached records in append order.
+ * @throws {ActivityStrategicDeliberationError} when the Activity does not exist.
+ * @throws {ActivityStrategicDeliberationStorageError} when history cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityStrategicDeliberation[]
+```
+
+Source: [`packages/home/activity/src/strategic-deliberations.ts`](../../packages/home/activity/src/strategic-deliberations.ts)
 
 <a id="ctxhomeactivitystrategicepisodes--homeactivitystrategicepisodeservice"></a>
 

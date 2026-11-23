@@ -461,6 +461,16 @@ const pendingRequestsByContext = new WeakMap<Context, ActivityStrategicPendingRe
 const preparingAssessmentsByContext = new WeakMap<Context, Map<string, PreparingAssessment>>()
 const preparationSettledByContext = new WeakMap<Context, () => void>()
 
+/** Report whether this Session already owns a pending brief assessment lifecycle.
+ * @param ctx - Context that registered the brief recorder.
+ * @param sessionId - Stable identity of the requesting DSH Session.
+ * @returns Whether assessment setup or recording is still active.
+ */
+export function hasPendingActivityStrategicAssessment(ctx: Context, sessionId: string): boolean {
+  return pendingRequestsByContext.get(ctx)?.has(sessionId) === true
+    || preparingAssessmentsByContext.get(ctx)?.has(sessionId) === true
+}
+
 function registerActivityStrategicPendingRequests(ctx: Context, pending: ActivityStrategicPendingRequests): void {
   pendingRequestsByContext.set(ctx, pending)
 }

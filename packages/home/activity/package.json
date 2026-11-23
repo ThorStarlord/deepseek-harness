@@ -46,6 +46,10 @@
       "types": "./lib/types/strategic-episodes.d.ts",
       "default": "./lib/types/strategic-episodes.js"
     },
+    "./strategic-deliberations": {
+      "types": "./lib/types/strategic-deliberations.d.ts",
+      "default": "./lib/types/strategic-deliberations.js"
+    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"

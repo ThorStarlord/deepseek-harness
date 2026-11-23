@@ -643,6 +643,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Appends source-attributed advisory Activity briefs and preserves earlier recommendations without authorizing execution.',
   },
   {
+    key: 'homeActivityStrategicDeliberations',
+    pkg: 'home-activity',
+    title: 'Activity strategic reconsideration history',
+    mode: 'service',
+    consumers: ['command-home-activity'],
+    note: 'Appends an agent-authored advisory decision against one exact historical brief, preserving source evidence and uncertainty without checking current repositories or authorizing execution.',
+  },
+  {
     key: 'sessionQuery',
     pkg: 'session-query',
     title: 'Session reads, traces, filters, and search',

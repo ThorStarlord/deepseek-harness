@@ -35,6 +35,11 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
+.bodyWrap {
+  position: relative;
+  min-width: 0;
+}
+
 .body {
   max-height: 260px;
   margin: 4px 0 4px 4px;
@@ -46,4 +51,22 @@
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-markdown-code-block-small);
   white-space: pre-wrap;
+}
+
+.scrollCue {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  left: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 18px 8px 5px;
+  border-radius: 0 0 var(--dsw-radius-lg) var(--dsw-radius-lg);
+  background: linear-gradient(transparent, var(--dsw-alias-markdown-code-block) 68%);
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: 18px;
+  pointer-events: none;
 }
