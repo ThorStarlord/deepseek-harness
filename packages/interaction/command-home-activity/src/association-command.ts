@@ -121,7 +121,7 @@ async function listWorkspaces(ctx: Context): Promise<CommandResult> {
       lines.push(`Directory: ${workspace.path}`)
       lines.push(status === 'ok' ? 'Directory status: available.' : 'Directory status: unavailable.')
     }
-    lines.push('', 'Select an id with /activity link <activity-id> workspace <workspace-id>.')
+    lines.push('', 'Use two ids with /activity assess <activity-id> <workspace-id> <workspace-id>, or link a Workspace with /activity link <activity-id> workspace <workspace-id>.')
     return { kind: 'success', text: lines.join('\n') }
   } catch (error: unknown) {
     ctx.logger.warn('command-home-activity: Workspace catalog read failed: %o', error)

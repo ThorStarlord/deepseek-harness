@@ -1938,6 +1938,27 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'homeActivityStrategicEpisodes',
+    summary: 'Stores append-only agent-authored strategic assessments independently from Activity intent and user notes.',
+    description: 'Stores append-only agent-authored strategic assessments independently from Activity intent and user notes.',
+    methods: [
+      {
+        signature: 'record(request: RecordActivityStrategicEpisodeRequest): Promise<ActivityStrategicEpisode>',
+        description: 'Append a completed or explicitly incomplete agent-authored brief.',
+        parameters: [{ name: 'request', description: 'Activity, Session, request, Skills, repository observations, and report content.' }],
+        returns: 'The saved episode, or the prior episode for a repeated request id.',
+        throws: ['{ActivityStrategicEpisodeError} when the Activity is unknown, report content is invalid, or the episode limit is reached.', '{ActivityStrategicEpisodeStorageError} when episode storage cannot confirm the read or write.'],
+      },
+      {
+        signature: 'list(activityId: ActivityId): readonly ActivityStrategicEpisode[]',
+        description: 'List historical assessments without checking repositories or starting work.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Detached episodes for the Activity, oldest first.',
+        throws: ['{ActivityStrategicEpisodeError} when the Activity does not exist.', '{ActivityStrategicEpisodeStorageError} when episode storage cannot be read.'],
+      },
+    ],
+  },
+  {
     key: 'inspector',
     summary: 'Shared Host/Client service façade over the realm\'s source publisher.',
     description: 'Shared Host/Client service façade over the realm\'s source publisher.',
@@ -5815,6 +5836,42 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ActivityReviewEvidenceResult = \'passed\' | \'failed\' | \'inconclusive\' | \'unavailable\';',
   },
   {
+    name: 'ActivityStrategicAlternative',
+    declaration: 'export interface ActivityStrategicAlternative {\n    readonly name: string;\n    readonly consequence: string;\n    readonly evidenceIds: readonly string[];\n    readonly uncertaintyIds: readonly string[];\n}',
+  },
+  {
+    name: 'ActivityStrategicEpisode',
+    declaration: 'export interface ActivityStrategicEpisode {\n    readonly id: ActivityStrategicEpisodeId;\n    readonly activityId: ActivityId;\n    readonly revision: number;\n    readonly supersedes?: ActivityStrategicEpisodeId | undefined;\n    readonly originSessionId: string;\n    readonly producer: \'dsh-active-agent\';\n    readonly requestId: string;\n    readonly objective: string;\n    readonly status: \'complete\' | \'incomplete\';\n    readonly repositories: readonly ActivityStrategicRepositoryObservation[];\n    readonly skillDigests: readonly {\n        readonly name: string;\n        readonly provider: string;\n        readonly digest: string;\n    }[];\n    readonly evidence: readonly ActivityStrategicEvidenceReference[];\n    readonly findings: readonly ActivityStrategicFinding[];\n    readonly alternatives: readonly ActivityStrategicAlternative[];\n    readonly uncertainties: readonly ActivityStrategicUncertainty[];\n    readonly recommendation: ActivityStrategicRecommendation;\n    readonly requestedAt: string;\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'ActivityStrategicEpisodeId',
+    declaration: 'export type ActivityStrategicEpisodeId = Branded<\'ActivityStrategicEpisodeId\'>;',
+  },
+  {
+    name: 'ActivityStrategicEvidenceReference',
+    declaration: 'export interface ActivityStrategicEvidenceReference {\n    readonly id: string;\n    readonly workspaceId: string;\n    readonly revision: string;\n    readonly path: string;\n    readonly lineStart?: number | undefined;\n    readonly lineEnd?: number | undefined;\n    readonly note: string;\n}',
+  },
+  {
+    name: 'ActivityStrategicFinding',
+    declaration: 'export interface ActivityStrategicFinding {\n    readonly kind: ActivityStrategicFindingKind;\n    readonly category: \'capability\' | \'constraint\' | \'ownership\' | \'opportunity\';\n    readonly statement: string;\n    readonly evidenceIds: readonly string[];\n}',
+  },
+  {
+    name: 'ActivityStrategicFindingKind',
+    declaration: 'export type ActivityStrategicFindingKind = \'source-observation\' | \'source-claim\' | \'interpretation\' | \'hypothesis\';',
+  },
+  {
+    name: 'ActivityStrategicRecommendation',
+    declaration: 'export interface ActivityStrategicRecommendation {\n    readonly disposition: \'BUILD\' | \'INVESTIGATE\' | \'DEFER\' | \'NO_CHANGE\' | \'OWNER_DECISION\' | \'THESIS_REVIEW\';\n    readonly responsibility: string | null;\n    readonly rationale: string;\n    readonly scope: \'within-activity\' | \'owner-decision\' | \'outside-activity\';\n    readonly evidenceIds: readonly string[];\n    readonly uncertaintyIds: readonly string[];\n}',
+  },
+  {
+    name: 'ActivityStrategicRepositoryObservation',
+    declaration: 'export interface ActivityStrategicRepositoryObservation {\n    readonly workspaceId: string;\n    readonly title: string;\n    readonly status: \'observed\' | \'unavailable\';\n    readonly revision: string | null;\n    readonly workingTree: \'clean\' | \'dirty\' | \'unknown\';\n    readonly sourceChanged: boolean | null;\n    readonly observedAtStart: string | null;\n    readonly observedAtEnd: string | null;\n}',
+  },
+  {
+    name: 'ActivityStrategicUncertainty',
+    declaration: 'export interface ActivityStrategicUncertainty {\n    readonly id: string;\n    readonly statement: string;\n    readonly evidenceIds: readonly string[];\n}',
+  },
+  {
     name: 'AdapterRegistrationHandle',
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
@@ -8221,6 +8278,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RecordActivityReviewRequest',
     declaration: 'export interface RecordActivityReviewRequest {\n    readonly activityId: ActivityId;\n    readonly delegationId: ActivityDelegationId;\n    readonly disposition: ActivityReviewDisposition;\n    readonly evidence?: Omit<ActivityReviewEvidence, \'id\' | \'recordedAt\' | \'origin\'> | undefined;\n}',
+  },
+  {
+    name: 'RecordActivityStrategicEpisodeRequest',
+    declaration: 'export type RecordActivityStrategicEpisodeRequest = Omit<ActivityStrategicEpisode, \'id\' | \'revision\' | \'supersedes\' | \'activityId\' | \'originSessionId\' | \'producer\' | \'skillDigests\' | \'recordedAt\' | \'objective\'> & {\n    readonly activityId: ActivityId;\n    readonly originSessionId: string;\n    readonly requestId: string;\n    readonly skillDigests: ActivityStrategicEpisode[\'skillDigests\'];\n};',
   },
   {
     name: 'RecurringScheduleRecord',

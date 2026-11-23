@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 Web 或 SDK `session.run()` 中使用 `/activity` 创建、重新打开、关联、备注和审核 Activity，并通过 DSH `spawn`、Codex 或 Claude Code 发起有界委派。命令也可关联输出指针，并记录用户提供的外部交接而不导入 transcript。`/activity continue` 会按已保存目标和用户选择的范围内语句启动一次新委派，不会恢复之前的提供方执行。备注、审核与更正都与提供方报告和专家断言分开保存。保存或重新打开不会启动工作。Codex 和 Claude Code 保留原生身份验证与权限；它们是一次性执行，Activity 不提供 transcript、恢复或回滚能力。
+通过 Web 或 SDK `session.run()` 中的 `/activity` 管理已保存的 Activity，并显式请求基于来源的战略简报或有界委派。评估会加载现有 Sensemaking Skills，并且只有经过单独批准后才会读取所选仓库。打开已保存简报不会重新运行评估。委派会将提供方报告与验证和用户接受分开记录；Codex 与 Claude Code 保留原生身份验证和一次性执行行为。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-Web 和 SDK profile 会通过命令注册表、持久化 Activity、关联和备注服务、Workspace 注册表及 Session 持久化服务加载此命令。启用委派还需要 Activity 委派与 subagent 服务，以及受支持的 DSH 原生提供方。
+Web 和 SDK profile 会通过命令注册表、工具注册表、持久化 Activity、关联、备注和战略记录服务、Workspace 注册表及 Session 持久化服务加载此命令。战略评估还要求活动 Agent 的 DSH Skill registry 提供 `using-sensemaking` 和 `multi-repository-strategic-analysis`，并挂载现有只读多仓库工具。如果 profile 未挂载协调器，或 Agent 的工具限制排除了它，DSH 会在加载 Skills 或启用请求守卫前拒绝评估，不会读取仓库。请参阅[多仓库协调器](../../workspace/tool-multi-repository/README.zh.md)了解其批准与访问模型。启用委派还需要 Activity 委派与 subagent 服务，以及受支持的 DSH 原生提供方。
 
 ### 何时选择
 
@@ -49,9 +49,12 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity、关联和备
 |---|---|
 | `/activity create <JSON>` | 保存名称、目标，以及包含 `inScope` 和 `outOfScope` 字符串数组的 `boundaries` 对象。至少需要一项 `inScope` 内容。 |
 | `/activity list` | 按创建时间从新到旧列出已保存 Activity 的名称和稳定 id。 |
-| `/activity open <activity-id>` | 显示已保存的目标、描述性范围（范围内语句从 1 开始编号，供继续命令选择）、当前用户备注和最近修订、上下文引用、委派记录、已捕获的 profile 和 preset 选择，以及依据已保存生命周期事实和当前已注册提供方路由提供的只读后续操作。路由注册不代表凭据就绪、用户同意、原生权限或提供方已准入。 |
+| `/activity open <activity-id>` | 显示已保存的目标、描述性范围（范围内语句从 1 开始编号，供继续命令选择）、当前用户备注和最近修订、最新战略简报、上下文引用、委派记录、已捕获的 profile 和 preset 选择，以及依据已保存生命周期事实和当前已注册提供方路由提供的只读后续操作。较早的简报修订仍会保存，可用 `/activity brief <activity-id> <revision>` 查看。路由注册不代表凭据就绪、用户同意、原生权限或提供方已准入。 |
+| `/activity brief <activity-id> <revision>` | 查看指定的已保存战略简报修订及其证据和不确定性引用。视图会显示后续保存的观察，不会重新读取仓库。 |
+| `/activity assess <activity-id> <workspace-id> <workspace-id>` | 明确请求对恰好两个已注册 Workspace 进行建议性战略评估。如果当前 profile 未挂载只读协调器，或 Agent 的工具限制排除了它，DSH 会在加载 Skills 或启用请求守卫前报告该问题。否则，DSH 会把两个 Sensemaking Skills 加载到活动 Agent 的记录任务中。读取前，现有协调器会针对确切任务和所选 Workspace 另行请求一次性批准；获得批准后，它会为每个 Workspace 启动一个只读 DSH 子级 Session，且不提供实现或仓库修改工具。仅适用于该请求的工具会保存结构化简报，并将仓库 id、修订和观察时间绑定到来源 Session 中匹配的成功协调器工具结果元数据；内容、引用和发现仍由 Agent 撰写。 |
+| `/activity assess cancel` | 丢弃当前 Session 尚未完成的简报请求，阻止该请求保存结果，但不会停止已获准并正在运行的仓库读取。其他模型工具调用会继续被阻止，直到当前轮次结束且已获准的协调器调用返回。 |
 | `/activity annotate <activity-id> <JSON>` | 追加一条用户撰写的协调备注或更正，不修改提供方报告或专家断言。JSON 必须包含 `text`；`/activity open` 会单独显示当前备注和保留的修订历史。 |
-| `/activity workspaces` | 列出可以关联的注册 Workspace 上下文。 |
+| `/activity workspaces` | 列出注册 Workspace 的名称、id 和目录。可以使用两个 id 请求评估，也可以将 Workspace 关联到 Activity。 |
 | `/activity sessions` | 列出已存储的 DSH Session 及可用摘要元数据。 |
 | `/activity link <activity-id> workspace <workspace-id>` | 添加 Workspace 引用，不修改 Workspace 记录。 |
 | `/activity link <activity-id> session <session-id>` | 添加 DSH Session 引用，不修改 Session 日志。 |
@@ -112,11 +115,11 @@ Web 和 SDK profile 会通过命令注册表、持久化 Activity、关联和备
 <a id="model-experience"></a>
 ## 模型体验
 
-模型体验通过显式的 `/activity delegate` 或 `/activity continue` 命令间接产生：它们会启动一次提供方执行，并分别记录请求、DSH 准入和提供方报告，不会暗示结果已验证或被用户接受。继续请求会根据已保存目标、选定的描述性范围语句和用户下一步创建新请求，不会恢复先前的提供方执行。
+模型体验通过显式的 `/activity assess`、`/activity delegate` 或 `/activity continue` 命令间接产生。评估会引导当前 Agent 并仅为对应请求开放记录工具；它使用现有 DSH Skill registry 加载 Sensemaking Skills，并在只读仓库协调工具另行获得批准后读取来源。委派会启动一次提供方执行，并分别记录请求、DSH 准入和提供方报告，不会暗示结果已验证或被用户接受。继续请求会根据已保存目标、选定的描述性范围语句和用户下一步创建新请求，不会恢复先前的提供方执行。
 
 #### KV 缓存影响
 
-无；委派任务独立于父级上下文运行。只有 `spawn` 会创建 DSH 子级 Session。
+显式评估会把 Activity 目标、所选 Workspace 根目录和已加载的 Sensemaking Skill 正文加入当前 Session。现有协调器只有在针对确切任务和所选仓库另行获得一次性批准后，才会为每个仓库启动一个只读 DSH 子级 Session；这些 Session 可以检查仓库来源，但不能实现或修改任一仓库。评估本身不会启动实现、授予写入权限或更改活动 Agent 现有的工具和权限。实现委派仍是单独的 Activity 操作，并使用其自身的提供方授权。
 
 ## 已知限制与后续工作
 <a id="known-limitations-and-deferred-work"></a>
@@ -125,6 +128,7 @@ Activity 范围说明描述请求的工作；它们不会更改提供方权限�
 
 - Web composer 与 SDK session.run() 是受支持的交互界面；没有独立 Activity 浏览器或原生 Desktop 命令。SDK profile 必须加载 Home Activity 插件。
 - 创建输入为 JSON 文本，且此命令不支持编辑或删除 Activity。`/activity continue` 会记录一项新的明确请求；选择描述性范围语句无法在语义上证明下一步符合该语句，也不会限制提供方权限。Codex 和 Claude Code 执行仍为一次性操作，Activity 无法恢复、检查或回滚它们。Session 目录只显示摘要元数据，不检查子级对话或证明提供方已准入。
+- 评估要求两个已注册 Workspace 和接收 Agent 的 DSH Skill registry 中可用的两个 Sensemaking Skills。记录器会将仓库 id、`HEAD` 修订、工作树状态和观察时间绑定到来源 Session 中匹配的成功协调器工具结果，但不会独立检查来源内容、引用或发现。来源不可用、存在未提交变更、观察期间变化或稳定性未知时，简报必须标为不完整。已保存简报由 Agent 撰写，不是独立验证或用户接受；重新打开 Activity 不会重新检查仓库修订，因此当前适用性可能不确定。评估会安装请求级工具守卫，直到简报保存或取消且当前轮次结束前阻止无关的模型工具调用。守卫不会更改已配置的权限；经批准的仓库分析会为每个选定 Workspace 启动一个只读 DSH 子级 Session。
 - 审核证据及其报告结果由用户提供，DSH 不会检查。用户更改处置前，当前状态保持待处理；报告执行成功不会自动接受结果。
 - `/activity open` 会把已知的提供方停止原因显示为提供方报告的完成、失败、部分输出或拒绝；无法识别的原因仍显示为未知。可用时会显示报告来源和时间，以及不确定状态的来源类别和观察时间。DSH 不会检查已保存报告的新鲜度，因此报告可能已过时；打开 Activity 不会查询提供方后续状态，也不会重试工作。
 - 对于待处理或状态不确定的启动，恢复提示只提供检查操作。只有已保存结果支持新工作且提供方路由已注册时，才会提示用户单独、明确地发起新请求；路由注册不代表凭据可用、用户同意、原生权限或已获准入。Activity 不提供停止操作，外部一次性运行没有 Activity 状态查询、转录检查或恢复操作。未知结果会继续保持未解决状态。

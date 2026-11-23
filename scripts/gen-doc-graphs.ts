@@ -635,6 +635,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Appends user-authored corrections to Home Harness coordination notes and preserves earlier revisions separately from provider reports and specialist assertions.',
   },
   {
+    key: 'homeActivityStrategicEpisodes',
+    pkg: 'home-activity',
+    title: 'Activity strategic episode history',
+    mode: 'service',
+    consumers: ['command-home-activity'],
+    note: 'Appends source-attributed advisory Activity briefs and preserves earlier recommendations without authorizing execution.',
+  },
+  {
     key: 'sessionQuery',
     pkg: 'session-query',
     title: 'Session reads, traces, filters, and search',

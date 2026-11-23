@@ -11,8 +11,11 @@ it('mounts Activity annotation persistence before the human Activity command', (
     loadOverlayPatches('web-home-activity', WEB_PATCH),
   ], (message) => { throw new Error(message) })
   const annotationIndex = entries.findIndex(entry => entry.id === 'home-activity-annotations')
+  const episodeIndex = entries.findIndex(entry => entry.id === 'home-activity-strategic-episodes')
   const commandIndex = entries.findIndex(entry => entry.id === 'command-home-activity')
 
   expect(entries[annotationIndex]?.name).toBe('@deepseek-ai/dsh-home-activity/annotations')
-  expect(commandIndex).toBeGreaterThan(annotationIndex)
+  expect(entries[episodeIndex]?.name).toBe('@deepseek-ai/dsh-home-activity/strategic-episodes')
+  expect(episodeIndex).toBeGreaterThan(annotationIndex)
+  expect(commandIndex).toBeGreaterThan(episodeIndex)
 })

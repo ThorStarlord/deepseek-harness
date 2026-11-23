@@ -176,6 +176,7 @@ flowchart LR
   svc_homeActivityHandoffs["ctx.homeActivityHandoffs<br/>User-supplied external Activity handoffs"]
   svc_homeActivityReviews["ctx.homeActivityReviews<br/>User Activity outcome reviews"]
   svc_homeActivityAnnotations["ctx.homeActivityAnnotations<br/>Activity coordination annotation history"]
+  svc_homeActivityStrategicEpisodes["ctx.homeActivityStrategicEpisodes<br/>Activity strategic episode history"]
   svc_sessionQuery["ctx.sessionQuery<br/>Session reads, traces, filters, and search"]
   pkg_session_reference["session-reference"]
   pkg_tool_session_query["tool-session-query"]
@@ -405,6 +406,7 @@ flowchart LR
   pkg_home_activity --> svc_homeActivityDelegations
   pkg_home_activity --> svc_homeActivityHandoffs
   pkg_home_activity --> svc_homeActivityReviews
+  pkg_home_activity --> svc_homeActivityStrategicEpisodes
   pkg_host_directory_picker --> svc_directoryPicker
   pkg_host_directory_picker_browse --> svc_directoryPicker
   pkg_host_directory_picker_native --> svc_directoryPicker
@@ -553,6 +555,7 @@ flowchart LR
   svc_homeActivityDelegations --> pkg_command_home_activity
   svc_homeActivityHandoffs --> pkg_command_home_activity
   svc_homeActivityReviews --> pkg_command_home_activity
+  svc_homeActivityStrategicEpisodes --> pkg_command_home_activity
   svc_jobs --> pkg_api_job_controller
   svc_jobs --> pkg_tool_bash
   svc_jobs --> pkg_tool_jobs
@@ -741,6 +744,7 @@ flowchart LR
 | `ctx.homeActivityHandoffs` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | 保存用户提供的外部摘要和产物引用，并记录其 DSH Session；不会导入 transcript，也不会声称已执行、验证或接受。 |
 | `ctx.homeActivityReviews` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | 为 Activity 委派单独保存用户处置和带来源信息的用户填写证据；缺少审核记录时仍为 pending，审核记录不会更改提供方报告或启动工作。 |
 | `ctx.homeActivityAnnotations` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | 将用户撰写的更正追加到 Home Harness 协调备注中，并单独保留早期修订，与提供方报告和专家断言分开。 |
+| `ctx.homeActivityStrategicEpisodes` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | 追加带来源信息的建议性 Activity 简报，并保留早期建议；这些记录不会授予执行权限。 |
 | `ctx.sessionQuery` | `seam` | [`session-query`](../packages/session-query/session-query) | [`session-query-sqlite`](../packages/session-query/session-query-sqlite) | [`session-reference`](../packages/context/session-reference), [`tool-session-query`](../packages/experimental/tool-session-query) | - | 该接口提供精确读取、过滤和追踪；具体后端还提供全文协调、排序、摘要片段和游标世代，而模型消费方负责工作区权限与不含游标的渲染。 |
 | `ctx.fileReferences` | `seam` | [`file-reference`](../packages/context/file-reference) | [`file-reference-local`](../packages/context/file-reference-local) | [`api-session-controller`](../packages/api/session-controller) | - | 该接口返回 Agent cwd 内仅含路径的补全候选；提供方负责命名空间访问与排序，但不读取文件内容。 |
 | `ctx.sessionReferenceResolver` | `core` | [`session-reference`](../packages/context/session-reference) | - | - | - | 将当前表层中有界的对话快照投影为持久但不可信的消息上下文；Host 适配器负责提及语法。 |

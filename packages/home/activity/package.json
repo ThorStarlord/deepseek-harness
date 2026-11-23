@@ -42,6 +42,10 @@
       "types": "./lib/types/annotations.d.ts",
       "default": "./lib/types/annotations.js"
     },
+    "./strategic-episodes": {
+      "types": "./lib/types/strategic-episodes.d.ts",
+      "default": "./lib/types/strategic-episodes.js"
+    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
