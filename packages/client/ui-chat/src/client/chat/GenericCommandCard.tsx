@@ -1,6 +1,6 @@
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChatViewSlotProps, CommandRowOwnerProps } from '../contract/slots.ts'
-import { DisclosureRow, IconApiOutlineRegular, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, IconApiOutlineRegular, IconChevronDownOutlineRegular, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
 import a11yCss from './accessibility.module.css'
 import css from './GenericCommandCard.module.css'
 
@@ -28,6 +28,8 @@ export interface GenericCommandCardProps extends CommandRowOwnerProps {
  */
 export const GenericCommandCard = memo(function GenericCommandCard({ node, t, runningSummary }: GenericCommandCardProps) {
   const [expanded, setExpanded] = useState(false)
+  const [canScrollDown, setCanScrollDown] = useState(false)
+  const bodyRef = useRef<HTMLPreElement>(null)
   const text = node.outcome?.text
   const summary = node.outcome === null
     ? runningSummary ?? t('command.running')
@@ -40,6 +42,25 @@ export const GenericCommandCard = memo(function GenericCommandCard({ node, t, ru
   const body = text !== undefined && text.includes('\n') ? text : null
   const open = expanded && body !== null
   const toggle = useCallback(() => { setExpanded(value => !value) }, [])
+  useLayoutEffect(() => {
+    const element = bodyRef.current
+    if (!open || element === null) {
+      setCanScrollDown(false)
+      return
+    }
+    const update = (): void => {
+      const next = element.scrollTop + element.clientHeight < element.scrollHeight - 1
+      setCanScrollDown(previous => previous === next ? previous : next)
+    }
+    update()
+    element.addEventListener('scroll', update)
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(update)
+    observer?.observe(element)
+    return () => {
+      element.removeEventListener('scroll', update)
+      observer?.disconnect()
+    }
+  }, [body, open])
   const collapsedContent = useMemo(() => (
     <>
       <span className={css.separator} data-shimmer-decoration aria-hidden />
@@ -49,8 +70,15 @@ export const GenericCommandCard = memo(function GenericCommandCard({ node, t, ru
     </>
   ), [running, state, summary])
   const content = useMemo(() => open
-    ? <pre className={css.body} data-error={state === 'error' || undefined}>{body}</pre>
-    : undefined, [body, open, state])
+    ? <div className={css.bodyWrap}>
+      <pre ref={bodyRef} className={css.body} data-error={state === 'error' || undefined}
+        tabIndex={0} aria-label={t('command.scrollForMore')}>{body}</pre>
+      {canScrollDown && <div className={css.scrollCue} aria-hidden="true">
+        <IconChevronDownOutlineRegular size={14} />
+        <span>{t('command.scrollForMore')}</span>
+      </div>}
+    </div>
+    : undefined, [body, canScrollDown, open, state, t])
   return (
     <div className={css.root} data-variant="others" data-state={state}>
       {state === 'running' && <span className={a11yCss.visuallyHidden}>{t('row.running')}</span>}

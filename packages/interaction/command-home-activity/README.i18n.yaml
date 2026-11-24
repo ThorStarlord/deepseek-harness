@@ -10,13 +10,13 @@
   zh: b46ef2c005b78dfd
 /deepseek-ai-dsh-command-home-activity/summary:
   en: 7bd99b28db7cbb02
-  zh: eac9af2e745d9712
+  zh: 976a119ae2a36d64
 /deepseek-ai-dsh-command-home-activity/table-of-contents:
   en: d152484eb41ac6b4
   zh: f57bb7dc06808f11
 /deepseek-ai-dsh-command-home-activity/use-this-package:
-  en: 240c105004c4f1dc
-  zh: 0f5dc346cc59abf6
+  en: 93123910c6523c4a
+  zh: 2d4576933facba0d
 /deepseek-ai-dsh-command-home-activity/use-this-package/when-to-choose-it:
   en: 4af7c2be6be83c87
   zh: f4da5a59a6fcdc87
@@ -24,23 +24,23 @@
   en: 8ce26440b34516f2
   zh: c10e868181996ac2
 /deepseek-ai-dsh-command-home-activity/use-this-package/command-reference:
-  en: c334130c8739ecf3
-  zh: 3d5901a5dd067871
+  en: 2f1da35c03d5b01d
+  zh: 50dec18580ab323a
 /deepseek-ai-dsh-command-home-activity/understand-the-implementation:
-  en: 57847d631a1370df
-  zh: 854874dfb8e2a026
+  en: ba40e48dc6d8d0c5
+  zh: bd5f2b202184edd0
 /deepseek-ai-dsh-command-home-activity/further-exploration:
   en: e89aa63964ea6671
   zh: a10f4ffc8ad5a604
 /deepseek-ai-dsh-command-home-activity/model-experience:
-  en: b4e97b8bd0db9265
-  zh: a15cfed58f02b422
+  en: 1d449118b0b7d2f5
+  zh: 3f3bf000cb961ad8
 /deepseek-ai-dsh-command-home-activity/model-experience/kv-cache-effect:
-  en: 507ff9c1d1100408
-  zh: 4c15d9a16d1b5f8f
+  en: 45bf249387b85ed0
+  zh: 9d44920bf16e6ab1
 /deepseek-ai-dsh-command-home-activity/known-limitations-and-deferred-work:
-  en: b76889d36f637c61
-  zh: 47697780a38e0554
+  en: 5aa9d319feb4f26d
+  zh: 318b6f901b3c08b7
 /deepseek-ai-dsh-command-home-activity/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 8ec3e73528ddb1a6

@@ -2,7 +2,7 @@
 
 English | [中文](home-activity.zh.md)
 
-A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope, and creation time. It is independent of any Session; creating or opening one does not start its objective. StorageDomain records keep Activity data separate from context links, requested delegation facts, user-linked output pointers, user reviews and evidence, append-only user annotation history, and advisory strategic episodes. The Web /activity command creates, lists, opens, associates, annotates, links outputs, records reviews, requests strategic assessments, and explicitly delegates bounded tasks.
+A Home Activity is a durable, user-directed undertaking with a stable identity, name, objective, descriptive scope, and creation time. It is independent of any Session; creating or opening one does not start its objective. StorageDomain records keep Activity data separate from context links, requested delegation facts, user-linked output pointers, user reviews and evidence, append-only user annotation history, strategic episodes, and strategic deliberations. The Web /activity command creates, lists, opens, associates, annotates, links outputs, records reviews, requests strategic assessments, reconsiders selected historical briefs, and explicitly delegates bounded tasks.
 
 ## Saved intent
 
@@ -45,6 +45,10 @@ The separate version-1 `home_activity_handoffs` domain stores a user-supplied so
 ## Strategic briefs
 
 The separate version-1 `home_activity_strategic_episodes` domain appends agent-authored advisory briefs without changing Activity intent, annotations, or delegation facts. `/activity assess` loads the existing Sensemaking Skills and explicitly selected Workspaces; repository reads use the existing read-only coordinator after its separate one-shot approval. Each episode retains the Activity objective, originating Session, Workspace ids, coordinator-reported Git revisions and observation times, whether staged, unstaged, or untracked source files were present, source references, loaded Skill content digests, findings, alternatives, uncertainties, and a recommendation or no-selection. The recorder binds repository ids and source metadata to matching successful coordinator tool-result metadata in the originating Session; it does not independently verify source contents, citations, or findings. Unavailable, dirty, changed, or stability-unknown sources require an incomplete brief. A later brief supersedes the recommendation without removing the earlier episode. `/activity open` shows the latest brief and `/activity brief` retrieves a selected historical revision without re-reading repositories; a later saved observation makes earlier applicability uncertain, and no later observation leaves current applicability unconfirmed. `/activity assess cancel` prevents saving an unfinished brief but cannot stop reads already approved and running.
+
+## Strategic deliberations
+
+The separate version-1 `home_activity_strategic_deliberations` domain appends an agent-authored advisory reconsideration linked to the exact strategic episode id and revision. `/activity consider <activity-id> <brief-revision> <decision-question>` loads the Activity intent, selected episode, historical source observations, evidence identifiers, findings, alternatives, uncertainties, and recommendation into the active Session with the existing Sensemaking Skills. A request-scoped guard permits only the deliberation recorder; it blocks repository reads, coordinator calls, providers, and delegation. The deliberation records its producing Session, Skill digests, question, disposition, outcome, rationale, treatment of prior evidence and uncertainty, new uncertainty, and bounded next responsibility or no-selection. It does not modify the brief, Activity, source repositories, permissions, or owner-decision records. `/activity decisions` lists revisions, `/activity decision <activity-id> <decision-revision>` reopens one, and `/activity open` shows the latest decision summary. Reconsideration uses saved historical evidence only; it does not establish current source state, independent verification, owner approval, user acceptance, or execution authority. `/activity consider cancel` removes a queued instruction that no turn has claimed and releases its guard; after a turn claims the instruction, cancellation prevents recording but does not stop that turn, and a saved deliberation is terminal. Unloading the command, disposing the Agent, or restarting with a recognized orphaned queued instruction also removes the unclaimed message. A claimed guard is released only after its claimed turn ends and any started save settles; an unclaimed request is released when its queued message is removed. An expired instruction that no turn claimed is removed when the guard next evaluates a tool call or when a later `/activity consider` starts. If a storage write is uncertain, inspect the saved decisions before retrying.
 
 ## Cordis API
 
@@ -323,6 +327,32 @@ list(activityId: ActivityId): readonly ActivityReview[]
 ```
 
 Source: [`packages/home/activity/src/reviews.ts`](../../packages/home/activity/src/reviews.ts)
+
+<a id="ctxhomeactivitystrategicdeliberations--homeactivitystrategicdeliberationservice"></a>
+
+### `ctx.homeActivityStrategicDeliberations` — `HomeActivityStrategicDeliberationService`
+
+Stores append-only agent deliberations separately from Activity briefs and owner decisions.
+
+```ts cordis-catalog
+/** Append an advisory conclusion against one exact saved brief revision.
+ * @param request - Activity, source brief, Session, Skill, and conclusion data.
+ * @returns The saved deliberation, or the prior record for a repeated request id.
+ * @throws {ActivityStrategicDeliberationError} when identities, cited evidence, or conclusion data are invalid.
+ * @throws {ActivityStrategicDeliberationStorageError} when storage cannot confirm a read or write.
+ */
+record(request: RecordActivityStrategicDeliberationRequest): Promise<ActivityStrategicDeliberation>
+
+/** List advisory reconsiderations without inspecting repositories or starting execution.
+ * @param activityId - Stable Activity identity.
+ * @returns Detached records in append order.
+ * @throws {ActivityStrategicDeliberationError} when the Activity does not exist.
+ * @throws {ActivityStrategicDeliberationStorageError} when history cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityStrategicDeliberation[]
+```
+
+Source: [`packages/home/activity/src/strategic-deliberations.ts`](../../packages/home/activity/src/strategic-deliberations.ts)
 
 <a id="ctxhomeactivitystrategicepisodes--homeactivitystrategicepisodeservice"></a>
 

@@ -1938,6 +1938,27 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'homeActivityStrategicDeliberations',
+    summary: 'Stores append-only agent deliberations separately from Activity briefs and owner decisions.',
+    description: 'Stores append-only agent deliberations separately from Activity briefs and owner decisions.',
+    methods: [
+      {
+        signature: 'record(request: RecordActivityStrategicDeliberationRequest): Promise<ActivityStrategicDeliberation>',
+        description: 'Append an advisory conclusion against one exact saved brief revision.',
+        parameters: [{ name: 'request', description: 'Activity, source brief, Session, Skill, and conclusion data.' }],
+        returns: 'The saved deliberation, or the prior record for a repeated request id.',
+        throws: ['{ActivityStrategicDeliberationError} when identities, cited evidence, or conclusion data are invalid.', '{ActivityStrategicDeliberationStorageError} when storage cannot confirm a read or write.'],
+      },
+      {
+        signature: 'list(activityId: ActivityId): readonly ActivityStrategicDeliberation[]',
+        description: 'List advisory reconsiderations without inspecting repositories or starting execution.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Detached records in append order.',
+        throws: ['{ActivityStrategicDeliberationError} when the Activity does not exist.', '{ActivityStrategicDeliberationStorageError} when history cannot be read.'],
+      },
+    ],
+  },
+  {
     key: 'homeActivityStrategicEpisodes',
     summary: 'Stores append-only agent-authored strategic assessments independently from Activity intent and user notes.',
     description: 'Stores append-only agent-authored strategic assessments independently from Activity intent and user notes.',
@@ -5840,6 +5861,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ActivityStrategicAlternative {\n    readonly name: string;\n    readonly consequence: string;\n    readonly evidenceIds: readonly string[];\n    readonly uncertaintyIds: readonly string[];\n}',
   },
   {
+    name: 'ActivityStrategicDeliberation',
+    declaration: 'export interface ActivityStrategicDeliberation {\n    readonly id: ActivityStrategicDeliberationId;\n    readonly activityId: ActivityId;\n    readonly revision: number;\n    readonly supersedes?: ActivityStrategicDeliberationId | undefined;\n    readonly originSessionId: string;\n    readonly producer: \'dsh-active-agent\';\n    readonly requestId: string;\n    readonly sourceEpisodeId: ActivityStrategicEpisodeId;\n    readonly sourceEpisodeRevision: number;\n    readonly sourceEpisodeRecordedAt: string;\n    readonly sourceEpisodeSessionId: string;\n    readonly decisionQuestion: string;\n    readonly status: \'complete\';\n    readonly outcome: \'next-responsibility\' | \'no-selection\' | \'owner-decision\' | \'thesis-review\' | \'insufficient-evidence\';\n    readonly disposition: \'retain\' | \'adapt\' | \'reject\' | \'defer\' | \'escalate\' | \'no-selection\';\n    readonly proposedResponsibility: string | null;\n    readonly scope: \'within-activity\' | \'owner-decision\' | \'outside-activity\';\n    readonly rationale: string;\n    readonly evidenceUses: readonly ActivityStrategicEvidenceUse[];\n    readonly uncertaintyReviews: readonly ActivityStrategicUncertaintyReview[];\n    readonly newUncertainties: readonly ActivityStrategicNewUncertainty[];\n    readonly skillDigests: readonly {\n        readonly name: string;\n        readonly provider: string;\n        readonly digest: string;\n    }[];\n    readonly requestedAt: string;\n    readonly recordedAt: string;\n}',
+  },
+  {
+    name: 'ActivityStrategicDeliberationId',
+    declaration: 'export type ActivityStrategicDeliberationId = Branded<\'ActivityStrategicDeliberationId\'>;',
+  },
+  {
     name: 'ActivityStrategicEpisode',
     declaration: 'export interface ActivityStrategicEpisode {\n    readonly id: ActivityStrategicEpisodeId;\n    readonly activityId: ActivityId;\n    readonly revision: number;\n    readonly supersedes?: ActivityStrategicEpisodeId | undefined;\n    readonly originSessionId: string;\n    readonly producer: \'dsh-active-agent\';\n    readonly requestId: string;\n    readonly objective: string;\n    readonly status: \'complete\' | \'incomplete\';\n    readonly repositories: readonly ActivityStrategicRepositoryObservation[];\n    readonly skillDigests: readonly {\n        readonly name: string;\n        readonly provider: string;\n        readonly digest: string;\n    }[];\n    readonly evidence: readonly ActivityStrategicEvidenceReference[];\n    readonly findings: readonly ActivityStrategicFinding[];\n    readonly alternatives: readonly ActivityStrategicAlternative[];\n    readonly uncertainties: readonly ActivityStrategicUncertainty[];\n    readonly recommendation: ActivityStrategicRecommendation;\n    readonly requestedAt: string;\n    readonly recordedAt: string;\n}',
   },
@@ -5852,12 +5881,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ActivityStrategicEvidenceReference {\n    readonly id: string;\n    readonly workspaceId: string;\n    readonly revision: string;\n    readonly path: string;\n    readonly lineStart?: number | undefined;\n    readonly lineEnd?: number | undefined;\n    readonly note: string;\n}',
   },
   {
+    name: 'ActivityStrategicEvidenceUse',
+    declaration: 'export interface ActivityStrategicEvidenceUse {\n    readonly evidenceId: string;\n    readonly treatment: \'supports\' | \'challenges\' | \'limits\' | \'not-relied-on\';\n    readonly rationale: string;\n}',
+  },
+  {
     name: 'ActivityStrategicFinding',
     declaration: 'export interface ActivityStrategicFinding {\n    readonly kind: ActivityStrategicFindingKind;\n    readonly category: \'capability\' | \'constraint\' | \'ownership\' | \'opportunity\';\n    readonly statement: string;\n    readonly evidenceIds: readonly string[];\n}',
   },
   {
     name: 'ActivityStrategicFindingKind',
     declaration: 'export type ActivityStrategicFindingKind = \'source-observation\' | \'source-claim\' | \'interpretation\' | \'hypothesis\';',
+  },
+  {
+    name: 'ActivityStrategicNewUncertainty',
+    declaration: 'export interface ActivityStrategicNewUncertainty {\n    readonly id: string;\n    readonly statement: string;\n    readonly evidenceIds: readonly string[];\n}',
   },
   {
     name: 'ActivityStrategicRecommendation',
@@ -5870,6 +5907,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ActivityStrategicUncertainty',
     declaration: 'export interface ActivityStrategicUncertainty {\n    readonly id: string;\n    readonly statement: string;\n    readonly evidenceIds: readonly string[];\n}',
+  },
+  {
+    name: 'ActivityStrategicUncertaintyReview',
+    declaration: 'export interface ActivityStrategicUncertaintyReview {\n    readonly uncertaintyId: string;\n    readonly treatment: \'remains-open\' | \'reframed\' | \'not-decision-relevant\';\n    readonly rationale: string;\n}',
   },
   {
     name: 'AdapterRegistrationHandle',
@@ -8278,6 +8319,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RecordActivityReviewRequest',
     declaration: 'export interface RecordActivityReviewRequest {\n    readonly activityId: ActivityId;\n    readonly delegationId: ActivityDelegationId;\n    readonly disposition: ActivityReviewDisposition;\n    readonly evidence?: Omit<ActivityReviewEvidence, \'id\' | \'recordedAt\' | \'origin\'> | undefined;\n}',
+  },
+  {
+    name: 'RecordActivityStrategicDeliberationRequest',
+    declaration: 'export type RecordActivityStrategicDeliberationRequest = Pick<ActivityStrategicDeliberation, \'activityId\' | \'originSessionId\' | \'requestId\' | \'sourceEpisodeId\' | \'sourceEpisodeRevision\' | \'decisionQuestion\' | \'outcome\' | \'disposition\' | \'proposedResponsibility\' | \'scope\' | \'rationale\' | \'evidenceUses\' | \'uncertaintyReviews\' | \'newUncertainties\' | \'skillDigests\' | \'requestedAt\'>;',
   },
   {
     name: 'RecordActivityStrategicEpisodeRequest',

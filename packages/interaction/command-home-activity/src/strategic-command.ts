@@ -213,6 +213,10 @@ export async function executeActivityStrategicAssessment(
       text: 'The read-only multi-repository coordinator is unavailable to this Agent. Check whether the active profile or Agent tool restrictions include it. No repository analysis or assessment guard was started.',
     }
   }
+  const skillRegistry = ctx.get('skills')
+  if (skillRegistry === undefined) {
+    return { kind: 'error', text: 'The DSH Skill registry is unavailable to this application profile. No strategic assessment was started.' }
+  }
   const sessionId = String(invocation.agent.session.id)
   const pending = getActivityStrategicPendingRequests(ctx)
   prunePending(pending)
@@ -231,12 +235,12 @@ export async function executeActivityStrategicAssessment(
   preparing.set(sessionId, preparation)
   const cwd = invocation.agent.session.header.cwd
   const signal = AbortSignal.any([invocation.signal, preparation.controller.signal])
-  const skillOptions = { signal, ...(cwd === undefined ? {} : { cwd }) }
+  const skillOptions = { signal, scope: invocation.agent, ...(cwd === undefined ? {} : { cwd }) }
   let skills
   try {
     skills = await Promise.all([
-      invocation.agent.ctx.skills.get(SENSEMAKING_SKILLS[0], skillOptions),
-      invocation.agent.ctx.skills.get(SENSEMAKING_SKILLS[1], skillOptions),
+      skillRegistry.get(SENSEMAKING_SKILLS[0], skillOptions),
+      skillRegistry.get(SENSEMAKING_SKILLS[1], skillOptions),
     ])
     signal.throwIfAborted()
   } catch (error: unknown) {
@@ -460,6 +464,16 @@ export function renderActivityStrategicEpisodes(
 const pendingRequestsByContext = new WeakMap<Context, ActivityStrategicPendingRequests>()
 const preparingAssessmentsByContext = new WeakMap<Context, Map<string, PreparingAssessment>>()
 const preparationSettledByContext = new WeakMap<Context, () => void>()
+
+/** Report whether this Session already owns a pending brief assessment lifecycle.
+ * @param ctx - Context that registered the brief recorder.
+ * @param sessionId - Stable identity of the requesting DSH Session.
+ * @returns Whether assessment setup or recording is still active.
+ */
+export function hasPendingActivityStrategicAssessment(ctx: Context, sessionId: string): boolean {
+  return pendingRequestsByContext.get(ctx)?.has(sessionId) === true
+    || preparingAssessmentsByContext.get(ctx)?.has(sessionId) === true
+}
 
 function registerActivityStrategicPendingRequests(ctx: Context, pending: ActivityStrategicPendingRequests): void {
   pendingRequestsByContext.set(ctx, pending)

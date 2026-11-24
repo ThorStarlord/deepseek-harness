@@ -1,6 +1,5 @@
 // Keyless Web coverage for reopening a saved Activity Strategic Brief.
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,42 +19,44 @@ const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 const OBSERVED_AT_START = '2026-11-22T10:00:00.000Z'
 const OBSERVED_AT_END = '2026-11-22T10:00:10.000Z'
 
-async function hostRpc<T>(scaffold: WebScaffold, endpoint: string, args: Readonly<Record<string, unknown>>): Promise<T> {
-  const response = await scaffold.hostFetch(`/api/${endpoint}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      type: 'client-request', rpcId: `home-activity-strategic-brief-${randomUUID()}`,
-      method: endpoint, payload: { args },
-    }),
-  })
-  if (!response.ok) throw new Error(`${endpoint} failed over HTTP ${response.status}`)
-  const result = (await response.json() as {
-    result: { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
-  }).result
-  if (!result.ok) throw new Error(`${endpoint} failed: ${result.error.code}: ${result.error.message}`)
-  return result.value
-}
-
-async function executeCommand(
-  scaffold: WebScaffold,
-  agentId: string,
-  line: string,
-): Promise<{ readonly kind: string; readonly text?: string }> {
-  const value = await hostRpc<{ result: { kind: string; text?: string } }>(
-    scaffold, 'commands/execute', { agentId, line, submittedAttachments: [] },
-  )
-  return value.result
-}
-
-describe.skipIf(MODE === 'record')('web e2e: Home Activity Strategic Brief recovery', () => {
+describe.skipIf(MODE === 'record')('web e2e: Activity strategic evidence reentry', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
   let workspaceRoot: string | undefined
+  let replayRoot: string | undefined
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, paceMs: 5, compareReplaySession: false })
+    replayRoot = await mkdtemp(join(tmpdir(), 'dsh-home-activity-reentry-replay-'))
+    const replayOverride = join(replayRoot, 'replay.override.json')
+    const response = 'RECONSIDERATION_STREAM ' + Array.from({ length: 24 }, (_, index) => `part-${String(index + 1).padStart(2, '0')} `).join('')
+    await writeFile(replayOverride, JSON.stringify({
+      patches: [{
+        at: 1,
+        entry: {
+          kind: 'chunks',
+          chunks: [
+            { type: 'block-start', index: 0, blockType: 'text' },
+            ...Array.from({ length: 24 }, (_, index) => ({
+              type: 'text-delta', index: 0,
+              text: index === 0 ? 'RECONSIDERATION_STREAM ' : `part-${String(index + 1).padStart(2, '0')} `,
+            })),
+            { type: 'block-end', index: 0, block: { type: 'text', text: response } },
+            { type: 'usage', usage: { inputTokens: 1_024, outputTokens: 48 } },
+            { type: 'finish', reason: { kind: 'stop' } },
+          ],
+        },
+      }],
+    }), 'utf8')
+    scaffold = await launchWebScaffold({
+      replayFixture: FIXTURE,
+      replayChildFixtures: [FIXTURE],
+      replayOverride,
+      paceMs: 150,
+      compareReplaySession: false,
+    })
+    await writeTestSkill(scaffold.workspaceCwd, 'using-sensemaking', 'Use historical evidence with its stated uncertainty.')
+    await writeTestSkill(scaffold.workspaceCwd, 'strategic-repository-analysis', 'Do not read repositories unless separately requested.')
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
@@ -69,10 +70,11 @@ describe.skipIf(MODE === 'record')('web e2e: Home Activity Strategic Brief recov
       await scaffold?.close()
     } finally {
       if (workspaceRoot !== undefined) await rm(workspaceRoot, { recursive: true, force: true })
+      if (replayRoot !== undefined) await rm(replayRoot, { recursive: true, force: true })
     }
   })
 
-  it('renders a saved source-attributed brief and recovers it in another Session without starting work', async () => {
+  it('renders and recovers a source-linked reconsideration in another Session without starting work', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-home-activity-strategic-brief'))
     const input = page.locator('[data-composer-input]').first()
     const settled = scaffold.whenTurnSettled()
@@ -80,6 +82,19 @@ describe.skipIf(MODE === 'record')('web e2e: Home Activity Strategic Brief recov
     await input.press('Enter')
     const parentSessionId = await settled
     await page.getByText('LIGHTHOUSE', { exact: true }).waitFor({ timeout: 15_000 })
+    const activeAgent = scaffold.ctx.agents.get(parentSessionId)
+    expect(activeAgent).toBeDefined()
+    const sessionCwd = activeAgent!.session.header.cwd
+    expect(sessionCwd).toBe(join(scaffold.workspaceCwd, 'workspace'))
+    const skillRegistry = scaffold.ctx.get('skills')
+    expect(skillRegistry).toBeDefined()
+    const availableSkills = await skillRegistry!.list({ cwd: sessionCwd, scope: activeAgent! })
+    expect(availableSkills.map(skill => skill.name)).toEqual(expect.arrayContaining([
+      'using-sensemaking', 'strategic-repository-analysis',
+    ]))
+    for (const name of ['using-sensemaking', 'strategic-repository-analysis']) {
+      await expect(skillRegistry!.get(name, { cwd: sessionCwd, scope: activeAgent! })).resolves.toMatchObject({ name })
+    }
 
     workspaceRoot = await mkdtemp(join(tmpdir(), 'dsh-home-activity-strategic-brief-'))
     const harnessRoot = join(workspaceRoot, 'deepseek-harness')
@@ -164,12 +179,12 @@ describe.skipIf(MODE === 'record')('web e2e: Home Activity Strategic Brief recov
     expect(episode.revision).toBe(1)
 
     const startActivation = vi.spyOn(scaffold.ctx.subagents, 'startActivation')
-    const submit = async (line: string, marker: RegExp) => {
-      await input.fill(line)
-      await input.press('Enter')
+    const submit = async (line: string, marker: RegExp, target = input) => {
+      await target.fill(line)
+      await target.press('Enter')
       const output = page.getByText(marker).last()
       await output.waitFor({ timeout: 10_000 })
-      await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
+      await expect.poll(() => target.textContent(), { timeout: 10_000 }).toBe('')
       return await output.textContent() ?? ''
     }
 
@@ -186,6 +201,22 @@ describe.skipIf(MODE === 'record')('web e2e: Home Activity Strategic Brief recov
     expect(rendered).toContain('Opening an Activity shows stored episodes only. It does not re-read repositories or start another assessment.')
     expect(startActivation).not.toHaveBeenCalled()
 
+    const reconsiderationSettled = scaffold.whenTurnSettled()
+    const pendingResult = await submit(
+      `/activity consider ${activity.id} ${episode.revision} Which bounded responsibility remains warranted?`,
+      /Historical reconsideration queued for Activity/u,
+    )
+    expect(pendingResult).toContain('no execution or delegation was started')
+    await page.getByText('RECONSIDERATION_STREAM', { exact: false }).last().waitFor({ timeout: 10_000 })
+    const cancellationResult = await submit(
+      '/activity consider cancel',
+      /Canceled the pending reconsideration record/u,
+    )
+    expect(cancellationResult).toContain('An active model turn may still finish')
+    await reconsiderationSettled
+    expect(scaffold.ctx.homeActivityStrategicDeliberations.list(activity.id)).toEqual([])
+    expect(startActivation).not.toHaveBeenCalled()
+
     const snapshot = await captureStableAria(page, 'pre:has-text("Latest Activity Strategic Brief")', scaffold.workspaceCwd, {
       replacements: [
         [activity.id, '{{activity-id}}'],
@@ -199,18 +230,107 @@ describe.skipIf(MODE === 'record')('web e2e: Home Activity Strategic Brief recov
     await mkdir(new URL('./snapshots/home-activity-strategic-brief/', import.meta.url), { recursive: true })
     await compareOrRefreshGolden(EXPECTED, snapshot, MODE)
 
+    const deliberation = await scaffold.ctx.homeActivityStrategicDeliberations.record({
+      activityId: activity.id,
+      originSessionId: 'later-deterministic-session',
+      requestId: '00000000-0000-4000-8000-000000000032',
+      sourceEpisodeId: episode.id,
+      sourceEpisodeRevision: episode.revision,
+      decisionQuestion: 'Which bounded next responsibility is warranted by this historical evidence?',
+      outcome: 'next-responsibility',
+      disposition: 'adapt',
+      proposedResponsibility: 'Use the existing Sensemaking Skills for one explicit assessment and record any retrieval gap.',
+      scope: 'within-activity',
+      rationale: 'The prior recommendation remains useful as a hypothesis, but the source observations are historical and do not establish current provider behavior. Reuse the existing method for one bounded assessment, then reconsider only if its source-attributed result identifies a material retrieval gap.',
+      evidenceUses: [
+        { evidenceId: 'E1', treatment: 'supports', rationale: 'The saved Activity and brief provide a durable point of reentry.' },
+        { evidenceId: 'E2', treatment: 'limits', rationale: 'The Skill describes an analysis method but does not prove the current runtime can retrieve it successfully.' },
+      ],
+      uncertaintyReviews: [
+        { uncertaintyId: 'U1', treatment: 'remains-open', rationale: 'No live strategic assessment or current source read occurred in this deterministic recovery scenario.' },
+      ],
+      newUncertainties: [
+        { id: 'N1', statement: 'The currently installed DSH profile may expose a different Skill set than the historical brief recorded.', evidenceIds: ['E2'] },
+        { id: 'N2', statement: 'A later real assessment may identify decision-time retrieval friction that this saved record cannot establish.', evidenceIds: ['E1', 'E2'] },
+      ],
+      skillDigests: [
+        { name: 'using-sensemaking', provider: 'deterministic-web-fixture', digest: '3'.repeat(64) },
+        { name: 'strategic-repository-analysis', provider: 'deterministic-web-fixture', digest: '4'.repeat(64) },
+      ],
+      requestedAt: '2026-11-22T10:01:00.000Z',
+    })
+
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    const freshSession = await hostRpc<{ sessionId: string }>(
-      scaffold, 'session/create', { request: { workspaceId: harnessWorkspace.id } },
+    const [sessionResponse] = await Promise.all([
+      page.waitForResponse('**/api/session/create'),
+      page.getByRole('button', { name: 'New session', exact: true }).last().click(),
+    ])
+    const sessionPayload = await sessionResponse.json() as {
+      readonly result: { readonly ok: true; readonly value: { readonly sessionId: string } }
+    }
+    const freshSessionId = sessionPayload.result.value.sessionId
+    expect(freshSessionId).not.toBe(String(parentSessionId))
+    const freshInput = page.locator(`[data-conversation-session="${freshSessionId}"] [data-composer-input]`).first()
+    await freshInput.waitFor({ state: 'visible', timeout: 10_000 })
+    const freshTurnSettled = scaffold.whenTurnSettled()
+    await freshInput.fill(PROMPT)
+    await freshInput.press('Enter')
+    await freshTurnSettled
+    await page.getByText('LIGHTHOUSE', { exact: true }).last().waitFor({ timeout: 15_000 })
+    const renderedResult = await submit(
+      `/activity decision ${activity.id} ${deliberation.revision}`,
+      /Activity Strategic Deliberation 1/u,
+      freshInput,
     )
-    expect(freshSession.sessionId).not.toBe(parentSessionId)
-    const reopened = await executeCommand(scaffold, freshSession.sessionId, `/activity open ${activity.id}`)
-    expect(reopened.kind).toBe('success')
-    expect(reopened.text).toContain('Latest Activity Strategic Brief')
-    expect(reopened.text).toContain('Recommendation: INVESTIGATE')
-    expect(reopened.text).toContain(`Assessment 1: complete; recorded ${episode.recordedAt}`)
+    expect(renderedResult).toContain(`Source brief ${episode.id}, revision ${episode.revision}`)
+    const recoveredCommand = page.getByRole('button', { name: /Activity: Sensemaking workflow integration/u }).last()
+    await recoveredCommand.waitFor({ timeout: 15_000 })
+    await recoveredCommand.click()
+    const renderedDecision = page.locator('pre').filter({ hasText: 'Activity Strategic Deliberation 1' }).last()
+    await renderedDecision.waitFor({ state: 'visible', timeout: 10_000 })
+    const recoveredText = await renderedDecision.textContent() ?? ''
+    expect(recoveredText).toContain(`Source brief ${episode.id}, revision ${episode.revision}`)
+    expect(recoveredText).toContain('Historical evidence considered:')
+    expect(recoveredText).toContain('E2 (limits)')
+    expect(recoveredText).toContain('Prior uncertainties:')
+    expect(recoveredText).toContain('New uncertainties:')
+    expect(recoveredText).toContain('Current repositories, source files, and changed observations were not checked.')
+    await page.setViewportSize({ width: 390, height: 844 })
+    const navigationDrawer = page.locator('[data-sidebar-drawer]')
+    await expect.poll(() => navigationDrawer.count()).toBe(1)
+    if (await navigationDrawer.getAttribute('data-sidebar-collapsed') === null) {
+      await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).last().click()
+    }
+    await expect.poll(() => navigationDrawer.getAttribute('data-sidebar-collapsed')).toBe('true')
+    await navigationDrawer.evaluate(async (element) => {
+      await Promise.allSettled(element.getAnimations({ subtree: true }).map(animation => animation.finished))
+    })
+    await expect.poll(() => renderedDecision.isVisible()).toBe(true)
+    await expect.poll(() => renderedDecision.evaluate(element => element.clientWidth), { timeout: 10_000 }).toBeGreaterThan(250)
+    const decisionWidth = await renderedDecision.evaluate(element => ({ client: element.clientWidth, scroll: element.scrollWidth }))
+    expect(decisionWidth.scroll, JSON.stringify(decisionWidth)).toBeLessThanOrEqual(decisionWidth.client + 1)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+    const decisionBox = await renderedDecision.boundingBox()
+    expect(decisionBox?.x).toBeGreaterThanOrEqual(0)
+    expect((decisionBox?.x ?? 0) + (decisionBox?.width ?? 0)).toBeLessThanOrEqual(390)
+    const scrollCue = page.locator('[class*="scrollCue"]')
+    await expect.poll(() => scrollCue.isVisible()).toBe(true)
+    expect(await renderedDecision.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true)
+    expect(await renderedDecision.getAttribute('tabindex')).toBe('0')
+    expect(await renderedDecision.getAttribute('aria-label')).toBe('Scroll for more output')
+    await renderedDecision.evaluate((element) => { element.scrollTop = element.scrollHeight })
+    await expect.poll(() => scrollCue.isVisible()).toBe(false)
+    await renderedDecision.evaluate((element) => { element.scrollTop = 0 })
+    await expect.poll(() => scrollCue.isVisible()).toBe(true)
     expect(scaffold.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([episode])
+    expect(scaffold.ctx.homeActivityStrategicDeliberations.list(activity.id)).toEqual([deliberation])
     expect(startActivation).not.toHaveBeenCalled()
   }, 60_000)
 })
+
+async function writeTestSkill(cwd: string, name: string, body: string): Promise<void> {
+  const directory = join(cwd, 'workspace', '.agents', 'skills', name)
+  await mkdir(directory, { recursive: true })
+  await writeFile(join(directory, 'SKILL.md'), `---\nname: ${name}\ndescription: Deterministic Web test Skill.\n---\n\n${body}\n`, 'utf8')
+}

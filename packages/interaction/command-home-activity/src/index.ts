@@ -17,6 +17,10 @@ import {
 } from './strategic-command.ts'
 import { executeActivityDelegation, renderActivityDelegation } from './delegation-command.ts'
 import { executeActivityContinuation } from './continuation-command.ts'
+import {
+  createActivityStrategicDeliberationController,
+  renderActivityStrategicDeliberation,
+} from './strategic-reentry-command.ts'
 import { renderActivityNextActions } from './next-actions.ts'
 import { executeAssociationCommand, renderActivityAssociations } from './association-command.ts'
 import { executeActivityHandoffCommand, renderActivityHandoffs } from './handoff-command.ts'
@@ -30,6 +34,7 @@ export const inject = [
   'agents',
   'homeActivities',
   'homeActivityStrategicEpisodes',
+  'homeActivityStrategicDeliberations',
   'homeActivityDelegations',
   'subagents',
   'homeActivityAssociations',
@@ -41,7 +46,7 @@ export const inject = [
   'sessionPersistence',
 ]
 
-const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | brief <activity-id> <revision> | assess cancel | assess <activity-id> <workspace-id> <workspace-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | handoff add <activity-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>'
+const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | brief <activity-id> <revision> | consider cancel | consider <activity-id> <brief-revision> <decision-question> | decisions <activity-id> | decision <activity-id> <decision-revision> | assess cancel | assess <activity-id> <workspace-id> <workspace-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | handoff add <activity-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>'
 const MAX_INPUT_BYTES = 16_384
 
 type ActivityCommand =
@@ -49,6 +54,10 @@ type ActivityCommand =
   | { readonly kind: 'create'; readonly input: string }
   | { readonly kind: 'open'; readonly id: string }
   | { readonly kind: 'brief'; readonly id: string; readonly revision: number }
+  | { readonly kind: 'consider-cancel' }
+  | { readonly kind: 'consider'; readonly id: string; readonly revision: number; readonly question: string }
+  | { readonly kind: 'decisions'; readonly id: string }
+  | { readonly kind: 'decision'; readonly id: string; readonly revision: number }
   | { readonly kind: 'cancel-assessment' }
   | { readonly kind: 'assess'; readonly id: string; readonly workspaces: readonly [string, string] }
   | { readonly kind: 'delegate'; readonly input: string }
@@ -71,6 +80,22 @@ function parseCommand(rawInput: string): ActivityCommand {
     const revision = Number(brief[2])
     if (Number.isSafeInteger(revision)) return { kind: 'brief', id: brief[1], revision }
   }
+  if (input === 'consider cancel') return { kind: 'consider-cancel' }
+  const consider = /^consider\s+(\S+)\s+([1-9][0-9]*)(?:\s+([\s\S]*))?$/u.exec(input)
+  if (consider?.[1] !== undefined && consider[2] !== undefined) {
+    const revision = Number(consider[2])
+    const question = consider[3]?.trim() ?? ''
+    if (Number.isSafeInteger(revision) && Buffer.byteLength(question, 'utf8') <= 2_000) {
+      return { kind: 'consider', id: consider[1], revision, question }
+    }
+  }
+  const decisions = /^decisions\s+(\S+)$/u.exec(input)
+  if (decisions?.[1] !== undefined) return { kind: 'decisions', id: decisions[1] }
+  const decision = /^decision\s+(\S+)\s+([1-9][0-9]*)$/u.exec(input)
+  if (decision?.[1] !== undefined && decision[2] !== undefined) {
+    const revision = Number(decision[2])
+    if (Number.isSafeInteger(revision)) return { kind: 'decision', id: decision[1], revision }
+  }
   if (input === 'assess cancel') return { kind: 'cancel-assessment' }
   const assess = /^assess\s+(\S+)\s+(\S+)\s+(\S+)$/u.exec(input)
   if (assess?.[1] !== undefined && assess[2] !== undefined && assess[3] !== undefined) {
@@ -85,18 +110,24 @@ function parseCommand(rawInput: string): ActivityCommand {
 
 /** Register `/activity` against the durable Activity service. */
 export function apply(ctx: Context): void {
+  const strategicDeliberation = createActivityStrategicDeliberationController(ctx)
+  ctx.effect(() => strategicDeliberation.register(), 'Activity Strategic Deliberation recorder')
   ctx.effect(() => ctx.commands.register({
     definitionId: CommandDefinitionId('@deepseek-ai/dsh-command-home-activity'),
     name: 'activity',
-    description: 'Create, list, reopen, associate, and explicitly assess saved Activities; record external handoffs, artifact pointers, coordination notes, and outcome reviews; explicitly delegate one DSH-native task or one-shot Codex or Claude Code task, or start a new provider request under the saved objective and a selected in-scope statement',
-    input: { hint: 'create <JSON> | list | open <activity-id> | brief <activity-id> <revision> | assess cancel | assess <activity-id> <workspace-id> <workspace-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | handoff add <activity-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>' },
+    description: 'Create, list, reopen, and associate saved Activities; request advisory strategic assessment or explicitly reconsider a selected historical brief; record handoffs, artifacts, coordination notes, and reviews; explicitly delegate DSH-native task or one-shot Codex or Claude Code tasks under saved scope',
+    input: { hint: 'create <JSON> | list | open <activity-id> | brief <activity-id> <revision> | consider cancel | consider <activity-id> <brief-revision> <decision-question> | decisions <activity-id> | decision <activity-id> <decision-revision> | assess cancel | assess <activity-id> <workspace-id> <workspace-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | handoff add <activity-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>' },
     recordInput: false,
-    handler: invocation => execute(ctx, invocation),
+    handler: invocation => execute(ctx, invocation, strategicDeliberation),
   }))
   ctx.effect(() => registerActivityStrategicBriefTool(ctx), 'Activity Strategic Brief recorder')
 }
 
-async function execute(ctx: Context, invocation: CommandInvocation): Promise<CommandResult> {
+async function execute(
+  ctx: Context,
+  invocation: CommandInvocation,
+  strategicDeliberation: ReturnType<typeof createActivityStrategicDeliberationController>,
+): Promise<CommandResult> {
   const handoffResult = await executeActivityHandoffCommand(ctx, invocation)
   if (handoffResult !== undefined) return handoffResult
   const annotationResult = await executeActivityAnnotationCommand(ctx, invocation)
@@ -107,10 +138,20 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
   if (reviewResult !== undefined) return reviewResult
   const command = parseCommand(invocation.rawInput)
   if (command.kind === 'invalid') return { kind: 'error', text: command.message }
+  if (command.kind === 'consider-cancel') return strategicDeliberation.cancel(invocation)
+  if (command.kind === 'consider') {
+    const parsedId = z.uuid().safeParse(command.id)
+    if (!parsedId.success) return { kind: 'error', text: `Activity id must be a UUID. ${USAGE}` }
+    if (command.question === '') return { kind: 'error', text: `A decision question is required. ${USAGE}` }
+    return strategicDeliberation.start(invocation, ActivityId(parsedId.data), command.revision, command.question)
+  }
   if (command.kind === 'cancel-assessment') return cancelActivityStrategicAssessment(ctx, invocation)
   if (command.kind === 'delegate') return executeActivityDelegation(ctx, invocation, command.input)
   if (command.kind === 'continue') return executeActivityContinuation(ctx, invocation, command.input)
   if (command.kind === 'assess') {
+    if (strategicDeliberation.isActive(String(invocation.agent.session.id))) {
+      return { kind: 'error', text: 'This Session already has an unfinished Activity Strategic Deliberation.' }
+    }
     const parsedId = z.uuid().safeParse(command.id)
     if (!parsedId.success) return { kind: 'error', text: `Activity id must be a UUID. ${USAGE}` }
     const workspaceIds = command.workspaces.map(id => z.uuid().safeParse(id))
@@ -168,6 +209,26 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
     const activity = ctx.homeActivities.get(ActivityId(parsedId.data))
     if (activity === undefined) return { kind: 'error', text: `No saved Activity has id ${command.id}.` }
     const strategicEpisodes = ctx.homeActivityStrategicEpisodes.list(activity.id)
+    const deliberations = ctx.homeActivityStrategicDeliberations.list(activity.id)
+    if (command.kind === 'decisions') {
+      return {
+        kind: 'success',
+        text: deliberations.length === 0
+          ? `No saved strategic deliberations for Activity ${activity.id}. Use /activity consider ${activity.id} <brief-revision> <decision-question> to reconsider one historical brief.`
+          : [
+            `Strategic Deliberations for Activity ${activity.id} (advisory only):`,
+            ...deliberations.map(item => `Decision ${item.revision}: ${item.outcome}/${item.disposition}; source brief ${item.sourceEpisodeRevision} (${item.sourceEpisodeId}); ${item.proposedResponsibility ?? 'no responsibility selected'}; recorded ${item.recordedAt}.`),
+            `Use /activity decision ${activity.id} <decision-revision> to inspect a saved deliberation.`,
+          ].join('\n'),
+      }
+    }
+    if (command.kind === 'decision') {
+      const deliberation = deliberations.find(item => item.revision === command.revision)
+      if (deliberation === undefined) return { kind: 'error', text: `Activity ${activity.id} has no saved strategic deliberation revision ${command.revision}.` }
+      const source = strategicEpisodes.find(episode => episode.id === deliberation.sourceEpisodeId
+        && episode.revision === deliberation.sourceEpisodeRevision)
+      return { kind: 'success', text: [`Activity: ${activity.name}`, `ID: ${activity.id}`, ...renderActivityStrategicDeliberation(deliberation, source)].join('\n') }
+    }
     if (command.kind === 'brief') {
       if (!strategicEpisodes.some(episode => episode.revision === command.revision)) {
         return { kind: 'error', text: `Activity ${activity.id} has no saved strategic brief revision ${command.revision}.` }
@@ -197,6 +258,8 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
         '',
         ...renderActivityStrategicEpisodes(strategicEpisodes, activity.id),
         '',
+        ...renderDeliberationHistory(deliberations, activity.id),
+        '',
         'Delegations:',
         ...(delegations.length === 0
           ? ['No delegation requests.']
@@ -216,6 +279,22 @@ async function execute(ctx: Context, invocation: CommandInvocation): Promise<Com
     }
   } catch (error: unknown) {
     ctx.logger.warn('command-home-activity: read failed: %o', error)
-    return { kind: 'error', text: 'Activity or context links could not be read; no current link state was confirmed.' }
+    return { kind: 'error', text: 'Activity or saved strategic and context history could not be read; no current link state was confirmed.' }
   }
+}
+
+function renderDeliberationHistory(
+  deliberations: readonly import('@deepseek-ai/dsh-home-activity/strategic-deliberations').ActivityStrategicDeliberation[],
+  activityId: string,
+): string[] {
+  if (deliberations.length === 0) return [
+    'Strategic Deliberations:',
+    'No saved reconsiderations. Use /activity consider <activity-id> <brief-revision> <decision-question> to revisit one historical brief.',
+  ]
+  const latest = deliberations.reduce((_previous, current) => current)
+  return [
+    'Strategic Deliberations (agent-authored advisory; not owner decisions, verification, or acceptance):',
+    `Latest decision ${latest.revision}: ${latest.outcome}/${latest.disposition}; based on brief ${latest.sourceEpisodeRevision}; ${latest.proposedResponsibility ?? 'no responsibility selected'}.`,
+    `${deliberations.length} deliberation revision${deliberations.length === 1 ? '' : 's'} saved. Use /activity decisions ${activityId} to list or /activity decision ${activityId} <revision> to inspect one.`,
+  ]
 }

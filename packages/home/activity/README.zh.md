@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-保存命名 Activity、目标和描述性范围，使其可跨 Session 使用。Web 与 SDK 的 `/activity` 命令可在不同 Session 中重新打开 Activity，并记录所选 Workspace、Session、备注、委派、报告、交接和审核。显式运行 `/activity assess` 可保存建议性战略简报，以供后续 Session 查看。创建或打开 Activity 不会开始工作、激活 Goal 或授予权限；外部交接不会变成 DSH 原生执行记录。
+保存命名 Activity、目标和描述性范围，使其可跨 Session 使用。Web 与 SDK 的 `/activity` 命令可在不同 Session 中重新打开 Activity，并记录所选 Workspace、Session、备注、委派、报告、交接和审核。显式运行 `/activity assess` 可保存建议性战略简报，后续 Session 可通过 `/activity consider` 审慎重评其历史证据。创建或打开 Activity 不会开始工作、激活 Goal 或授予权限；外部交接不会变成 DSH 原生执行记录。
 
 
 ## 目录
@@ -48,6 +48,7 @@ Web 和 SDK 配置会将此服务、关联与备注服务、JSON StorageDomain �
 - name: '@deepseek-ai/dsh-home-activity/associations'
 - name: '@deepseek-ai/dsh-home-activity/annotations'
 - name: '@deepseek-ai/dsh-home-activity/strategic-episodes'
+- name: '@deepseek-ai/dsh-home-activity/strategic-deliberations'
 - name: '@deepseek-ai/dsh-home-activity/handoffs'
 ```
 
@@ -68,6 +69,8 @@ Activity 记录使用版本 1 的 home_activities StorageDomain，并保持独�
 用户更正保存在独立的版本 1 `home_activity_annotations` 域中。每条不可变的 `user-command` 修订只会替代同一 Activity 的上一条备注，不会修改 Activity 或委派记录；每个 Activity 最多保留 256 条修订。备注文本不接受控制、格式、行分隔或段落分隔字符，以便显示的历史保持单行。
 
 战略简报保存在独立、只追加的版本 1 `home_activity_strategic_episodes` 域中。记录保留 Activity 目标、来源 DSH Session、明确选择的 Workspace id、agent 撰写的发现与替代方案、仓库相对来源引用、协调器报告的 Git 修订和观察时间、已跟踪及未忽略工作文件是否包含暂存、未暂存或未跟踪变更、已加载 Sensemaking Skill 内容摘要、不确定性以及建议或明确的不选择。记录器会将仓库身份和来源元数据绑定到来源 Session 中匹配的成功协调器工具结果；但不会独立验证仓库内容或发现。若选定的 Workspace 不可用、存在未提交来源变更、观察期间发生变化或来源稳定性未知，简报必须标为不完整。同一请求 id 的重复记录调用会返回已有记录；后续评估会追加新的后继记录并保留旧来源历史。打开 Activity 显示最新简报；`/activity brief <activity-id> <revision>` 可打开更早的版本，且不会检查当前仓库或重复执行评估。
+
+战略重议保存在独立、只追加的版本 1 `home_activity_strategic_deliberations` 域中。每条 agent 撰写的记录都关联到确切的简报 id 和修订版本、后续 Session、问题、Skill 摘要、既有证据的处理、不确定性复核，以及有范围限制的责任建议或不选择。下一项责任决定必须引用或明确拒绝至少一项历史证据。记录器会针对所选的已保存简报验证每个证据和不确定性 id。后续决策会追加并保留旧记录；不会改写简报、确认来源当前状态、记录所有者批准或授权执行。
 
 Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associations` 域中。显示时会通过各自的注册表解析引用；过期引用会明确显示为不可用，直到用户解除关联。关联不会修改 Workspace 记录、Session 日志或 Activity 记录。
 
@@ -90,6 +93,9 @@ Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associ
 | [`src/strategic-episode-types.ts`](src/strategic-episode-types.ts) | 战略记录与证据引用类型 |
 | [`src/strategic-episode-spec.ts`](src/strategic-episode-spec.ts) | 带版本的战略记录 schema 与域 |
 | [`src/strategic-episodes.ts`](src/strategic-episodes.ts) | 追加式 Activity Strategic Brief 持久化服务 |
+| [`src/strategic-deliberation-types.ts`](src/strategic-deliberation-types.ts) | 战略重议与历史证据处理类型 |
+| [`src/strategic-deliberation-spec.ts`](src/strategic-deliberation-spec.ts) | 版本化战略重议 schema 与域 |
+| [`src/strategic-deliberations.ts`](src/strategic-deliberations.ts) | 追加式重议持久化服务 |
 | [`src/handoff-types.ts`](src/handoff-types.ts) | 外部交接记录类型 |
 | [`src/handoff-spec.ts`](src/handoff-spec.ts) | 带版本的外部交接 schema |
 | [`src/handoffs.ts`](src/handoffs.ts) | 独立外部交接 StorageDomain 服务 |
@@ -115,12 +121,14 @@ Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associ
 
 #### KV 缓存影响
 
-Activity 持久化本身不会增加模型输入；显式命令可按 `command-home-activity` 文档所述将所选记录加入当前 Session。
+Activity 持久化本身不会增加模型输入。显式 `/activity consider` 会将所选 Activity 意图、确切的历史简报和已加载的 Sensemaking Skill 加入当前 Session 日志；持久化的只有产生的结构化建议性决策。
 
 ## 已知限制与后续工作
 <a id="known-limitations-and-deferred-work"></a>
 
 Activity 范围仍是描述性内容；委派不会将其作为授权规则执行。
+
+- 战略重议仅使用已保存的历史简报。请求级守卫会阻止仓库读取和执行工具；它不会检查来源是否新鲜，建议也不代表当前状态、所有者批准、验证、接受或执行授权。持久化与渲染测试不能证明真实战略效果。
 
 - 边界是描述性陈述，不是沙箱根目录或权限授予。
 - 委派记录标识请求方 Session 和获准入的执行；只有 `spawn` 会创建 DSH 子级 Session。委派不会创建 Activity 与 Session 的关联或可复用知识。

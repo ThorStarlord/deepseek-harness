@@ -421,6 +421,8 @@
       "@deepseek-ai/dsh-home-activity/handoffs": ["./packages/home/activity/src/handoffs.ts"],
       "@deepseek-ai/dsh-home-activity/reviews": ["./packages/home/activity/src/reviews.ts"],
       "@deepseek-ai/dsh-home-activity/annotations": ["./packages/home/activity/src/annotations.ts"],
+      "@deepseek-ai/dsh-home-activity/strategic-episodes": ["./packages/home/activity/src/strategic-episodes.ts"],
+      "@deepseek-ai/dsh-home-activity/strategic-deliberations": ["./packages/home/activity/src/strategic-deliberations.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],
