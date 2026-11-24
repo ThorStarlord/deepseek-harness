@@ -6,6 +6,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type { ToolDefinition, ToolGuard } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-skill'
@@ -25,6 +26,7 @@ const REQUEST_TTL_MS = 45 * 60 * 1000
 const MAX_REENTRY_CONTEXT_BYTES = 192 * 1024
 const SENSEMAKING_SKILLS = ['using-sensemaking', 'strategic-repository-analysis'] as const
 const REENTRY_MESSAGE_PREFIX = 'The user explicitly asked for an advisory reconsideration. Request ID: '
+const REENTRY_REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.$/iu
 
 interface PendingDeliberation {
   readonly requestId: string
@@ -85,6 +87,11 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
     if (request.cancelled) return 'This Activity Strategic Deliberation was canceled or could not be confirmed; inspect saved decisions after the turn ends.'
     if (request.expiresAt <= Date.now() && !request.saveStarted) {
       request.cancelled = true
+      if (request.claimedTurn === undefined) {
+        request.removeMessage()
+        pending.delete(sessionId)
+        disposeDrainedRegistration()
+      }
       return 'This Activity Strategic Deliberation request expired. Inspect saved decisions before starting a new request.'
     }
     return execution.name === RECORD_TOOL && !request.saveStarted ? undefined
@@ -117,8 +124,7 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
       const removeStale = (agent: Agent): void => {
         if (pending.has(String(agent.session.id))) return
         for (const message of [...agent.inbox.nextStep, ...agent.inbox.nextTurn]) {
-          if (message.content.some(block => block.type === 'text' && block.text.startsWith(REENTRY_MESSAGE_PREFIX)))
-            agent.inbox.remove(message.id)
+          if (isReentryMessage(message)) agent.inbox.remove(message.id)
         }
       }
       const disposeClaimed = ctx.on('agent/inbox/claimed', ({ agent, message, turn }) => {
@@ -137,7 +143,7 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
       const disposeAgent = ctx.on('agent/disposed', ({ agent }) => {
         const sessionId = String(agent.session.id)
         const request = pending.get(sessionId)
-        if (request === undefined) return
+        if (request === undefined || request.agentId !== String(agent.id)) return
         request.cancelled = true
         request.turnEnded = true
         if (request.saveStarted) return
@@ -448,6 +454,12 @@ function prune(pending: Map<string, PendingDeliberation>, onSettled: () => void)
     pending.delete(sessionId)
   }
   onSettled()
+}
+
+function isReentryMessage(message: UserMessage): boolean {
+  return message.content.some(block => block.type === 'text'
+    && block.text.startsWith(REENTRY_MESSAGE_PREFIX)
+    && REENTRY_REQUEST_ID.test(block.text.slice(REENTRY_MESSAGE_PREFIX.length)))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

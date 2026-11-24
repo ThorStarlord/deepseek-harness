@@ -661,6 +661,8 @@ it('releases a reconsideration when its inbox message is discarded or its Agent 
   expect(await run(test, ` consider ${activity.id} ${source.revision} Is this still warranted?`)).toMatchObject({ kind: 'success' })
   const disposed = test.steeredMessages.at(-1)
   if (disposed === undefined) throw new Error('The follow-up reconsideration did not queue a message')
+  test.ctx.emit('agent/disposed', { agent: { ...test.agent, id: SessionId('other-agent') } })
+  expect(guardDenial(test, 'shell', 'other-agent-dispose-guard')).toContain('Only the Activity Strategic Deliberation recorder')
   test.ctx.emit('agent/disposed', { agent: test.agent })
   expect(guardDenial(test, 'shell', 'disposed-agent-release')).toBeUndefined()
 })
@@ -691,10 +693,15 @@ it('removes an orphaned queued reconsideration when the Agent is created or the 
     source: { kind: 'user' },
   })
   const ordinary = createUserMessage({ content: [{ type: 'text', text: 'An ordinary queued message.' }], source: { kind: 'user' } })
+  const lookalike = createUserMessage({
+    content: [{ type: 'text', text: 'The user explicitly asked for an advisory reconsideration. Request ID: not-a-request-id.' }],
+    source: { kind: 'user' },
+  })
   test.agent.inbox.append('next-step', message)
   test.agent.inbox.append('next-step', ordinary)
+  test.agent.inbox.append('next-step', lookalike)
   test.ctx.emit('agent/created', { agent: test.agent, source: 'startup' })
-  expect(test.agent.inbox.nextStep).toEqual([ordinary])
+  expect(test.agent.inbox.nextStep).toEqual([ordinary, lookalike])
 
   expect(await run(test, ` consider ${activity.id} ${source.revision} Is this still warranted?`)).toMatchObject({ kind: 'success' })
   const activeMarker = createUserMessage({
@@ -876,7 +883,7 @@ it('rejects the thirty-third concurrently pending reconsideration', async () => 
   for (const agent of agents.slice(0, 32)) agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 })
 
-it('expires an idle deliberation at the request guard without pruning another Session', async () => {
+it('removes an unclaimed expired request at the request guard without another Session', async () => {
   vi.useFakeTimers({ toFake: ['Date'] })
   try {
     const test = await harness()
@@ -890,11 +897,10 @@ it('expires an idle deliberation at the request guard without pruning another Se
     const start = Date.now()
     vi.setSystemTime(start + 45 * 60 * 1000 + 1)
     expect(guardDenial(test, 'shell', 'direct-expiry-guard')).toContain('request expired')
-    expect(guardDenial(test, 'record_activity_strategic_deliberation', 'expired-recorder-guard'))
-      .toContain('canceled or could not be confirmed')
-    claimSteered(test.ctx, test.agent, test.steeredMessages)
-    test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    expect(guardDenial(test, 'shell', 'direct-expiry-after-turn-end')).toBeUndefined()
+    expect(test.agent.inbox.nextStep).toEqual([])
+    expect(guardDenial(test, 'shell', 'direct-expiry-cleaned')).toBeUndefined()
+    expect(test.registeredTools.get('record_activity_strategic_deliberation')?.options.when?.({ agent: test.agent } as never)).toBe(false)
+    expect(test.ctx.homeActivityStrategicDeliberations.list(activity.id)).toEqual([])
   } finally {
     vi.useRealTimers()
   }
@@ -953,6 +959,8 @@ it('keeps an expired deliberation guarded until its Session ends, including duri
     const startedAt = Date.now()
 
     vi.setSystemTime(startedAt + 45 * 60 * 1000 + 1)
+    expect(guardDenial(test, 'shell', 'claimed-expiry-guard', test.agent)).toContain('request expired')
+    expect(test.agent.inbox.nextStep).toEqual([])
     expect(await run(test, line, test.secondaryAgent)).toMatchObject({ kind: 'success' })
     expect(recorderWhen?.({ agent: test.agent } as never)).toBe(false)
     expect(recorderWhen?.({ agent: test.secondaryAgent } as never)).toBe(true)

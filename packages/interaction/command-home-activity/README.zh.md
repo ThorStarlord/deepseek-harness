@@ -52,7 +52,7 @@ Web 和 SDK profile 会通过命令注册表、工具注册表、持久化 Activ
 | `/activity open <activity-id>` | 显示已保存的目标、描述性范围（范围内语句从 1 开始编号，供继续命令选择）、当前用户备注和最近修订、最新战略简报与重议、上下文引用、委派记录、已捕获的 profile 和 preset 选择，以及依据已保存生命周期事实和当前已注册提供方路由提供的只读后续操作。较早的简报修订仍会保存，可用 `/activity brief <activity-id> <revision>` 查看。路由注册不代表凭据就绪、用户同意、原生权限或提供方已准入。 |
 | `/activity brief <activity-id> <revision>` | 查看指定的已保存战略简报修订及其证据和不确定性引用。视图会显示后续保存的观察，不会重新读取仓库。 |
 | `/activity consider <activity-id> <brief-revision> <decision-question>` | 请活动 Agent 使用现有 Sensemaking Skills 重议一份确切的历史简报。DSH 会将选定的历史意图、来源元数据、证据和问题记录到接收 Session；仅限该请求的守卫只允许建议记录工具，并阻止仓库读取、提供方和委派。下一项责任决定必须引用或明确拒绝至少一项历史证据。结果会独立追加，可保留、调整、拒绝、延后、升级或不选择。它不会确认当前事实、所有者批准、接受、验证或执行授权。 |
-| `/activity consider cancel` | 取消未完成的重议设置或请求。对于待处理的模型轮次，取消会阻止记录器和执行工具，但不会停止生成；该轮次可能结束而不保存决定。不会开始仓库读取或执行。 |
+| `/activity consider cancel` | 取消未完成的重议设置或请求。在模型轮次认领排队指令之前，取消会移除该指令并释放守卫。若轮次已经认领，取消会阻止记录器和执行工具，但不会停止生成；该轮次可能结束而不保存决定。已保存的重议为终态，不可取消。不会开始仓库读取或执行。 |
 | `/activity decisions <activity-id>` | 列出已保存的建议性重议及其确切来源简报身份和决策修订。 |
 | `/activity decision <activity-id> <decision-revision>` | 重新打开一条重议记录，显示关联的历史证据引用和新鲜度限制；不会检查当前仓库。 |
 | `/activity assess <activity-id> <workspace-id> <workspace-id>` | 明确请求对恰好两个已注册 Workspace 进行建议性战略评估。如果当前 profile 未挂载只读协调器，或 Agent 的工具限制排除了它，DSH 会在加载 Skills 或启用请求守卫前报告该问题。否则，DSH 会把两个 Sensemaking Skills 加载到活动 Agent 的记录任务中。读取前，现有协调器会针对确切任务和所选 Workspace 另行请求一次性批准；获得批准后，它会为每个 Workspace 启动一个只读 DSH 子级 Session，且不提供实现或仓库修改工具。仅适用于该请求的工具会保存结构化简报，并将仓库 id、修订和观察时间绑定到来源 Session 中匹配的成功协调器工具结果元数据；内容、引用和发现仍由 Agent 撰写。 |
