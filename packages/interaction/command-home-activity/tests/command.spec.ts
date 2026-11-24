@@ -689,7 +689,10 @@ it('removes an orphaned queued reconsideration when the Agent is created or the 
   })
   const source = await saveSourceBrief(test, activity.id)
   const message = createUserMessage({
-    content: [{ type: 'text', text: 'The user explicitly asked for an advisory reconsideration. Request ID: 00000000-0000-4000-8000-000000000099.' }],
+    content: [{
+      type: 'text',
+      text: 'The user explicitly asked for an advisory reconsideration. Request ID: 00000000-0000-4000-8000-000000000099.\nDecision question: Is this still warranted?\nCurrent Activity identity: fixture.',
+    }],
     source: { kind: 'user' },
   })
   const ordinary = createUserMessage({ content: [{ type: 'text', text: 'An ordinary queued message.' }], source: { kind: 'user' } })
@@ -705,7 +708,10 @@ it('removes an orphaned queued reconsideration when the Agent is created or the 
 
   expect(await run(test, ` consider ${activity.id} ${source.revision} Is this still warranted?`)).toMatchObject({ kind: 'success' })
   const activeMarker = createUserMessage({
-    content: [{ type: 'text', text: 'The user explicitly asked for an advisory reconsideration. Request ID: 00000000-0000-4000-8000-000000000098.' }],
+    content: [{
+      type: 'text',
+      text: 'The user explicitly asked for an advisory reconsideration. Request ID: 00000000-0000-4000-8000-000000000098.\nDecision question: Still active?\nCurrent Activity identity: fixture.',
+    }],
     source: { kind: 'user' },
   })
   test.agent.inbox.append('next-step', activeMarker)

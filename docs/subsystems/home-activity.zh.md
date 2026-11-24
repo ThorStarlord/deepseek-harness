@@ -48,7 +48,7 @@ Home Activity 是由用户发起并持久保存的事务，具有稳定身份、
 
 ## 战略重议
 
-独立的版本 1 `home_activity_strategic_deliberations` 域会追加 agent 撰写的建议性重议记录，并关联到确切的战略 episode id 和修订版本。`/activity consider <activity-id> <brief-revision> <decision-question>` 会将 Activity 意图、所选 episode、历史来源观察、证据 id、发现、替代方案、不确定性和建议加载到当前 Session，并使用现有 Sensemaking Skills。请求级守卫只允许重议记录工具；它会阻止仓库读取、协调器调用、提供方和委派。重议记录会保存其来源 Session、Skill 摘要、问题、处置、结果、理由、既有证据和不确定性的处理，以及有界责任建议或不选择。它不会修改简报、Activity、来源仓库、权限或所有者决策记录。`/activity decisions` 列出修订，`/activity decision <activity-id> <decision-revision>` 重新打开其中一条，`/activity open` 显示最新决策摘要。重议只使用已保存的历史证据；它不会确认来源当前状态、独立验证、所有者批准、用户接受或执行授权。`/activity consider cancel` 会在模型轮次认领排队指令之前移除该指令并释放守卫；轮次认领后，取消会阻止记录但不停止该轮次；已保存的重议为终态，不可取消。卸载命令、释放 Agent 或重启后发现孤立排队指令时，也会移除未认领消息。只有在认领该指令的轮次结束且已开始的保存完成之后，守卫才会释放。未被任何轮次认领的过期指令会在守卫下次评估工具调用时，或在下一次 `/activity consider` 启动时移除。若存储写入状态不确定，应在重试前检查已保存决策。
+独立的版本 1 `home_activity_strategic_deliberations` 域会追加 agent 撰写的建议性重议记录，并关联到确切的战略 episode id 和修订版本。`/activity consider <activity-id> <brief-revision> <decision-question>` 会将 Activity 意图、所选 episode、历史来源观察、证据 id、发现、替代方案、不确定性和建议加载到当前 Session，并使用现有 Sensemaking Skills。请求级守卫只允许重议记录工具；它会阻止仓库读取、协调器调用、提供方和委派。重议记录会保存其来源 Session、Skill 摘要、问题、处置、结果、理由、既有证据和不确定性的处理，以及有界责任建议或不选择。它不会修改简报、Activity、来源仓库、权限或所有者决策记录。`/activity decisions` 列出修订，`/activity decision <activity-id> <decision-revision>` 重新打开其中一条，`/activity open` 显示最新决策摘要。重议只使用已保存的历史证据；它不会确认来源当前状态、独立验证、所有者批准、用户接受或执行授权。`/activity consider cancel` 会在模型轮次认领排队指令之前移除该指令并释放守卫；轮次认领后，取消会阻止记录但不停止该轮次；已保存的重议为终态，不可取消。卸载命令、释放 Agent 或重启后发现可识别的孤立排队指令时，也会移除未认领消息。认领后的守卫只有在认领该指令的轮次结束且已开始的保存完成之后才会释放；未认领请求在排队消息被移除时释放。未被任何轮次认领的过期指令会在守卫下次评估工具调用时，或在下一次 `/activity consider` 启动时移除。若存储写入状态不确定，应在重试前检查已保存决策。
 
 ## Cordis API
 

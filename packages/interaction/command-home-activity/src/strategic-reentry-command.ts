@@ -459,7 +459,8 @@ function prune(pending: Map<string, PendingDeliberation>, onSettled: () => void)
 function isReentryMessage(message: UserMessage): boolean {
   return message.content.some(block => block.type === 'text'
     && block.text.startsWith(REENTRY_MESSAGE_PREFIX)
-    && REENTRY_REQUEST_ID.test(block.text.slice(REENTRY_MESSAGE_PREFIX.length)))
+    // The queued instruction is multi-line; validate only its request-id line.
+    && REENTRY_REQUEST_ID.test(block.text.slice(REENTRY_MESSAGE_PREFIX.length).split('\n', 1).join('')))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
