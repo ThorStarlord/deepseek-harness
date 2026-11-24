@@ -1,5 +1,5 @@
 // Keyless Web coverage for reopening a saved Activity Strategic Brief.
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,9 +24,39 @@ describe.skipIf(MODE === 'record')('web e2e: Activity strategic evidence reentry
   let browser: Browser
   let page: Page
   let workspaceRoot: string | undefined
+  let replayRoot: string | undefined
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ replayFixture: FIXTURE, replayChildFixtures: [FIXTURE], paceMs: 5, compareReplaySession: false })
+    replayRoot = await mkdtemp(join(tmpdir(), 'dsh-home-activity-reentry-replay-'))
+    const replayOverride = join(replayRoot, 'replay.override.json')
+    const response = 'RECONSIDERATION_STREAM ' + Array.from({ length: 24 }, (_, index) => `part-${String(index + 1).padStart(2, '0')} `).join('')
+    await writeFile(replayOverride, JSON.stringify({
+      patches: [{
+        at: 1,
+        entry: {
+          kind: 'chunks',
+          chunks: [
+            { type: 'block-start', index: 0, blockType: 'text' },
+            ...Array.from({ length: 24 }, (_, index) => ({
+              type: 'text-delta', index: 0,
+              text: index === 0 ? 'RECONSIDERATION_STREAM ' : `part-${String(index + 1).padStart(2, '0')} `,
+            })),
+            { type: 'block-end', index: 0, block: { type: 'text', text: response } },
+            { type: 'usage', usage: { inputTokens: 1_024, outputTokens: 48 } },
+            { type: 'finish', reason: { kind: 'stop' } },
+          ],
+        },
+      }],
+    }), 'utf8')
+    scaffold = await launchWebScaffold({
+      replayFixture: FIXTURE,
+      replayChildFixtures: [FIXTURE],
+      replayOverride,
+      paceMs: 150,
+      compareReplaySession: false,
+    })
+    await writeTestSkill(scaffold.workspaceCwd, 'using-sensemaking', 'Use historical evidence with its stated uncertainty.')
+    await writeTestSkill(scaffold.workspaceCwd, 'strategic-repository-analysis', 'Do not read repositories unless separately requested.')
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
@@ -40,6 +70,7 @@ describe.skipIf(MODE === 'record')('web e2e: Activity strategic evidence reentry
       await scaffold?.close()
     } finally {
       if (workspaceRoot !== undefined) await rm(workspaceRoot, { recursive: true, force: true })
+      if (replayRoot !== undefined) await rm(replayRoot, { recursive: true, force: true })
     }
   })
 
@@ -51,6 +82,19 @@ describe.skipIf(MODE === 'record')('web e2e: Activity strategic evidence reentry
     await input.press('Enter')
     const parentSessionId = await settled
     await page.getByText('LIGHTHOUSE', { exact: true }).waitFor({ timeout: 15_000 })
+    const activeAgent = scaffold.ctx.agents.get(parentSessionId)
+    expect(activeAgent).toBeDefined()
+    const sessionCwd = activeAgent!.session.header.cwd
+    expect(sessionCwd).toBe(join(scaffold.workspaceCwd, 'workspace'))
+    const skillRegistry = scaffold.ctx.get('skills')
+    expect(skillRegistry).toBeDefined()
+    const availableSkills = await skillRegistry!.list({ cwd: sessionCwd, scope: activeAgent! })
+    expect(availableSkills.map(skill => skill.name)).toEqual(expect.arrayContaining([
+      'using-sensemaking', 'strategic-repository-analysis',
+    ]))
+    for (const name of ['using-sensemaking', 'strategic-repository-analysis']) {
+      await expect(skillRegistry!.get(name, { cwd: sessionCwd, scope: activeAgent! })).resolves.toMatchObject({ name })
+    }
 
     workspaceRoot = await mkdtemp(join(tmpdir(), 'dsh-home-activity-strategic-brief-'))
     const harnessRoot = join(workspaceRoot, 'deepseek-harness')
@@ -157,6 +201,22 @@ describe.skipIf(MODE === 'record')('web e2e: Activity strategic evidence reentry
     expect(rendered).toContain('Opening an Activity shows stored episodes only. It does not re-read repositories or start another assessment.')
     expect(startActivation).not.toHaveBeenCalled()
 
+    const reconsiderationSettled = scaffold.whenTurnSettled()
+    const pendingResult = await submit(
+      `/activity consider ${activity.id} ${episode.revision} Which bounded responsibility remains warranted?`,
+      /Historical reconsideration queued for Activity/u,
+    )
+    expect(pendingResult).toContain('no execution or delegation was started')
+    await page.getByText('RECONSIDERATION_STREAM', { exact: false }).last().waitFor({ timeout: 10_000 })
+    const cancellationResult = await submit(
+      '/activity consider cancel',
+      /Canceled the pending reconsideration record/u,
+    )
+    expect(cancellationResult).toContain('An active model turn may still finish')
+    await reconsiderationSettled
+    expect(scaffold.ctx.homeActivityStrategicDeliberations.list(activity.id)).toEqual([])
+    expect(startActivation).not.toHaveBeenCalled()
+
     const snapshot = await captureStableAria(page, 'pre:has-text("Latest Activity Strategic Brief")', scaffold.workspaceCwd, {
       replacements: [
         [activity.id, '{{activity-id}}'],
@@ -236,6 +296,24 @@ describe.skipIf(MODE === 'record')('web e2e: Activity strategic evidence reentry
     expect(recoveredText).toContain('Prior uncertainties:')
     expect(recoveredText).toContain('New uncertainties:')
     expect(recoveredText).toContain('Current repositories, source files, and changed observations were not checked.')
+    await page.setViewportSize({ width: 390, height: 844 })
+    const navigationDrawer = page.locator('[data-sidebar-drawer]')
+    await expect.poll(() => navigationDrawer.count()).toBe(1)
+    if (await navigationDrawer.getAttribute('data-sidebar-collapsed') === null) {
+      await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).last().click()
+    }
+    await expect.poll(() => navigationDrawer.getAttribute('data-sidebar-collapsed')).toBe('true')
+    await navigationDrawer.evaluate(async (element) => {
+      await Promise.allSettled(element.getAnimations({ subtree: true }).map(animation => animation.finished))
+    })
+    await expect.poll(() => renderedDecision.isVisible()).toBe(true)
+    await expect.poll(() => renderedDecision.evaluate(element => element.clientWidth), { timeout: 10_000 }).toBeGreaterThan(250)
+    const decisionWidth = await renderedDecision.evaluate(element => ({ client: element.clientWidth, scroll: element.scrollWidth }))
+    expect(decisionWidth.scroll, JSON.stringify(decisionWidth)).toBeLessThanOrEqual(decisionWidth.client + 1)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+    const decisionBox = await renderedDecision.boundingBox()
+    expect(decisionBox?.x).toBeGreaterThanOrEqual(0)
+    expect((decisionBox?.x ?? 0) + (decisionBox?.width ?? 0)).toBeLessThanOrEqual(390)
     const scrollCue = page.locator('[class*="scrollCue"]')
     await expect.poll(() => scrollCue.isVisible()).toBe(true)
     expect(await renderedDecision.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true)
@@ -250,3 +328,9 @@ describe.skipIf(MODE === 'record')('web e2e: Activity strategic evidence reentry
     expect(startActivation).not.toHaveBeenCalled()
   }, 60_000)
 })
+
+async function writeTestSkill(cwd: string, name: string, body: string): Promise<void> {
+  const directory = join(cwd, 'workspace', '.agents', 'skills', name)
+  await mkdir(directory, { recursive: true })
+  await writeFile(join(directory, 'SKILL.md'), `---\nname: ${name}\ndescription: Deterministic Web test Skill.\n---\n\n${body}\n`, 'utf8')
+}

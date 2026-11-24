@@ -81,11 +81,12 @@ function parseCommand(rawInput: string): ActivityCommand {
     if (Number.isSafeInteger(revision)) return { kind: 'brief', id: brief[1], revision }
   }
   if (input === 'consider cancel') return { kind: 'consider-cancel' }
-  const consider = /^consider\s+(\S+)\s+([1-9][0-9]*)\s+([\s\S]+)$/u.exec(input)
-  if (consider?.[1] !== undefined && consider[2] !== undefined && consider[3] !== undefined) {
+  const consider = /^consider\s+(\S+)\s+([1-9][0-9]*)(?:\s+([\s\S]*))?$/u.exec(input)
+  if (consider?.[1] !== undefined && consider[2] !== undefined) {
     const revision = Number(consider[2])
-    if (Number.isSafeInteger(revision) && Buffer.byteLength(consider[3], 'utf8') <= 2_000) {
-      return { kind: 'consider', id: consider[1], revision, question: consider[3].trim() }
+    const question = consider[3]?.trim() ?? ''
+    if (Number.isSafeInteger(revision) && Buffer.byteLength(question, 'utf8') <= 2_000) {
+      return { kind: 'consider', id: consider[1], revision, question }
     }
   }
   const decisions = /^decisions\s+(\S+)$/u.exec(input)
@@ -290,12 +291,10 @@ function renderDeliberationHistory(
     'Strategic Deliberations:',
     'No saved reconsiderations. Use /activity consider <activity-id> <brief-revision> <decision-question> to revisit one historical brief.',
   ]
-  const latest = deliberations.at(-1)
+  const latest = deliberations.reduce((_previous, current) => current)
   return [
     'Strategic Deliberations (agent-authored advisory; not owner decisions, verification, or acceptance):',
-    ...(latest === undefined ? [] : [
-      `Latest decision ${latest.revision}: ${latest.outcome}/${latest.disposition}; based on brief ${latest.sourceEpisodeRevision}; ${latest.proposedResponsibility ?? 'no responsibility selected'}.`,
-    ]),
+    `Latest decision ${latest.revision}: ${latest.outcome}/${latest.disposition}; based on brief ${latest.sourceEpisodeRevision}; ${latest.proposedResponsibility ?? 'no responsibility selected'}.`,
     `${deliberations.length} deliberation revision${deliberations.length === 1 ? '' : 's'} saved. Use /activity decisions ${activityId} to list or /activity decision ${activityId} <revision> to inspect one.`,
   ]
 }

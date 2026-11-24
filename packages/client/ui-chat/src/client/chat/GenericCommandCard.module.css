@@ -50,6 +50,7 @@
   background: var(--dsw-alias-markdown-code-block);
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-markdown-code-block-small);
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 

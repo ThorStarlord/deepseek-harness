@@ -119,7 +119,9 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
       return () => {
         disposeRequested = true
         for (const setup of preparing.values()) setup.controller.abort()
-        for (const request of pending.values()) request.cancelled = true
+        for (const request of pending.values()) {
+          if (!request.saveStarted) request.cancelled = true
+        }
         disposeDrainedRegistration()
       }
     },
@@ -143,17 +145,21 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
       if (pending.size + preparing.size >= MAX_PENDING) {
         return { kind: 'error', text: 'Too many Activity Strategic Deliberations are waiting for this application.' }
       }
+      const skillRegistry = ctx.get('skills')
+      if (skillRegistry === undefined) {
+        return { kind: 'error', text: 'The DSH Skill registry is unavailable to this application profile. No reconsideration was started.' }
+      }
 
       const setup: PreparingDeliberation = { agentId: String(agent.id), controller: new AbortController() }
       preparing.set(sessionId, setup)
       const signal = AbortSignal.any([invocation.signal, setup.controller.signal])
       const cwd = agent.session.header.cwd
-      const skillOptions = { signal, ...(cwd === undefined ? {} : { cwd }) }
+      const skillOptions = { signal, scope: agent, ...(cwd === undefined ? {} : { cwd }) }
       let skills
       try {
         skills = await Promise.all([
-          agent.ctx.skills.get(SENSEMAKING_SKILLS[0], skillOptions),
-          agent.ctx.skills.get(SENSEMAKING_SKILLS[1], skillOptions),
+          skillRegistry.get(SENSEMAKING_SKILLS[0], skillOptions),
+          skillRegistry.get(SENSEMAKING_SKILLS[1], skillOptions),
         ])
         signal.throwIfAborted()
       } catch (error: unknown) {

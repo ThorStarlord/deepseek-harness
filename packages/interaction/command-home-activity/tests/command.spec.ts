@@ -80,7 +80,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
-async function harness() {
+async function harness(options: { skillsAvailable?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-command-')); roots.push(root)
   const ctx = new Context(); contexts.push(ctx)
   await ctx.plugin(Storage)
@@ -111,6 +111,23 @@ async function harness() {
     list: () => [...workspaces.values()],
   }
   ctx.provide('workspaceRegistry', workspaceRegistry as never)
+  const skillLookups: { name: string; scope: unknown; cwd: string | undefined }[] = []
+  const skills = {
+    async get(name: string, options?: { scope?: unknown; cwd?: string }) {
+      skillLookups.push({ name, scope: options?.scope, cwd: options?.cwd })
+      if (name !== 'using-sensemaking' && name !== 'multi-repository-strategic-analysis'
+        && name !== 'strategic-repository-analysis') return undefined
+      return {
+        name,
+        content: `Loaded test content for ${name}.`,
+        provider: 'test-skills',
+        source: 'custom',
+        invocation: { userInvocable: true, modelInvocable: true },
+        path: `C:\\skills\\${name}\\SKILL.md`,
+      }
+    },
+  }
+  if (options.skillsAvailable !== false) ctx.provide('skills', skills as never)
   const registeredTools = new Map<string, { definition: ToolDefinition; options: ToolRegistrationOptions }>()
   const toolGuards: ToolGuard[] = []
   const coordinatorTool: ToolDefinition = {
@@ -161,7 +178,8 @@ async function harness() {
     setCoordinatorAvailable(available: boolean) { coordinatorAvailable = available },
     steeredMessages: primary.steeredMessages,
     secondarySteeredMessages: secondary.steeredMessages,
-    skills: primary.skills,
+    skills,
+    skillLookups,
   }
 }
 
@@ -170,21 +188,6 @@ function createAgent(ctx: Context, id: ReturnType<typeof SessionId>) {
   const inbox = createInboxStub()
   const steeredMessages: import('@deepseek-ai/dsh-session').UserMessage[] = []
   const agentContext = new Context()
-  const skills = {
-    async get(name: string) {
-      if (name !== 'using-sensemaking' && name !== 'multi-repository-strategic-analysis'
-        && name !== 'strategic-repository-analysis') return undefined
-      return {
-        name,
-        content: `Loaded test content for ${name}.`,
-        provider: 'test-skills',
-        source: 'custom',
-        invocation: { userInvocable: true, modelInvocable: true },
-        path: `C:\\skills\\${name}\\SKILL.md`,
-      }
-    },
-  }
-  agentContext.provide('skills', skills as never)
   let status: AgentStatus = 'idle'
   const agent: Agent = {
     id: session.id,
@@ -203,7 +206,7 @@ function createAgent(ctx: Context, id: ReturnType<typeof SessionId>) {
     whenIdle() { return Promise.resolve() },
   }
   ctx.agents.enter(agent)
-  return { agent, session, steeredMessages, skills }
+  return { agent, session, steeredMessages }
 }
 
 function workspace(id: string, title: string): Workspace {
@@ -382,6 +385,9 @@ it('reconsiders one exact historical brief and recovers its attributed advisory 
   expect(queued.kind).toBe('success')
   expect(queued.text).toContain(`brief revision ${source.revision}`)
   expect(queued.text).toContain('No repository or Workspace was read')
+  expect(test.skillLookups.slice(-2).map(lookup => lookup.scope)).toEqual([test.agent, test.agent])
+  expect((await run(test, ` assess ${activity.id} ${[...test.workspaces.keys()].join(' ')}`)).text)
+    .toContain('unfinished Activity Strategic Deliberation')
   expect(test.steeredMessages).toHaveLength(1)
   const message = test.steeredMessages[0]
   if (message === undefined) throw new Error('Historical reconsideration did not enter the Session log')
@@ -435,6 +441,7 @@ it('reconsiders one exact historical brief and recovers its attributed advisory 
     outcome: 'next-responsibility',
     disposition: 'adapt',
   })
+  expect((await run(test, ` open ${activity.id}`)).text).toContain('1 deliberation revision saved')
   expect(recorderWhen?.({ agent: test.agent } as never)).toBe(false)
   expect(renderActivityStrategicDeliberation(saved!, undefined).join('\n'))
     .toContain('The original brief is unavailable; its stored identity and attribution remain recorded.')
@@ -506,7 +513,34 @@ it('reconsiders one exact historical brief and recovers its attributed advisory 
   expect(reopened.text).toContain('E2 (limits)')
   expect(reopened.text).toContain('Repository state has not been re-read')
   expect(reopened.text).toContain('not an owner decision')
+  expect((await run(test, ` decision ${activity.id} 99`, test.secondaryAgent)).text)
+    .toContain('has no saved strategic deliberation revision 99')
+  const opened = await run(test, ` open ${activity.id}`, test.secondaryAgent)
+  expect(opened.text).toContain('Strategic Deliberations (agent-authored advisory')
+  expect(opened.text).toContain('Latest decision 3: no-selection/defer;')
+  expect(opened.text).toContain('3 deliberation revisions saved')
   expect(startActivation).not.toHaveBeenCalled()
+})
+
+it('reports a missing optional Skill registry without starting either strategic operation', async () => {
+  const test = await harness({ skillsAvailable: false })
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Missing Skill registry',
+    objective: 'Keep the command available when the application has no Skill provider.',
+    boundaries: { inScope: ['Report unavailable strategic reasoning.'], outOfScope: ['Do not start work.'] },
+  })
+  const source = await saveSourceBrief(test, activity.id)
+
+  const reconsideration = await run(test, ` consider ${activity.id} ${source.revision} What is still warranted?`)
+  expect(reconsideration).toMatchObject({ kind: 'error' })
+  expect(reconsideration.text).toContain('DSH Skill registry is unavailable')
+
+  const assessment = await run(test, ` assess ${activity.id} ${[...test.workspaces.keys()].join(' ')}`)
+  expect(assessment).toMatchObject({ kind: 'error' })
+  expect(assessment.text).toContain('DSH Skill registry is unavailable')
+  expect(test.steeredMessages).toEqual([])
+  expect(test.ctx.homeActivityStrategicDeliberations.list(activity.id)).toEqual([])
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([source])
 })
 
 it('cancels an unfinished reconsideration without saving or starting work', async () => {
@@ -540,6 +574,24 @@ it('rejects stale or missing selections and keeps Skill setup guarded through ca
     boundaries: { inScope: ['Reconsider one saved revision.'], outOfScope: ['Do not execute work.'] },
   })
   const source = await saveSourceBrief(test, activity.id)
+  expect((await run(test, ` decisions ${activity.id}`)).text).toContain('No saved strategic deliberations')
+  expect((await run(test, ` brief ${activity.id} 9007199254740992`)).text).toContain('Usage: /activity')
+  const [workspaceId, secondWorkspaceId] = [...test.workspaces.keys()]
+  if (workspaceId === undefined || secondWorkspaceId === undefined) throw new Error('The test requires two registered Workspaces')
+  expect((await run(test, ` assess not-a-uuid ${workspaceId} ${secondWorkspaceId}`)).text)
+    .toContain('Activity id must be a UUID')
+  expect((await run(test, ` assess ${activity.id} not-a-uuid ${secondWorkspaceId}`)).text)
+    .toContain('Workspace ids must be UUIDs')
+  expect((await run(test, ` consider not-a-uuid ${source.revision} Choose next step`)).text)
+    .toContain('Activity id must be a UUID')
+  expect((await run(test, ` consider ${activity.id} ${source.revision}`)).text)
+    .toContain('A decision question is required')
+  expect((await run(test, ` consider ${activity.id} 9007199254740992 Choose a next responsibility`)).text)
+    .toContain('Usage: /activity')
+  expect((await run(test, ` consider ${activity.id} ${source.revision} ${'x'.repeat(2_001)}`)).text)
+    .toContain('Usage: /activity')
+  expect((await run(test, ` decision ${activity.id} 9007199254740992`)).text)
+    .toContain('Usage: /activity')
   expect((await run(test, ' consider cancel')).text).toContain('No unfinished Activity Strategic Deliberation')
   expect((await run(test, ' consider 00000000-0000-4000-8000-000000000099 1 Choose next step')).text)
     .toContain('No saved Activity has id')
@@ -882,6 +934,52 @@ it('keeps an expired request guarded while its persistence write is unresolved',
   }
 })
 
+it('preserves a successful in-flight save outcome during plugin disposal', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Unload during save', objective: 'Retain a confirmed outcome while unloading.',
+    boundaries: { inScope: ['Record an advisory reconsideration.'], outOfScope: ['Do not execute work.'] },
+  })
+  const source = await saveSourceBrief(test, activity.id)
+  const question = 'Which bounded responsibility remains warranted?'
+  expect(await run(test, ` consider ${activity.id} ${source.revision} ${question}`)).toMatchObject({ kind: 'success' })
+  const instruction = test.steeredMessages[0]?.content
+    .filter(block => block.type === 'text').map(block => block.text).join('\n') ?? ''
+  const requestId = /Request ID: ([0-9a-f-]{36})/u.exec(instruction)?.[1]
+  if (requestId === undefined) throw new Error('The request instruction did not retain its opaque id')
+  const recorder = test.registeredTools.get('record_activity_strategic_deliberation')?.definition
+  if (recorder?.execute === undefined) throw new Error('The deliberation recorder was not registered')
+  const conclusionJson = validDeliberationJson(question)
+  let releaseWrite!: () => void
+  let signalWriteStarted!: () => void
+  const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve })
+  const writeStarted = new Promise<void>((resolve) => { signalWriteStarted = resolve })
+  const persist = test.ctx.homeActivityStrategicDeliberations.record.bind(test.ctx.homeActivityStrategicDeliberations)
+  vi.spyOn(test.ctx.homeActivityStrategicDeliberations, 'record').mockImplementation(async (request) => {
+    signalWriteStarted()
+    await writeGate
+    return persist(request)
+  })
+  const saving = recorder.execute(
+    { requestId, conclusionJson },
+    { agent: test.agent, callId: ToolCallId('unload-during-deliberation-save'), signal: new AbortController().signal } as never,
+  )
+  await writeStarted
+
+  await test.commandFiber.dispose()
+  expect(guardDenial(test, 'shell', 'unload-keeps-save-guarded', test.agent))
+    .toContain('Only the Activity Strategic Deliberation recorder')
+  releaseWrite()
+  await expect(saving).resolves.toMatchObject({ saved: true, revision: 1 })
+  expect(test.ctx.homeActivityStrategicDeliberations.list(activity.id)).toHaveLength(1)
+  expect(guardDenial(test, 'shell', 'unload-reports-successful-save', test.agent))
+    .toContain('This Activity Strategic Deliberation is saved')
+
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'unload-releases-after-settlement', test.agent)).toBeUndefined()
+  expect(test.toolGuards).toHaveLength(0)
+})
+
 it('selects each saved brief revision explicitly and rejects missing Skills', async () => {
   const test = await harness()
   const activity = await test.ctx.homeActivities.create({
@@ -975,6 +1073,7 @@ it('requires an explicit assessment command and steers the active Agent with loa
   expect(started.text).toContain('separate one-shot approval of the exact task and two selected Workspaces')
   expect(started.text).toContain('one read-only DSH child Session per Workspace')
   expect(started.text).toContain('cannot implement or mutate either repository')
+  expect(test.skillLookups.slice(-2).map(lookup => lookup.scope)).toEqual([test.agent, test.agent])
   expect(test.steeredMessages).toHaveLength(1)
   const message = test.steeredMessages[0]
   if (message === undefined) throw new Error('The explicit assessment did not steer the active Agent')
