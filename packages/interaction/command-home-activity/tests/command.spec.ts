@@ -41,7 +41,10 @@ import HomeActivityAnnotationService, {
 } from '@deepseek-ai/dsh-home-activity/annotations'
 import HomeActivityStrategicEpisodeService from '@deepseek-ai/dsh-home-activity/strategic-episodes'
 import HomeActivityStrategicDeliberationService from '@deepseek-ai/dsh-home-activity/strategic-deliberations'
-import { ActivityStrategicDeliberationStorageError } from '@deepseek-ai/dsh-home-activity/strategic-deliberations'
+import {
+  ActivityStrategicDeliberationError,
+  ActivityStrategicDeliberationStorageError,
+} from '@deepseek-ai/dsh-home-activity/strategic-deliberations'
 import { renderActivityStrategicDeliberation } from '../src/strategic-reentry-command.ts'
 import type { ActivityAnnotation, ActivityAnnotationId } from '@deepseek-ai/dsh-home-activity/annotations'
 import * as commandHomeActivity from '../src/index.ts'
@@ -245,6 +248,20 @@ function guardDenial(
   return undefined
 }
 
+function validDeliberationJson(decisionQuestion: string): string {
+  return JSON.stringify({
+    decisionQuestion,
+    outcome: 'next-responsibility',
+    disposition: 'adapt',
+    proposedResponsibility: 'Use one historical brief for a bounded advisory assessment.',
+    scope: 'within-activity',
+    rationale: 'The cited historical evidence supports a bounded next step.',
+    evidenceUses: [{ evidenceId: 'E1', treatment: 'supports', rationale: 'The brief records the earlier recommendation.' }],
+    uncertaintyReviews: [{ uncertaintyId: 'U1', treatment: 'remains-open', rationale: 'No newer source was observed.' }],
+    newUncertainties: [],
+  })
+}
+
 async function saveSourceBrief(
   test: Awaited<ReturnType<typeof harness>>,
   activityId: ActivityId,
@@ -358,6 +375,9 @@ it('reconsiders one exact historical brief and recovers its attributed advisory 
   const source = await saveSourceBrief(test, activity.id)
   const startActivation = vi.spyOn(test.ctx.subagents, 'startActivation')
   const question = 'Should the next step retain the existing Skill path or build an adapter?'
+  const recorderRegistration = test.registeredTools.get('record_activity_strategic_deliberation')
+  const recorderWhen = recorderRegistration?.options.when
+  expect(recorderWhen?.({ agent: test.agent } as never)).toBe(false)
   const queued = await run(test, ` consider ${activity.id} ${source.revision} ${question}`)
   expect(queued.kind).toBe('success')
   expect(queued.text).toContain(`brief revision ${source.revision}`)
@@ -373,9 +393,14 @@ it('reconsiders one exact historical brief and recovers its attributed advisory 
   expect(text).toContain(question)
   expect(text).toContain('Loaded Sensemaking Skill: strategic-repository-analysis')
   expect(text).toContain('Do not read repositories or Workspaces')
+  expect(recorderWhen?.({ agent: test.agent } as never)).toBe(true)
+  const otherAgentInSession = { ...test.agent, id: brandString('other-agent-in-reentry-session') } as Agent
+  expect(recorderWhen?.({ agent: otherAgentInSession } as never)).toBe(false)
+  expect(guardDenial(test, 'shell', 'reentry-other-agent-guard', otherAgentInSession)).toContain('another Agent')
   expect(guardDenial(test, 'coordinate_repositories', 'reentry-no-read')).toContain('Only the Activity Strategic Deliberation recorder')
   expect(guardDenial(test, 'shell', 'reentry-no-shell')).toContain('Only the Activity Strategic Deliberation recorder')
   expect(guardDenial(test, 'start_subagent', 'reentry-no-delegation')).toContain('Only the Activity Strategic Deliberation recorder')
+  expect(guardDenial(test, 'record_activity_strategic_deliberation', 'reentry-recorder-allowed')).toBeUndefined()
 
   const recorder = test.registeredTools.get('record_activity_strategic_deliberation')?.definition
   if (recorder?.execute === undefined) throw new Error('Activity Strategic Deliberation recorder was not registered')
@@ -410,13 +435,68 @@ it('reconsiders one exact historical brief and recovers its attributed advisory 
     outcome: 'next-responsibility',
     disposition: 'adapt',
   })
+  expect(recorderWhen?.({ agent: test.agent } as never)).toBe(false)
   expect(renderActivityStrategicDeliberation(saved!, undefined).join('\n'))
     .toContain('The original brief is unavailable; its stored identity and attribution remain recorded.')
+  expect(renderActivityStrategicDeliberation(saved!, {
+    ...source,
+    evidence: source.evidence.map(evidence => ({ ...evidence, lineStart: 7 })),
+  }).join('\n')).toContain(`${source.evidence[0]?.path}:7`)
+  const noSelection = await test.ctx.homeActivityStrategicDeliberations.record({
+    activityId: activity.id,
+    originSessionId: String(test.session.id),
+    requestId: randomUUID(),
+    sourceEpisodeId: source.id,
+    sourceEpisodeRevision: source.revision,
+    decisionQuestion: 'Should we defer without choosing a responsibility?',
+    outcome: 'no-selection',
+    disposition: 'reject',
+    proposedResponsibility: null,
+    scope: 'within-activity',
+    rationale: 'The previous recommendation does not answer the present question.',
+    evidenceUses: [],
+    uncertaintyReviews: [],
+    newUncertainties: [],
+    skillDigests: saved!.skillDigests,
+    requestedAt: new Date().toISOString(),
+  })
+  expect(renderActivityStrategicDeliberation(noSelection, source).join('\n'))
+    .toContain('- No prior evidence identifier was cited.')
+  expect(renderActivityStrategicDeliberation(noSelection, source).join('\n'))
+    .toContain('Proposed responsibility: none selected')
+  const unlinkedUncertainty = await test.ctx.homeActivityStrategicDeliberations.record({
+    activityId: activity.id,
+    originSessionId: String(test.session.id),
+    requestId: randomUUID(),
+    sourceEpisodeId: source.id,
+    sourceEpisodeRevision: source.revision,
+    decisionQuestion: 'What remains uncertain without current source checks?',
+    outcome: 'no-selection',
+    disposition: 'defer',
+    proposedResponsibility: null,
+    scope: 'within-activity',
+    rationale: 'Historical state is insufficient for a current choice.',
+    evidenceUses: [],
+    uncertaintyReviews: [],
+    newUncertainties: [{ id: 'N1', statement: 'Current repository state remains unknown.', evidenceIds: [] }],
+    skillDigests: noSelection.skillDigests,
+    requestedAt: new Date().toISOString(),
+  })
+  expect(renderActivityStrategicDeliberation(unlinkedUncertainty, source).join('\n'))
+    .toContain('Historical evidence: none')
   expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([source])
   expect(startActivation).not.toHaveBeenCalled()
   expect(guardDenial(test, 'shell', 'reentry-shell-after-save')).toContain('is saved')
+  await expect(recorder.execute(
+    { requestId, conclusionJson },
+    { agent: test.agent, callId: ToolCallId('saved-recorder-call'), signal: new AbortController().signal } as never,
+  )).rejects.toThrow('does not match a live explicit request')
   test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   expect(guardDenial(test, 'shell', 'reentry-shell-after-turn-end')).toBeUndefined()
+  await expect(recorder.execute(
+    { requestId, conclusionJson },
+    { agent: test.agent, callId: ToolCallId('settled-recorder-call'), signal: new AbortController().signal } as never,
+  )).rejects.toThrow('does not match a live explicit request')
 
   const listed = await run(test, ` decisions ${activity.id}`, test.secondaryAgent)
   expect(listed.text).toContain(`source brief ${source.revision} (${source.id})`)
@@ -438,9 +518,368 @@ it('cancels an unfinished reconsideration without saving or starting work', asyn
   const source = await saveSourceBrief(test, activity.id)
   const queued = await run(test, ` consider ${activity.id} ${source.revision} Is this still warranted?`)
   expect(queued.kind).toBe('success')
+  const requestId = /Request ID: ([0-9a-f-]{36})/u.exec(test.steeredMessages[0]?.content
+    .filter(block => block.type === 'text').map(block => block.text).join('\n') ?? '')?.[1]
+  if (requestId === undefined) throw new Error('The reconsideration did not retain its explicit request id')
+  const recorder = test.registeredTools.get('record_activity_strategic_deliberation')?.definition
+  if (recorder?.execute === undefined) throw new Error('The deliberation recorder was not registered')
   expect((await run(test, ' consider cancel')).text).toContain('An active model turn may still finish, but the recorder and execution tools remain blocked.')
+  expect(test.registeredTools.get('record_activity_strategic_deliberation')?.options.when?.({ agent: test.agent } as never)).toBe(false)
   expect(test.ctx.homeActivityStrategicDeliberations.list(activity.id)).toEqual([])
   expect(guardDenial(test, 'shell', 'reentry-after-cancel')).toContain('canceled or could not be confirmed')
+  await expect(recorder.execute(
+    { requestId, conclusionJson: validDeliberationJson('Is this still warranted?') },
+    { agent: test.agent, callId: ToolCallId('canceled-recorder-call'), signal: new AbortController().signal } as never,
+  )).rejects.toThrow('does not match a live explicit request')
+})
+
+it('rejects stale or missing selections and keeps Skill setup guarded through cancellation', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Selection failures', objective: 'Require an exact saved brief before reconsideration.',
+    boundaries: { inScope: ['Reconsider one saved revision.'], outOfScope: ['Do not execute work.'] },
+  })
+  const source = await saveSourceBrief(test, activity.id)
+  expect((await run(test, ' consider cancel')).text).toContain('No unfinished Activity Strategic Deliberation')
+  expect((await run(test, ' consider 00000000-0000-4000-8000-000000000099 1 Choose next step')).text)
+    .toContain('No saved Activity has id')
+  expect((await run(test, ` consider ${activity.id} 2 Choose next step`)).text)
+    .toContain('has no saved strategic brief revision 2')
+  const detachedAgent = { ...test.agent, id: brandString('detached-agent') } as Agent
+  expect((await run(test, ` consider ${activity.id} ${source.revision} Choose next step`, detachedAgent)).text)
+    .toContain('requires the live requesting Agent')
+  expect((await run(test, ' consider cancel', detachedAgent)).text)
+    .toContain('Canceling strategic reconsideration requires the live requesting Agent')
+
+  const assessment = await run(test, ` assess ${activity.id} ${[...test.workspaces.keys()].join(' ')}`)
+  expect(assessment.kind).toBe('success')
+  expect((await run(test, ` consider ${activity.id} ${source.revision} Choose next step`)).text)
+    .toContain('unfinished Activity Strategic Brief assessment')
+  await run(test, ' assess cancel')
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+  const originalGet = test.skills.get.bind(test.skills)
+  const skillFailure = vi.spyOn(test.skills, 'get').mockRejectedValueOnce(new Error('unavailable'))
+  expect((await run(test, ` consider ${activity.id} ${source.revision} Choose next step`)).text)
+    .toContain('Sensemaking Skills could not be loaded')
+  expect(skillFailure).toHaveBeenCalled()
+
+  let releaseSkills!: () => void
+  let signalSkillsRequested!: () => void
+  const skillGate = new Promise<void>((resolve) => { releaseSkills = resolve })
+  const skillsRequested = new Promise<void>((resolve) => { signalSkillsRequested = resolve })
+  vi.spyOn(test.skills, 'get').mockImplementation(async (name) => {
+    signalSkillsRequested()
+    await skillGate
+    return originalGet(name)
+  })
+  const starting = run(test, ` consider ${activity.id} ${source.revision} Choose next step`)
+  await skillsRequested
+  expect(guardDenial(test, 'shell', 'setup-loading-shell')).toContain('Skills are loading')
+  const differentAgent = { ...test.agent, id: brandString('different-session-agent') } as Agent
+  expect(guardDenial(test, 'shell', 'setup-other-agent', differentAgent)).toContain('another Agent')
+  const noAgentExecution = { name: 'shell', callId: ToolCallId('no-agent-guard'), arguments: {}, signal: new AbortController().signal } as never
+  expect(test.toolGuards.every(guard => guard(noAgentExecution) === undefined)).toBe(true)
+  expect((await run(test, ' consider cancel')).text).toContain('Canceled strategic reconsideration setup')
+  releaseSkills()
+  await expect(starting).resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('setup was canceled') })
+  expect(test.steeredMessages).toHaveLength(1)
+  expect(guardDenial(test, 'shell', 'setup-settled-shell')).toBeUndefined()
+
+  vi.restoreAllMocks()
+  let releaseOnUnload!: () => void
+  let signalSetupOnUnload!: () => void
+  const unloadGate = new Promise<void>((resolve) => { releaseOnUnload = resolve })
+  const unloadingSetup = new Promise<void>((resolve) => { signalSetupOnUnload = resolve })
+  vi.spyOn(test.skills, 'get').mockImplementation(async (name) => {
+    signalSetupOnUnload()
+    await unloadGate
+    return originalGet(name)
+  })
+  const unloading = run(test, ` consider ${activity.id} ${source.revision} What remains warranted?`)
+  await unloadingSetup
+  await test.commandFiber.dispose()
+  expect(test.toolGuards.length).toBeGreaterThan(0)
+  releaseOnUnload()
+  await expect(unloading).resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('setup was canceled') })
+  expect(test.toolGuards).toHaveLength(0)
+})
+
+it('validates recorder identity and contains structured and unexpected persistence failures', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Recorder validation', objective: 'Record only a live advisory reconsideration.',
+    boundaries: { inScope: ['Store one source-linked decision.'], outOfScope: ['Do not execute the recommendation.'] },
+  })
+  const source = await saveSourceBrief(test, activity.id)
+  const question = 'Does the saved evidence justify one bounded next step?'
+  await run(test, ` consider ${activity.id} ${source.revision} ${question}`)
+  const requestText = test.steeredMessages[0]?.content.filter(block => block.type === 'text').map(block => block.text).join('\n') ?? ''
+  const requestId = /Request ID: ([0-9a-f-]{36})/u.exec(requestText)?.[1]
+  const recorder = test.registeredTools.get('record_activity_strategic_deliberation')?.definition
+  if (requestId === undefined || recorder?.execute === undefined) throw new Error('The explicit request did not register its recorder')
+  const executeRecorder = (arguments_: unknown, agent: Agent | null = test.agent) => recorder.execute?.(
+    arguments_,
+    { agent: agent === null ? undefined : agent, callId: ToolCallId('validated-recorder-call'), signal: new AbortController().signal } as never,
+  )
+  const validJson = validDeliberationJson(question)
+
+  await expect(executeRecorder({ requestId, conclusionJson: validJson }, null))
+    .rejects.toThrow('requires the live requesting Agent')
+  const differentAgent = { ...test.agent, id: brandString('other-recorder-agent') } as Agent
+  const getAgent = test.ctx.agents.get.bind(test.ctx.agents)
+  vi.spyOn(test.ctx.agents, 'get').mockImplementation(id => id === differentAgent.id ? differentAgent : getAgent(id))
+  await expect(executeRecorder({ requestId, conclusionJson: validJson }, differentAgent))
+    .rejects.toThrow('does not match a live explicit request')
+  vi.restoreAllMocks()
+  await expect(executeRecorder({ requestId: randomUUID(), conclusionJson: validJson }))
+    .rejects.toThrow('does not match a live explicit request')
+  await expect(executeRecorder({ requestId, conclusionJson: 'x'.repeat(64 * 1024 + 1) }))
+    .rejects.toThrow('exceeds the 64 KiB limit')
+  await expect(executeRecorder({ requestId, conclusionJson: '{' }))
+    .rejects.toThrow('must be valid JSON')
+  await expect(executeRecorder({ requestId, conclusionJson: '{}' }))
+    .rejects.toThrow('was not saved')
+  await expect(executeRecorder({ requestId, conclusionJson: validDeliberationJson('A different question') }))
+    .rejects.toThrow('must preserve the explicitly requested decision question')
+
+  vi.spyOn(test.ctx.homeActivityStrategicDeliberations, 'record')
+    .mockRejectedValueOnce(new ActivityStrategicDeliberationError('invalid-deliberation', 'Known domain rejection.'))
+    .mockRejectedValueOnce(new Error('Unexpected storage adapter failure.'))
+  await expect(executeRecorder({ requestId, conclusionJson: validJson }))
+    .rejects.toThrow('Known domain rejection. Inspect /activity decisions before retrying.')
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+  await run(test, ` consider ${activity.id} ${source.revision} Is a bounded next step still warranted?`)
+  const nextText = test.steeredMessages.at(-1)?.content.filter(block => block.type === 'text').map(block => block.text).join('\n') ?? ''
+  const nextRequestId = /Request ID: ([0-9a-f-]{36})/u.exec(nextText)?.[1]
+  if (nextRequestId === undefined) throw new Error('The follow-up request did not retain its id')
+  await expect(recorder.execute(
+    { requestId: nextRequestId, conclusionJson: validDeliberationJson('Is a bounded next step still warranted?') },
+    { agent: test.agent, callId: ToolCallId('unexpected-storage-failure'), signal: new AbortController().signal } as never,
+  )).rejects.toThrow('could not be confirmed in storage')
+  test.session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+})
+
+it('rejects the thirty-third concurrently pending reconsideration', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Pending limit', objective: 'Keep pending requests bounded.',
+    boundaries: { inScope: ['Reconsider saved evidence.'], outOfScope: ['Do not execute automatically.'] },
+  })
+  const source = await saveSourceBrief(test, activity.id)
+  const agents = [test.agent]
+  for (let index = 0; index < 32; index++) {
+    const session = test.ctx.sessions.create(SessionId(`pending-${randomUUID()}`), { meta: { cwd: process.cwd() } })
+    const agent = { ...test.agent, id: session.id, session }
+    test.ctx.agents.enter(agent)
+    agents.push(agent)
+  }
+  const results = []
+  for (const [index, agent] of agents.entries()) {
+    results.push(await run(test, ` consider ${activity.id} ${source.revision} Which step is warranted?`, agent))
+    if (index < 32) expect(results.at(-1)).toMatchObject({ kind: 'success' })
+  }
+  expect(results.at(-1)).toMatchObject({ kind: 'error', text: expect.stringContaining('Too many Activity Strategic Deliberations') })
+  for (const agent of agents.slice(0, 32)) agent.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+})
+
+it('expires an idle deliberation at the request guard without pruning another Session', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    const test = await harness()
+    const activity = await test.ctx.homeActivities.create({
+      name: 'Direct expiry guard', objective: 'Expire an old request even when no new request starts.',
+      boundaries: { inScope: ['Reconsider historical evidence.'], outOfScope: ['Do not execute work.'] },
+    })
+    const source = await saveSourceBrief(test, activity.id)
+    expect(await run(test, ` consider ${activity.id} ${source.revision} Is the old evidence still useful?`))
+      .toMatchObject({ kind: 'success' })
+    const start = Date.now()
+    vi.setSystemTime(start + 45 * 60 * 1000 + 1)
+    expect(guardDenial(test, 'shell', 'direct-expiry-guard')).toContain('request expired')
+    expect(guardDenial(test, 'record_activity_strategic_deliberation', 'expired-recorder-guard'))
+      .toContain('canceled or could not be confirmed')
+    test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(guardDenial(test, 'shell', 'direct-expiry-after-turn-end')).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('stops oversized reconsideration context and reports a failed queue without leaving a guard', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Context limits', objective: 'Reject strategic context that cannot fit safely.',
+    boundaries: { inScope: ['Reconsider one saved brief.'], outOfScope: ['Do not execute work.'] },
+  })
+  const source = await saveSourceBrief(test, activity.id)
+  const historicalInputs = JSON.stringify({
+    activity: { id: activity.id, name: activity.name, objective: activity.objective, boundaries: activity.boundaries },
+    sourceEpisode: source,
+  })
+  const maxBytes = 192 * 1024
+  const originalGet = test.skills.get.bind(test.skills)
+  vi.spyOn(test.skills, 'get').mockImplementation(async (name) => {
+    const skill = await originalGet(name)
+    return skill === undefined ? undefined : { ...skill, content: name === 'using-sensemaking' ? 'x'.repeat(maxBytes - Buffer.byteLength(historicalInputs) + 1) : '' }
+  })
+  expect((await run(test, ` consider ${activity.id} ${source.revision} Choose a warranted next step`)).text)
+    .toContain('exceed the reconsideration context limit')
+  vi.restoreAllMocks()
+
+  vi.spyOn(test.skills, 'get').mockImplementation(async (name) => {
+    const skill = await originalGet(name)
+    return skill === undefined ? undefined : { ...skill, content: name === 'using-sensemaking' ? 'x'.repeat(maxBytes - Buffer.byteLength(historicalInputs) - 100) : '' }
+  })
+  expect((await run(test, ` consider ${activity.id} ${source.revision} Choose a warranted next step`)).text)
+    .toContain('full reconsideration instruction exceeds the context limit')
+  vi.restoreAllMocks()
+
+  vi.spyOn(test.agent, 'steer').mockImplementation(() => { throw new Error('queue rejected') })
+  expect((await run(test, ` consider ${activity.id} ${source.revision} Choose a warranted next step`)).text)
+    .toContain('was not queued')
+  expect(guardDenial(test, 'shell', 'failed-queue-released')).toBeUndefined()
+})
+
+it('keeps an expired deliberation guarded until its Session ends, including during unload', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    const test = await harness()
+    const activity = await test.ctx.homeActivities.create({
+      name: 'Expiration guard', objective: 'Keep expired requests guarded until their turns end.',
+      boundaries: { inScope: ['Reconsider saved evidence.'], outOfScope: ['Do not execute work.'] },
+    })
+    const source = await saveSourceBrief(test, activity.id)
+    const line = ` consider ${activity.id} ${source.revision} Which responsibility remains warranted?`
+    const first = await run(test, line, test.agent)
+    expect(first.kind).toBe('success')
+    const recorderWhen = test.registeredTools.get('record_activity_strategic_deliberation')?.options.when
+    expect(recorderWhen?.({ agent: test.agent } as never)).toBe(true)
+    const startedAt = Date.now()
+
+    vi.setSystemTime(startedAt + 45 * 60 * 1000 + 1)
+    expect(await run(test, line, test.secondaryAgent)).toMatchObject({ kind: 'success' })
+    expect(recorderWhen?.({ agent: test.agent } as never)).toBe(false)
+    expect(recorderWhen?.({ agent: test.secondaryAgent } as never)).toBe(true)
+
+    for (const [name, callId] of [
+      ['coordinate_repositories', 'expired-repository-read'],
+      ['repository_read_file', 'expired-file-read'],
+      ['shell', 'expired-shell'],
+      ['subagent', 'expired-dsh-delegation'],
+      ['subagent_oar', 'expired-provider-delegation'],
+      ['record_activity_strategic_deliberation', 'expired-recorder'],
+    ] as const) {
+      expect(guardDenial(test, name, callId, test.agent)).toEqual(expect.stringContaining('canceled or could not be confirmed'))
+    }
+    const instruction = test.steeredMessages[0]?.content
+      .filter(block => block.type === 'text').map(block => block.text).join('\n') ?? ''
+    const requestId = /Request ID: ([0-9a-f-]{36})/u.exec(instruction)?.[1]
+    const recorder = test.registeredTools.get('record_activity_strategic_deliberation')?.definition
+    if (requestId === undefined || recorder?.execute === undefined) throw new Error('The expired request recorder was unavailable')
+    await expect(recorder.execute(
+      { requestId, conclusionJson: validDeliberationJson('Which responsibility remains warranted?') },
+      { agent: test.agent, callId: ToolCallId('expired-recorder-execution'), signal: new AbortController().signal } as never,
+    )).rejects.toThrow('does not match a live explicit request')
+
+    test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(recorderWhen?.({ agent: test.agent } as never)).toBe(false)
+    expect(guardDenial(test, 'shell', 'expired-session-ended', test.agent)).toBeUndefined()
+    expect(guardDenial(test, 'shell', 'other-session-still-active', test.secondaryAgent))
+      .toContain('Only the Activity Strategic Deliberation recorder')
+
+    await test.commandFiber.dispose()
+    expect(guardDenial(test, 'shell', 'unload-keeps-other-session-guarded', test.secondaryAgent))
+      .toContain('canceled or could not be confirmed')
+    test.secondarySession.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(guardDenial(test, 'shell', 'unload-after-all-turns-end', test.secondaryAgent)).toBeUndefined()
+    expect(test.toolGuards).toHaveLength(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('keeps an expired request guarded while its persistence write is unresolved', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    const test = await harness()
+    const activity = await test.ctx.homeActivities.create({
+      name: 'Persistence expiry', objective: 'Keep an in-progress write guarded until it settles.',
+      boundaries: { inScope: ['Reconsider saved evidence.'], outOfScope: ['Do not execute work.'] },
+    })
+    const source = await saveSourceBrief(test, activity.id)
+    const question = 'Which bounded responsibility remains warranted?'
+    expect(await run(test, ` consider ${activity.id} ${source.revision} ${question}`)).toMatchObject({ kind: 'success' })
+    const instruction = test.steeredMessages[0]?.content
+      .filter(block => block.type === 'text').map(block => block.text).join('\n') ?? ''
+    const requestId = /Request ID: ([0-9a-f-]{36})/u.exec(instruction)?.[1]
+    if (requestId === undefined) throw new Error('The request instruction did not retain its opaque id')
+    const recorder = test.registeredTools.get('record_activity_strategic_deliberation')?.definition
+    if (recorder?.execute === undefined) throw new Error('The deliberation recorder was not registered')
+    const conclusionJson = JSON.stringify({
+      decisionQuestion: question,
+      outcome: 'next-responsibility',
+      disposition: 'retain',
+      proposedResponsibility: 'Use the saved evidence for one bounded assessment.',
+      scope: 'within-activity',
+      rationale: 'The cited historical evidence supports a bounded next step.',
+      evidenceUses: [{ evidenceId: 'E1', treatment: 'supports', rationale: 'It records the saved Activity intent.' }],
+      uncertaintyReviews: [{ uncertaintyId: 'U1', treatment: 'remains-open', rationale: 'No newer observation was made.' }],
+      newUncertainties: [],
+    })
+    let releaseWrite!: () => void
+    let signalWriteStarted!: () => void
+    const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve })
+    const writeStarted = new Promise<void>((resolve) => { signalWriteStarted = resolve })
+    const persist = test.ctx.homeActivityStrategicDeliberations.record.bind(test.ctx.homeActivityStrategicDeliberations)
+    vi.spyOn(test.ctx.homeActivityStrategicDeliberations, 'record').mockImplementation(async (request) => {
+      signalWriteStarted()
+      await writeGate
+      return persist(request)
+    })
+    const saving = recorder.execute(
+      { requestId, conclusionJson },
+      { agent: test.agent, callId: ToolCallId('expiry-during-persistence'), signal: new AbortController().signal } as never,
+    )
+    await writeStarted
+    expect(test.registeredTools.get('record_activity_strategic_deliberation')?.options.when?.({ agent: test.agent } as never)).toBe(false)
+    await expect(recorder.execute(
+      { requestId, conclusionJson },
+      { agent: test.agent, callId: ToolCallId('concurrent-deliberation-save'), signal: new AbortController().signal } as never,
+    )).rejects.toThrow('does not match a live explicit request')
+    expect((await run(test, ' consider cancel')).text).toContain('save has started and cannot be canceled safely')
+    const saveBeganAt = Date.now()
+
+    vi.setSystemTime(saveBeganAt + 45 * 60 * 1000 + 1)
+    expect(await run(test, ` consider ${activity.id} ${source.revision} Is a new responsibility warranted?`, test.secondaryAgent))
+      .toMatchObject({ kind: 'success' })
+    for (const [name, callId] of [
+      ['coordinate_repositories', 'saving-expired-repository-read'],
+      ['shell', 'saving-expired-shell'],
+      ['subagent', 'saving-expired-delegation'],
+      ['subagent_oar', 'saving-expired-provider'],
+    ] as const) {
+      expect(guardDenial(test, name, callId, test.agent))
+        .toEqual(expect.stringContaining('Only the Activity Strategic Deliberation recorder'))
+    }
+
+    test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(guardDenial(test, 'shell', 'saving-ended-session-still-guarded', test.agent))
+      .toContain('Only the Activity Strategic Deliberation recorder')
+    releaseWrite()
+    await expect(saving).resolves.toMatchObject({ saved: true, revision: 1 })
+    expect(test.registeredTools.get('record_activity_strategic_deliberation')?.options.when?.({ agent: test.agent } as never)).toBe(false)
+    expect(test.ctx.homeActivityStrategicDeliberations.list(activity.id)).toHaveLength(1)
+    expect(guardDenial(test, 'shell', 'saving-ended-session-released', test.agent)).toBeUndefined()
+    expect(guardDenial(test, 'shell', 'second-session-remains-isolated', test.secondaryAgent))
+      .toContain('Only the Activity Strategic Deliberation recorder')
+
+    test.secondarySession.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(guardDenial(test, 'shell', 'second-session-released', test.secondaryAgent)).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 it('selects each saved brief revision explicitly and rejects missing Skills', async () => {

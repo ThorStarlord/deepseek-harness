@@ -59,21 +59,22 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
   const pending = new Map<string, PendingDeliberation>()
   const preparing = new Map<string, PreparingDeliberation>()
 
-  let disposeDrainedRegistration: () => void = () => {}
+  let disposeDrainedRegistration!: () => void
   const guard: ToolGuard = (execution) => {
     const agent = execution.agent
     if (agent === undefined) return undefined
     const sessionId = String(agent.session.id)
     const request = pending.get(sessionId)
     const setup = preparing.get(sessionId)
-    if (request === undefined && setup === undefined) return undefined
-    if ((request?.agentId ?? setup?.agentId) !== String(agent.id)) {
+    if (request === undefined) {
+      if (setup === undefined) return undefined
+      return setup.agentId === String(agent.id)
+        ? 'Activity Strategic Deliberation Skills are loading; model tool calls are blocked until setup completes or is canceled.'
+        : 'An Activity Strategic Deliberation is active in this Session for another Agent; model tool calls are blocked until it ends.'
+    }
+    if (request.agentId !== String(agent.id)) {
       return 'An Activity Strategic Deliberation is active in this Session for another Agent; model tool calls are blocked until it ends.'
     }
-    if (setup !== undefined && request === undefined) {
-      return 'Activity Strategic Deliberation Skills are loading; model tool calls are blocked until setup completes or is canceled.'
-    }
-    if (request === undefined) return undefined
     if (request.cancelled) return 'This Activity Strategic Deliberation was canceled or could not be confirmed; inspect saved decisions after the turn ends.'
     if (request.saved) return 'This Activity Strategic Deliberation is saved; no further model tool calls can run before the turn ends.'
     if (request.expiresAt <= Date.now() && !request.saveStarted) {
@@ -109,14 +110,13 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
       })
       registeredDisposers = [disposeTool, disposeEvents, disposeGuard]
       disposeDrainedRegistration = (): void => {
-        if (!disposeRequested || [...pending.values()].some(request => request.saveStarted) || preparing.size > 0) return
+        if (!disposeRequested || pending.size > 0 || preparing.size > 0) return
         const disposers = registeredDisposers
         registeredDisposers = []
         for (const dispose of disposers) dispose()
         pending.clear()
       }
       return () => {
-        if (disposeRequested) return
         disposeRequested = true
         for (const setup of preparing.values()) setup.controller.abort()
         for (const request of pending.values()) request.cancelled = true
@@ -371,8 +371,8 @@ function releaseSettledRequest(
 
 function prune(pending: Map<string, PendingDeliberation>): void {
   const now = Date.now()
-  for (const [sessionId, request] of pending) {
-    if (request.expiresAt <= now && !request.saveStarted) pending.delete(sessionId)
+  for (const request of pending.values()) {
+    if (request.expiresAt <= now && !request.saveStarted) request.cancelled = true
   }
 }
 

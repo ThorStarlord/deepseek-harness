@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,12 +6,22 @@ import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
-import HomeActivityService from '../src/index.ts'
+import HomeActivityService, { ActivityId as createActivityId } from '../src/index.ts'
 import HomeActivityStrategicEpisodeService from '../src/strategic-episodes.ts'
-import HomeActivityStrategicDeliberationService from '../src/strategic-deliberations.ts'
+import HomeActivityStrategicDeliberationService, {
+  ActivityStrategicDeliberationError,
+  ActivityStrategicDeliberationStorageError,
+} from '../src/strategic-deliberations.ts'
 import type { ActivityId } from '../src/types.ts'
+import type { ActivityStrategicDeliberation } from '../src/strategic-deliberation-types.ts'
+import type { ActivityStrategicDeliberationId } from '../src/strategic-deliberation-types.ts'
 import type { ActivityStrategicEpisode } from '../src/strategic-episode-types.ts'
 import type { RecordActivityStrategicDeliberationRequest } from '../src/strategic-deliberation-types.ts'
+import {
+  activityStrategicDeliberationConclusionSchema,
+  activityStrategicDeliberationRecordSchema,
+  recordActivityStrategicDeliberationRequestSchema,
+} from '../src/strategic-deliberation-spec.ts'
 
 const contexts: Context[] = []
 const roots: string[] = []
@@ -186,4 +196,169 @@ it('rejects a missing exact source revision and evidence identifiers from anothe
     scope: 'within-activity',
   })).rejects.toMatchObject({ code: 'invalid-deliberation' })
   expect(ctx.homeActivityStrategicDeliberations.list(activity.id)).toEqual([])
+})
+
+it('validates each strategic conclusion disposition and unique historical reference', () => {
+  const conclusion = {
+    decisionQuestion: 'Which bounded responsibility is warranted?',
+    outcome: 'next-responsibility' as const,
+    disposition: 'adapt' as const,
+    proposedResponsibility: 'Use one saved brief in a later Session.',
+    scope: 'within-activity' as const,
+    rationale: 'The exact historical references support a bounded next step.',
+    evidenceUses: [{ evidenceId: 'E1', treatment: 'supports' as const, rationale: 'The saved record is attributable.' }],
+    uncertaintyReviews: [{ uncertaintyId: 'U1', treatment: 'remains-open' as const, rationale: 'No current source was checked.' }],
+    newUncertainties: [{ id: 'N1', statement: 'Later use may reveal a context gap.', evidenceIds: ['E1'] }],
+  }
+  expect(activityStrategicDeliberationConclusionSchema.safeParse(conclusion).success).toBe(true)
+  expect(activityStrategicDeliberationConclusionSchema.safeParse({ ...conclusion, scope: 'outside-activity' }).success).toBe(false)
+  expect(activityStrategicDeliberationConclusionSchema.safeParse({ ...conclusion, proposedResponsibility: null }).success).toBe(false)
+  expect(activityStrategicDeliberationConclusionSchema.safeParse({ ...conclusion, evidenceUses: [] }).success).toBe(false)
+
+  const noSelection = { ...conclusion, outcome: 'no-selection' as const, disposition: 'no-selection' as const, proposedResponsibility: null }
+  expect(activityStrategicDeliberationConclusionSchema.safeParse(noSelection).success).toBe(true)
+  expect(activityStrategicDeliberationConclusionSchema.safeParse({ ...noSelection, proposedResponsibility: 'Must not be selected.' }).success).toBe(false)
+
+  const ownerDecision = { ...noSelection, outcome: 'owner-decision' as const, disposition: 'escalate' as const, scope: 'owner-decision' as const }
+  expect(activityStrategicDeliberationConclusionSchema.safeParse(ownerDecision).success).toBe(true)
+  expect(activityStrategicDeliberationConclusionSchema.safeParse({ ...ownerDecision, disposition: 'defer' }).success).toBe(false)
+  expect(activityStrategicDeliberationConclusionSchema.safeParse({ ...ownerDecision, scope: 'within-activity' }).success).toBe(false)
+
+  const thesisReview = { ...ownerDecision, outcome: 'thesis-review' as const }
+  expect(activityStrategicDeliberationConclusionSchema.safeParse(thesisReview).success).toBe(true)
+  expect(activityStrategicDeliberationConclusionSchema.safeParse({ ...thesisReview, scope: 'within-activity' }).success).toBe(false)
+
+  const insufficient = { ...noSelection, outcome: 'insufficient-evidence' as const, disposition: 'defer' as const }
+  expect(activityStrategicDeliberationConclusionSchema.safeParse(insufficient).success).toBe(true)
+  expect(activityStrategicDeliberationConclusionSchema.safeParse({ ...insufficient, proposedResponsibility: 'Not enough evidence.' }).success).toBe(false)
+  const duplicateEvidenceUses = [conclusion.evidenceUses[0]!, conclusion.evidenceUses[0]!]
+  const duplicateUncertaintyReviews = [conclusion.uncertaintyReviews[0]!, conclusion.uncertaintyReviews[0]!]
+  const duplicateNewUncertainties = [conclusion.newUncertainties[0]!, conclusion.newUncertainties[0]!]
+  const duplicateEvidenceResult = activityStrategicDeliberationConclusionSchema.safeParse({
+    ...conclusion, evidenceUses: duplicateEvidenceUses,
+  })
+  const duplicatePriorUncertaintyResult = activityStrategicDeliberationConclusionSchema.safeParse({
+    ...conclusion, uncertaintyReviews: duplicateUncertaintyReviews,
+  })
+  const duplicateNewUncertaintyResult = activityStrategicDeliberationConclusionSchema.safeParse({
+    ...conclusion, newUncertainties: duplicateNewUncertainties,
+  })
+  expect(duplicateEvidenceResult.success).toBe(false)
+  expect(duplicatePriorUncertaintyResult.success).toBe(false)
+  expect(duplicateNewUncertaintyResult.success).toBe(false)
+
+  const common = {
+    ...insufficient,
+    activityId: '00000000-0000-4000-8000-000000000011',
+    originSessionId: 'later-session',
+    requestId: '00000000-0000-4000-8000-000000000052',
+    sourceEpisodeId: '00000000-0000-4000-8000-000000000053',
+    sourceEpisodeRevision: 1,
+    skillDigests: [{ name: 'using-sensemaking', provider: 'fixture', digest: 'a'.repeat(64) }],
+    requestedAt: '2026-11-23T10:00:00.000Z',
+  }
+  expect(recordActivityStrategicDeliberationRequestSchema.safeParse(common).success).toBe(true)
+  expect(recordActivityStrategicDeliberationRequestSchema.safeParse({ ...common, disposition: 'retain' }).success).toBe(false)
+  expect(recordActivityStrategicDeliberationRequestSchema.safeParse({ ...common, disposition: 'no-selection' }).success).toBe(true)
+
+  const durable = {
+    ...common,
+    id: '00000000-0000-4000-8000-000000000054',
+    revision: 1,
+    producer: 'dsh-active-agent' as const,
+    sourceEpisodeRecordedAt: '2026-11-23T09:00:00.000Z',
+    sourceEpisodeSessionId: 'source-session',
+    status: 'complete' as const,
+    recordedAt: '2026-11-23T10:00:01.000Z',
+  }
+  expect(activityStrategicDeliberationRecordSchema.safeParse(durable).success).toBe(true)
+  expect(activityStrategicDeliberationRecordSchema.safeParse({ ...durable, disposition: 'retain' }).success).toBe(false)
+  expect(activityStrategicDeliberationRecordSchema.safeParse({ ...durable, disposition: 'no-selection' }).success).toBe(true)
+})
+
+it('preserves storage failure ownership and sorts same-revision rows by stable identity', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-deliberation-storage-')); roots.push(root)
+  const ctx = await harness(root)
+  const activity = await ctx.homeActivities.create({
+    name: 'Storage failures', objective: 'Keep advisory history readable after errors.',
+    boundaries: { inScope: ['Read durable decisions.'], outOfScope: ['Do not start work.'] },
+  })
+  const source = await ctx.homeActivityStrategicEpisodes.record(brief(activity.id))
+  const request = reconsider(activity.id, source)
+  const saved = await ctx.homeActivityStrategicDeliberations.record(request)
+  const unknownActivity = createActivityId('00000000-0000-4000-8000-000000000099')
+  expect(() => ctx.homeActivityStrategicDeliberations.list(unknownActivity))
+    .toThrowError('No saved Activity has id')
+  await expect(ctx.homeActivityStrategicDeliberations.record({ ...request, activityId: unknownActivity }))
+    .rejects.toMatchObject({ code: 'unknown-activity' })
+
+  const firstId = '00000000-0000-4000-8000-000000000071'
+  const secondId = '00000000-0000-4000-8000-000000000072'
+  const first = { ...saved, id: firstId as ActivityStrategicDeliberationId }
+  const second = { ...saved, id: secondId as ActivityStrategicDeliberationId }
+  Object.assign(ctx.homeActivityStrategicDeliberations, {
+    table: { entries: () => [[secondId, second], [firstId, first]], put: async () => {} },
+  })
+  expect(ctx.homeActivityStrategicDeliberations.list(activity.id).map(item => item.id)).toEqual([firstId, secondId])
+
+  Object.assign(ctx.homeActivityStrategicDeliberations, {
+    table: { entries: () => { throw new Error('read failed') }, put: async () => {} },
+  })
+  expect(() => ctx.homeActivityStrategicDeliberations.list(activity.id)).toThrowError(ActivityStrategicDeliberationStorageError)
+  Object.assign(ctx.homeActivityStrategicDeliberations, {
+    table: { entries: () => { throw new ActivityStrategicDeliberationError('invalid-deliberation', 'already classified') }, put: async () => {} },
+  })
+  expect(() => ctx.homeActivityStrategicDeliberations.list(activity.id)).toThrowError('already classified')
+  Object.assign(ctx.homeActivityStrategicDeliberations, { table: undefined })
+  expect(() => ctx.homeActivityStrategicDeliberations.list(activity.id)).toThrowError(ActivityStrategicDeliberationStorageError)
+})
+
+it('contains write failures, invalid durable attribution, oversized rows, and the append limit', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-deliberation-limits-')); roots.push(root)
+  const ctx = await harness(root)
+  const activity = await ctx.homeActivities.create({
+    name: 'Record limits', objective: 'Keep unconfirmed deliberation writes visible.',
+    boundaries: { inScope: ['Record bounded decisions.'], outOfScope: ['Do not retry unknown writes.'] },
+  })
+  const source = await ctx.homeActivityStrategicEpisodes.record(brief(activity.id))
+
+  Object.assign(ctx.homeActivityStrategicDeliberations, {
+    table: { entries: () => [], put: async () => { throw new Error('write failed') } },
+  })
+  await expect(ctx.homeActivityStrategicDeliberations.record(reconsider(activity.id, source)))
+    .rejects.toBeInstanceOf(ActivityStrategicDeliberationStorageError)
+
+  Object.assign(ctx.homeActivityStrategicDeliberations, {
+    table: { entries: () => [], put: async () => {} },
+  })
+  vi.spyOn(ctx.homeActivityStrategicEpisodes, 'list').mockReturnValue([{ ...source, recordedAt: 'not-a-timestamp' }])
+  await expect(ctx.homeActivityStrategicDeliberations.record({
+    ...reconsider(activity.id, source), requestId: '00000000-0000-4000-8000-000000000073',
+  })).rejects.toMatchObject({ code: 'invalid-deliberation' })
+  vi.restoreAllMocks()
+
+  const oversized = {
+    ...reconsider(activity.id, source),
+    requestId: '00000000-0000-4000-8000-000000000074',
+    newUncertainties: Array.from({ length: 64 }, (_, index) => ({
+      id: `N${index + 1}`,
+      statement: 'x'.repeat(4_000),
+      evidenceIds: [],
+    })),
+  }
+  await expect(ctx.homeActivityStrategicDeliberations.record(oversized))
+    .rejects.toMatchObject({ code: 'invalid-deliberation', message: expect.stringContaining('64 KiB storage limit') })
+
+  const accepted = await ctx.homeActivityStrategicDeliberations.record({
+    ...reconsider(activity.id, source), requestId: '00000000-0000-4000-8000-000000000075',
+  })
+  const fullHistory: ActivityStrategicDeliberation[] = Array.from({ length: 128 }, (_, index) => ({
+    ...accepted,
+    revision: index + 1,
+    requestId: `00000000-0000-4000-8000-${String(index + 76).padStart(12, '0')}`,
+  }))
+  vi.spyOn(ctx.homeActivityStrategicDeliberations, 'list').mockReturnValue(fullHistory)
+  await expect(ctx.homeActivityStrategicDeliberations.record({
+    ...reconsider(activity.id, source), requestId: '00000000-0000-4000-8000-000000000300',
+  })).rejects.toMatchObject({ code: 'deliberation-limit' })
 })
