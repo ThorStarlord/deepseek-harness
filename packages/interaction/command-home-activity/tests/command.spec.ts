@@ -11,7 +11,7 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
-import { createToolResultMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
+import { createToolResultMessage, createUserMessage, ToolCallId, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Workspace } from '@deepseek-ai/dsh-workspace/types'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -158,9 +158,9 @@ async function harness(options: { skillsAvailable?: boolean } = {}) {
   await ctx.plugin(HomeActivityHandoffService)
   await ctx.plugin(HomeActivityReviewService)
   await ctx.plugin(HomeActivityAnnotationService)
-  const commandFiber = await ctx.plugin(commandHomeActivity)
   const primary = createAgent(ctx, SessionId(`home-activity-${randomUUID()}`))
   const secondary = createAgent(ctx, SessionId(`home-activity-coordinator-${randomUUID()}`))
+  const commandFiber = await ctx.plugin(commandHomeActivity)
   for (const session of [primary.session, secondary.session]) persistedSessions.set(session.id, snapshot(session.id))
   return {
     ctx,
@@ -199,7 +199,10 @@ function createAgent(ctx: Context, id: ReturnType<typeof SessionId>) {
     get status() { return status },
     send: () => {},
     followup: () => {},
-    steer: (message) => { steeredMessages.push(message) },
+    steer: (message) => {
+      steeredMessages.push(message)
+      inbox.append('next-step', message)
+    },
     inject(input) { this.inbox.append('next-step', input) },
     cancel() { status = 'idle' },
     runMaintenance: task => task(new AbortController().signal),
@@ -207,6 +210,14 @@ function createAgent(ctx: Context, id: ReturnType<typeof SessionId>) {
   }
   ctx.agents.enter(agent)
   return { agent, session, steeredMessages }
+}
+
+/** Give the queued reconsideration to a turn, as the real AgentLoop inbox claim does. */
+function claimSteered(ctx: Context, agent: Agent, messages: readonly UserMessage[], turn = 1): void {
+  const message = messages.at(-1)
+  if (message === undefined) throw new Error('No steered reconsideration message was available to claim')
+  agent.inbox.remove(message.id)
+  ctx.emit('agent/inbox/claimed', { agent, message, turn })
 }
 
 function workspace(id: string, title: string): Workspace {
@@ -384,7 +395,7 @@ it('reconsiders one exact historical brief and recovers its attributed advisory 
   const queued = await run(test, ` consider ${activity.id} ${source.revision} ${question}`)
   expect(queued.kind).toBe('success')
   expect(queued.text).toContain(`brief revision ${source.revision}`)
-  expect(queued.text).toContain('No repository or Workspace was read')
+  expect(queued.text).toContain('No repository source or registered Workspace content was read')
   expect(test.skillLookups.slice(-2).map(lookup => lookup.scope)).toEqual([test.agent, test.agent])
   expect((await run(test, ` assess ${activity.id} ${[...test.workspaces.keys()].join(' ')}`)).text)
     .toContain('unfinished Activity Strategic Deliberation')
@@ -398,7 +409,8 @@ it('reconsiders one exact historical brief and recovers its attributed advisory 
   expect(text).toContain(source.repositories[0]?.revision)
   expect(text).toContain(question)
   expect(text).toContain('Loaded Sensemaking Skill: strategic-repository-analysis')
-  expect(text).toContain('Do not read repositories or Workspaces')
+  expect(text).toContain('Do not read repository source or Workspace content')
+  expect(text).toContain('The loaded Skill files below are the only files read for this request')
   expect(recorderWhen?.({ agent: test.agent } as never)).toBe(true)
   const otherAgentInSession = { ...test.agent, id: brandString('other-agent-in-reentry-session') } as Agent
   expect(recorderWhen?.({ agent: otherAgentInSession } as never)).toBe(false)
@@ -444,7 +456,14 @@ it('reconsiders one exact historical brief and recovers its attributed advisory 
   expect((await run(test, ` open ${activity.id}`)).text).toContain('1 deliberation revision saved')
   expect(recorderWhen?.({ agent: test.agent } as never)).toBe(false)
   expect(renderActivityStrategicDeliberation(saved!, undefined).join('\n'))
-    .toContain('The original brief is unavailable; its stored identity and attribution remain recorded.')
+    .toContain(`The original brief is unavailable; stored source brief ${source.id}, revision ${source.revision}, remains recorded.`)
+  expect(renderActivityStrategicDeliberation(saved!, source).join('\n'))
+    .toContain('Authority: this is advice only; it does not authorize or start work, change Activity scope, or grant permissions.')
+  const ownerDecision = { ...saved!, outcome: 'owner-decision' as const, disposition: 'escalate' as const, proposedResponsibility: null, scope: 'owner-decision' as const }
+  expect(renderActivityStrategicDeliberation(ownerDecision, source).join('\n'))
+    .toContain('Outcome: owner-decision requested')
+  expect(renderActivityStrategicDeliberation({ ...ownerDecision, outcome: 'thesis-review' as const }, source).join('\n'))
+    .toContain('Outcome: thesis-review requested')
   expect(renderActivityStrategicDeliberation(saved!, {
     ...source,
     evidence: source.evidence.map(evidence => ({ ...evidence, lineStart: 7 })),
@@ -498,6 +517,7 @@ it('reconsiders one exact historical brief and recovers its attributed advisory 
     { requestId, conclusionJson },
     { agent: test.agent, callId: ToolCallId('saved-recorder-call'), signal: new AbortController().signal } as never,
   )).rejects.toThrow('does not match a live explicit request')
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
   test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   expect(guardDenial(test, 'shell', 'reentry-shell-after-turn-end')).toBeUndefined()
   await expect(recorder.execute(
@@ -557,14 +577,133 @@ it('cancels an unfinished reconsideration without saving or starting work', asyn
   if (requestId === undefined) throw new Error('The reconsideration did not retain its explicit request id')
   const recorder = test.registeredTools.get('record_activity_strategic_deliberation')?.definition
   if (recorder?.execute === undefined) throw new Error('The deliberation recorder was not registered')
-  expect((await run(test, ' consider cancel')).text).toContain('An active model turn may still finish, but the recorder and execution tools remain blocked.')
+  expect((await run(test, ' consider cancel')).text).toContain('before a turn claimed it')
+  expect(test.agent.inbox.nextStep).toEqual([])
   expect(test.registeredTools.get('record_activity_strategic_deliberation')?.options.when?.({ agent: test.agent } as never)).toBe(false)
   expect(test.ctx.homeActivityStrategicDeliberations.list(activity.id)).toEqual([])
-  expect(guardDenial(test, 'shell', 'reentry-after-cancel')).toContain('canceled or could not be confirmed')
+  expect(guardDenial(test, 'shell', 'reentry-after-unclaimed-cancel')).toBeUndefined()
+
+  expect(await run(test, ` consider ${activity.id} ${source.revision} Is this still warranted?`)).toMatchObject({ kind: 'success' })
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
+  expect((await run(test, ' consider cancel')).text).toContain('An active model turn may still finish, but the recorder and execution tools remain blocked.')
+  expect(guardDenial(test, 'shell', 'reentry-after-claimed-cancel')).toContain('canceled or could not be confirmed')
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'reentry-after-cancel-turn-end')).toBeUndefined()
   await expect(recorder.execute(
     { requestId, conclusionJson: validDeliberationJson('Is this still warranted?') },
     { agent: test.agent, callId: ToolCallId('canceled-recorder-call'), signal: new AbortController().signal } as never,
   )).rejects.toThrow('does not match a live explicit request')
+})
+
+it('keeps an unclaimed reconsideration guarded across an unrelated turn end', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Unrelated turn end', objective: 'Do not release a queued request when another turn ends.',
+    boundaries: { inScope: ['Reconsider saved evidence.'], outOfScope: ['Do not execute work.'] },
+  })
+  const source = await saveSourceBrief(test, activity.id)
+  expect(await run(test, ` consider ${activity.id} ${source.revision} Is this still warranted?`)).toMatchObject({ kind: 'success' })
+  expect(test.agent.inbox.nextStep).toHaveLength(1)
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } })
+  expect(guardDenial(test, 'shell', 'unrelated-turn-end-guard')).toContain('Only the Activity Strategic Deliberation recorder')
+  expect(test.agent.inbox.nextStep).toHaveLength(1)
+
+  claimSteered(test.ctx, test.agent, test.steeredMessages, 2)
+  test.session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'claimed-turn-end-release')).toBeUndefined()
+})
+
+it('removes an unclaimed expired request when another Session starts', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    const test = await harness()
+    const activity = await test.ctx.homeActivities.create({
+      name: 'Unclaimed expiry', objective: 'Drop a queued request that no turn claimed.',
+      boundaries: { inScope: ['Reconsider saved evidence.'], outOfScope: ['Do not execute work.'] },
+    })
+    const source = await saveSourceBrief(test, activity.id)
+    const line = ` consider ${activity.id} ${source.revision} Is this still warranted?`
+    expect(await run(test, line, test.agent)).toMatchObject({ kind: 'success' })
+    const startedAt = Date.now()
+    vi.setSystemTime(startedAt + 45 * 60 * 1000 + 1)
+    expect(await run(test, `${line.replace('Is this', 'Is a new assessment')}`, test.secondaryAgent)).toMatchObject({ kind: 'success' })
+    expect(guardDenial(test, 'shell', 'unclaimed-expiry-release', test.agent)).toBeUndefined()
+    expect(test.agent.inbox.nextStep).toEqual([])
+    expect(guardDenial(test, 'shell', 'unclaimed-expiry-new-session', test.secondaryAgent))
+      .toContain('Only the Activity Strategic Deliberation recorder')
+    claimSteered(test.ctx, test.secondaryAgent, test.secondarySteeredMessages)
+    test.secondarySession.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(guardDenial(test, 'shell', 'unclaimed-expiry-finished', test.secondaryAgent)).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('releases a reconsideration when its inbox message is discarded or its Agent is disposed', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Inbox lifecycle', objective: 'Release only when the queued request is safely removed.',
+    boundaries: { inScope: ['Reconsider saved evidence.'], outOfScope: ['Do not execute work.'] },
+  })
+  const source = await saveSourceBrief(test, activity.id)
+  expect(await run(test, ` consider ${activity.id} ${source.revision} Is this still warranted?`)).toMatchObject({ kind: 'success' })
+  const discarded = test.steeredMessages.at(-1)
+  if (discarded === undefined) throw new Error('The reconsideration did not queue a message')
+  test.ctx.emit('agent/inbox/discarded', {
+    agent: test.agent,
+    message: createUserMessage({ content: [{ type: 'text', text: 'An unrelated inbox message.' }], source: { kind: 'user' } }),
+  })
+  expect(guardDenial(test, 'shell', 'unrelated-discard-guard')).toContain('Only the Activity Strategic Deliberation recorder')
+  test.agent.inbox.remove(discarded.id)
+  test.ctx.emit('agent/inbox/discarded', { agent: test.agent, message: discarded })
+  expect(guardDenial(test, 'shell', 'discarded-message-release')).toBeUndefined()
+
+  expect(await run(test, ` consider ${activity.id} ${source.revision} Is this still warranted?`)).toMatchObject({ kind: 'success' })
+  const disposed = test.steeredMessages.at(-1)
+  if (disposed === undefined) throw new Error('The follow-up reconsideration did not queue a message')
+  test.ctx.emit('agent/disposed', { agent: test.agent })
+  expect(guardDenial(test, 'shell', 'disposed-agent-release')).toBeUndefined()
+})
+
+it('removes an unclaimed queued request when the command plugin unloads', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Unload queued request', objective: 'Do not leave a queued instruction without its guard.',
+    boundaries: { inScope: ['Reconsider saved evidence.'], outOfScope: ['Do not execute work.'] },
+  })
+  const source = await saveSourceBrief(test, activity.id)
+  expect(await run(test, ` consider ${activity.id} ${source.revision} Is this still warranted?`)).toMatchObject({ kind: 'success' })
+  await test.commandFiber.dispose()
+  expect(test.agent.inbox.nextStep).toEqual([])
+  expect(guardDenial(test, 'shell', 'unload-queued-release')).toBeUndefined()
+  expect(test.toolGuards).toHaveLength(0)
+})
+
+it('removes an orphaned queued reconsideration when the Agent is created or the command registers', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Orphan sweep', objective: 'Remove only unowned reconsideration messages.',
+    boundaries: { inScope: ['Reconsider saved evidence.'], outOfScope: ['Do not execute work.'] },
+  })
+  const source = await saveSourceBrief(test, activity.id)
+  const message = createUserMessage({
+    content: [{ type: 'text', text: 'The user explicitly asked for an advisory reconsideration. Request ID: 00000000-0000-4000-8000-000000000099.' }],
+    source: { kind: 'user' },
+  })
+  const ordinary = createUserMessage({ content: [{ type: 'text', text: 'An ordinary queued message.' }], source: { kind: 'user' } })
+  test.agent.inbox.append('next-step', message)
+  test.agent.inbox.append('next-step', ordinary)
+  test.ctx.emit('agent/created', { agent: test.agent, source: 'startup' })
+  expect(test.agent.inbox.nextStep).toEqual([ordinary])
+
+  expect(await run(test, ` consider ${activity.id} ${source.revision} Is this still warranted?`)).toMatchObject({ kind: 'success' })
+  const activeMarker = createUserMessage({
+    content: [{ type: 'text', text: 'The user explicitly asked for an advisory reconsideration. Request ID: 00000000-0000-4000-8000-000000000098.' }],
+    source: { kind: 'user' },
+  })
+  test.agent.inbox.append('next-step', activeMarker)
+  test.ctx.emit('agent/created', { agent: test.agent, source: 'startup' })
+  expect(test.agent.inbox.nextStep).toContainEqual(activeMarker)
 })
 
 it('rejects stale or missing selections and keeps Skill setup guarded through cancellation', async () => {
@@ -700,6 +839,7 @@ it('validates recorder identity and contains structured and unexpected persisten
     .mockRejectedValueOnce(new Error('Unexpected storage adapter failure.'))
   await expect(executeRecorder({ requestId, conclusionJson: validJson }))
     .rejects.toThrow('Known domain rejection. Inspect /activity decisions before retrying.')
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
   test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
   await run(test, ` consider ${activity.id} ${source.revision} Is a bounded next step still warranted?`)
@@ -752,6 +892,7 @@ it('expires an idle deliberation at the request guard without pruning another Se
     expect(guardDenial(test, 'shell', 'direct-expiry-guard')).toContain('request expired')
     expect(guardDenial(test, 'record_activity_strategic_deliberation', 'expired-recorder-guard'))
       .toContain('canceled or could not be confirmed')
+    claimSteered(test.ctx, test.agent, test.steeredMessages)
     test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect(guardDenial(test, 'shell', 'direct-expiry-after-turn-end')).toBeUndefined()
   } finally {
@@ -808,6 +949,7 @@ it('keeps an expired deliberation guarded until its Session ends, including duri
     expect(first.kind).toBe('success')
     const recorderWhen = test.registeredTools.get('record_activity_strategic_deliberation')?.options.when
     expect(recorderWhen?.({ agent: test.agent } as never)).toBe(true)
+    claimSteered(test.ctx, test.agent, test.steeredMessages)
     const startedAt = Date.now()
 
     vi.setSystemTime(startedAt + 45 * 60 * 1000 + 1)
@@ -841,6 +983,7 @@ it('keeps an expired deliberation guarded until its Session ends, including duri
     expect(guardDenial(test, 'shell', 'other-session-still-active', test.secondaryAgent))
       .toContain('Only the Activity Strategic Deliberation recorder')
 
+    claimSteered(test.ctx, test.secondaryAgent, test.secondarySteeredMessages)
     await test.commandFiber.dispose()
     expect(guardDenial(test, 'shell', 'unload-keeps-other-session-guarded', test.secondaryAgent))
       .toContain('canceled or could not be confirmed')
@@ -916,6 +1059,7 @@ it('keeps an expired request guarded while its persistence write is unresolved',
         .toEqual(expect.stringContaining('Only the Activity Strategic Deliberation recorder'))
     }
 
+    claimSteered(test.ctx, test.agent, test.steeredMessages)
     test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect(guardDenial(test, 'shell', 'saving-ended-session-still-guarded', test.agent))
       .toContain('Only the Activity Strategic Deliberation recorder')
@@ -927,11 +1071,57 @@ it('keeps an expired request guarded while its persistence write is unresolved',
     expect(guardDenial(test, 'shell', 'second-session-remains-isolated', test.secondaryAgent))
       .toContain('Only the Activity Strategic Deliberation recorder')
 
+    claimSteered(test.ctx, test.secondaryAgent, test.secondarySteeredMessages)
     test.secondarySession.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect(guardDenial(test, 'shell', 'second-session-released', test.secondaryAgent)).toBeUndefined()
   } finally {
     vi.useRealTimers()
   }
+})
+
+it('keeps an in-flight save guarded when its inbox message or Agent is removed', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Save close race', objective: 'Do not release a guard before an in-flight save settles.',
+    boundaries: { inScope: ['Record an advisory reconsideration.'], outOfScope: ['Do not execute work.'] },
+  })
+  const source = await saveSourceBrief(test, activity.id)
+  const question = 'Which bounded responsibility remains warranted?'
+  expect(await run(test, ` consider ${activity.id} ${source.revision} ${question}`)).toMatchObject({ kind: 'success' })
+  const message = test.steeredMessages.at(-1)
+  if (message === undefined) throw new Error('The reconsideration did not queue a message')
+  const instruction = message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
+  const requestId = /Request ID: ([0-9a-f-]{36})/u.exec(instruction)?.[1]
+  if (requestId === undefined) throw new Error('The request instruction did not retain its opaque id')
+  const recorder = test.registeredTools.get('record_activity_strategic_deliberation')?.definition
+  if (recorder?.execute === undefined) throw new Error('The deliberation recorder was not registered')
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
+  let releaseWrite!: () => void
+  let signalWriteStarted!: () => void
+  const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve })
+  const writeStarted = new Promise<void>((resolve) => { signalWriteStarted = resolve })
+  const persist = test.ctx.homeActivityStrategicDeliberations.record.bind(test.ctx.homeActivityStrategicDeliberations)
+  vi.spyOn(test.ctx.homeActivityStrategicDeliberations, 'record').mockImplementation(async (request) => {
+    signalWriteStarted()
+    await writeGate
+    return persist(request)
+  })
+  const saving = recorder.execute(
+    { requestId, conclusionJson: validDeliberationJson(question) },
+    { agent: test.agent, callId: ToolCallId('save-close-race'), signal: new AbortController().signal } as never,
+  )
+  await writeStarted
+  test.ctx.emit('agent/inbox/discarded', { agent: test.agent, message })
+  expect(guardDenial(test, 'shell', 'save-discarded-guard', test.agent))
+    .toContain('canceled or could not be confirmed')
+  test.ctx.emit('agent/disposed', { agent: test.agent })
+  expect(guardDenial(test, 'shell', 'save-disposed-guard', test.agent))
+    .toContain('canceled or could not be confirmed')
+  releaseWrite()
+  await expect(saving).resolves.toMatchObject({ saved: true, revision: 1 })
+  expect(guardDenial(test, 'shell', 'save-settled-guard', test.agent)).toBeUndefined()
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'save-settled-turn-end', test.agent)).toBeUndefined()
 })
 
 it('preserves a successful in-flight save outcome during plugin disposal', async () => {
@@ -949,6 +1139,7 @@ it('preserves a successful in-flight save outcome during plugin disposal', async
   if (requestId === undefined) throw new Error('The request instruction did not retain its opaque id')
   const recorder = test.registeredTools.get('record_activity_strategic_deliberation')?.definition
   if (recorder?.execute === undefined) throw new Error('The deliberation recorder was not registered')
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
   const conclusionJson = validDeliberationJson(question)
   let releaseWrite!: () => void
   let signalWriteStarted!: () => void
@@ -980,6 +1171,61 @@ it('preserves a successful in-flight save outcome during plugin disposal', async
   expect(test.toolGuards).toHaveLength(0)
 })
 
+it('keeps a saved deliberation terminal through cancel, expiry, and unload', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    const test = await harness()
+    const activity = await test.ctx.homeActivities.create({
+      name: 'Saved terminal state', objective: 'Keep a confirmed deliberation authoritative before turn end.',
+      boundaries: { inScope: ['Reconsider saved evidence.'], outOfScope: ['Do not execute work.'] },
+    })
+    const source = await saveSourceBrief(test, activity.id)
+    const question = 'Which bounded responsibility remains warranted?'
+    expect(await run(test, ` consider ${activity.id} ${source.revision} ${question}`)).toMatchObject({ kind: 'success' })
+    const instruction = test.steeredMessages[0]?.content
+      .filter(block => block.type === 'text').map(block => block.text).join('\n') ?? ''
+    const requestId = /Request ID: ([0-9a-f-]{36})/u.exec(instruction)?.[1]
+    if (requestId === undefined) throw new Error('The request instruction did not retain its opaque id')
+    const recorder = test.registeredTools.get('record_activity_strategic_deliberation')?.definition
+    if (recorder?.execute === undefined) throw new Error('The deliberation recorder was not registered')
+    claimSteered(test.ctx, test.agent, test.steeredMessages)
+    await expect(recorder.execute(
+      { requestId, conclusionJson: validDeliberationJson(question) },
+      { agent: test.agent, callId: ToolCallId('saved-before-cancel'), signal: new AbortController().signal } as never,
+    )).resolves.toMatchObject({ saved: true, revision: 1 })
+    expect(test.ctx.homeActivityStrategicDeliberations.list(activity.id)).toHaveLength(1)
+
+    const canceled = await run(test, ' consider cancel')
+    expect(canceled).toMatchObject({ kind: 'success' })
+    expect(canceled.text).toContain('already saved')
+    expect(canceled.text).not.toContain('No record will be saved')
+    expect(guardDenial(test, 'shell', 'saved-cancel-guard', test.agent)).toContain('is saved')
+
+    const savedAt = Date.now()
+    vi.setSystemTime(savedAt + 45 * 60 * 1000 + 1)
+    expect(await run(test, ` consider ${activity.id} ${source.revision} Is a new responsibility warranted?`, test.secondaryAgent))
+      .toMatchObject({ kind: 'success' })
+    expect(guardDenial(test, 'shell', 'saved-expiry-guard', test.agent)).toContain('is saved')
+    expect(guardDenial(test, 'shell', 'new-session-guard-after-saved-expiry', test.secondaryAgent))
+      .toContain('Only the Activity Strategic Deliberation recorder')
+
+    claimSteered(test.ctx, test.secondaryAgent, test.secondarySteeredMessages)
+    await test.commandFiber.dispose()
+    expect(guardDenial(test, 'shell', 'saved-unload-guard', test.agent)).toContain('is saved')
+    expect(guardDenial(test, 'shell', 'unsaved-unload-guard', test.secondaryAgent))
+      .toContain('canceled or could not be confirmed')
+
+    test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(guardDenial(test, 'shell', 'saved-turn-end-guard', test.agent)).toBeUndefined()
+    test.secondarySession.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(guardDenial(test, 'shell', 'unsaved-turn-end-guard', test.secondaryAgent)).toBeUndefined()
+    expect(test.toolGuards).toHaveLength(0)
+    expect(test.ctx.homeActivityStrategicDeliberations.list(activity.id)).toHaveLength(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 it('selects each saved brief revision explicitly and rejects missing Skills', async () => {
   const test = await harness()
   const activity = await test.ctx.homeActivities.create({
@@ -996,9 +1242,10 @@ it('selects each saved brief revision explicitly and rejects missing Skills', as
     .filter(block => block.type === 'text').map(block => block.text).join('\n')
   expect(firstMessage).toContain(first.id)
   expect(firstMessage).not.toContain(second.id)
-  await run(test, ' consider cancel')
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
   expect((await run(test, ` consider ${activity.id} 2 Which responsibility is still warranted?`)).text)
     .toContain('already has an unfinished Activity Strategic Deliberation')
+  await run(test, ' consider cancel')
   test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
   const secondQueued = await run(test, ` consider ${activity.id} 2 Which responsibility is still warranted?`)

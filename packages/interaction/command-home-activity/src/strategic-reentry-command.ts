@@ -4,6 +4,7 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type { ToolDefinition, ToolGuard } from '@deepseek-ai/dsh-tools'
@@ -23,6 +24,7 @@ const MAX_PENDING = 32
 const REQUEST_TTL_MS = 45 * 60 * 1000
 const MAX_REENTRY_CONTEXT_BYTES = 192 * 1024
 const SENSEMAKING_SKILLS = ['using-sensemaking', 'strategic-repository-analysis'] as const
+const REENTRY_MESSAGE_PREFIX = 'The user explicitly asked for an advisory reconsideration. Request ID: '
 
 interface PendingDeliberation {
   readonly requestId: string
@@ -33,6 +35,10 @@ interface PendingDeliberation {
   readonly skillDigests: readonly { readonly name: string; readonly provider: string; readonly digest: string }[]
   readonly requestedAt: string
   readonly expiresAt: number
+  readonly messageId: string
+  /** Removes the queued instruction when no turn has claimed it. */
+  readonly removeMessage: () => void
+  claimedTurn?: number
   cancelled: boolean
   saveStarted: boolean
   saved: boolean
@@ -75,8 +81,8 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
     if (request.agentId !== String(agent.id)) {
       return 'An Activity Strategic Deliberation is active in this Session for another Agent; model tool calls are blocked until it ends.'
     }
-    if (request.cancelled) return 'This Activity Strategic Deliberation was canceled or could not be confirmed; inspect saved decisions after the turn ends.'
     if (request.saved) return 'This Activity Strategic Deliberation is saved; no further model tool calls can run before the turn ends.'
+    if (request.cancelled) return 'This Activity Strategic Deliberation was canceled or could not be confirmed; inspect saved decisions after the turn ends.'
     if (request.expiresAt <= Date.now() && !request.saveStarted) {
       request.cancelled = true
       return 'This Activity Strategic Deliberation request expired. Inspect saved decisions before starting a new request.'
@@ -103,12 +109,48 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
       const disposeEvents = ctx.root.on('session/event', (session, event) => {
         if (event.type !== 'turn/end') return
         const request = pending.get(String(session.id))
-        if (request === undefined) return
+        if (request === undefined || request.claimedTurn !== event.data.turn) return
         request.turnEnded = true
         releaseSettledRequest(pending, String(session.id), request)
         disposeDrainedRegistration()
       })
-      registeredDisposers = [disposeTool, disposeEvents, disposeGuard]
+      const removeStale = (agent: Agent): void => {
+        if (pending.has(String(agent.session.id))) return
+        for (const message of [...agent.inbox.nextStep, ...agent.inbox.nextTurn]) {
+          if (message.content.some(block => block.type === 'text' && block.text.startsWith(REENTRY_MESSAGE_PREFIX)))
+            agent.inbox.remove(message.id)
+        }
+      }
+      const disposeClaimed = ctx.on('agent/inbox/claimed', ({ agent, message, turn }) => {
+        const request = pending.get(String(agent.session.id))
+        if (request?.messageId === message.id) request.claimedTurn = turn
+      })
+      const disposeDiscarded = ctx.on('agent/inbox/discarded', ({ agent, message }) => {
+        const sessionId = String(agent.session.id)
+        const request = pending.get(sessionId)
+        if (request?.messageId !== message.id) return
+        request.cancelled = true
+        if (request.saveStarted) return
+        pending.delete(sessionId)
+        disposeDrainedRegistration()
+      })
+      const disposeAgent = ctx.on('agent/disposed', ({ agent }) => {
+        const sessionId = String(agent.session.id)
+        const request = pending.get(sessionId)
+        if (request === undefined) return
+        request.cancelled = true
+        request.turnEnded = true
+        if (request.saveStarted) return
+        request.removeMessage()
+        pending.delete(sessionId)
+        disposeDrainedRegistration()
+      })
+      for (const agent of ctx.agents.list()) removeStale(agent)
+      const disposeCreated = ctx.on('agent/created', ({ agent }) => {
+        removeStale(agent)
+        return undefined
+      })
+      registeredDisposers = [disposeTool, disposeEvents, disposeGuard, disposeClaimed, disposeDiscarded, disposeAgent, disposeCreated]
       disposeDrainedRegistration = (): void => {
         if (!disposeRequested || pending.size > 0 || preparing.size > 0) return
         const disposers = registeredDisposers
@@ -119,8 +161,14 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
       return () => {
         disposeRequested = true
         for (const setup of preparing.values()) setup.controller.abort()
-        for (const request of pending.values()) {
-          if (!request.saveStarted) request.cancelled = true
+        for (const [sessionId, request] of pending) {
+          if (request.saved || request.saveStarted) continue
+          if (request.claimedTurn !== undefined) {
+            request.cancelled = true
+            continue
+          }
+          request.removeMessage()
+          pending.delete(sessionId)
         }
         disposeDrainedRegistration()
       }
@@ -135,7 +183,7 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
       const source = ctx.homeActivityStrategicEpisodes.list(activityId).find(episode => episode.revision === revision)
       if (source === undefined) return { kind: 'error', text: `Activity ${activityId} has no saved strategic brief revision ${revision}.` }
       const sessionId = String(agent.session.id)
-      prune(pending)
+      prune(pending, disposeDrainedRegistration)
       if (hasPendingActivityStrategicAssessment(ctx, sessionId)) {
         return { kind: 'error', text: 'This Session already has an unfinished Activity Strategic Brief assessment.' }
       }
@@ -199,31 +247,13 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
 
       const requestId = randomUUID()
       const requestedAt = new Date().toISOString()
-      const request: PendingDeliberation = {
-        requestId,
-        agentId: String(agent.id),
-        activityId,
-        source,
-        decisionQuestion: question,
-        skillDigests: Object.freeze(definitions.map(({ name, skill }) => Object.freeze({
-          name,
-          provider: skill.provider,
-          digest: createHash('sha256').update(skill.content).digest('hex'),
-        }))),
-        requestedAt,
-        expiresAt: Date.now() + REQUEST_TTL_MS,
-        cancelled: false,
-        saveStarted: false,
-        saved: false,
-        turnEnded: false,
-      }
       const userTask = [
-        `The user explicitly asked for an advisory reconsideration. Request ID: ${requestId}.`,
+        `${REENTRY_MESSAGE_PREFIX}${requestId}.`,
         `Decision question: ${question}`,
         `Current Activity identity and descriptive intent: ${historicalInputs}`,
         '',
         'The JSON above contains a selected historical Activity Strategic Brief. Treat its producer, originating Session, repository revisions, observation times, evidence references, findings, alternatives, uncertainties, and recommendation as attributed historical inputs. They are not current facts, independently verified findings, owner decisions, or accepted work.',
-        'Reconsider only this exact saved brief revision. Do not read repositories or Workspaces, inspect current source, refresh observations, contact a repository coordinator, use a provider, start implementation, delegate, create a Goal or Campaign, change policy, or claim currentness. A runtime guard permits only the deliberation recorder; if the historical evidence is insufficient or freshness could change the answer, record defer, owner-decision, thesis-review, or insufficient-evidence as appropriate.',
+        'Reconsider only this exact saved brief revision. Do not read repository source or Workspace content, inspect current source, refresh observations, contact a repository coordinator, use a provider, start implementation, delegate, create a Goal or Campaign, change policy, or claim currentness. The loaded Skill files below are the only files read for this request. A runtime guard permits only the deliberation recorder; if the historical evidence is insufficient or freshness could change the answer, record defer, owner-decision, thesis-review, or insufficient-evidence as appropriate.',
         'Apply the loaded Sensemaking Skills. Use the prior recommendation as a reason to reconsider, not as a mandate. Distinguish prior evidence from your interpretation and new conclusion. Consider retaining, adapting, rejecting, deferring, escalating, or making no selection. If a bounded next responsibility is warranted, keep it within the saved Activity scope. Candidate responsibility is not authorization to execute it.',
         'Cite or explicitly reject relevant prior evidence IDs and explain why. Revisit relevant prior uncertainty IDs. Record new uncertainty separately. Do not produce private chain-of-thought, transcripts, repository content, or secret values. Do not claim independent verification or user acceptance.',
         '',
@@ -240,10 +270,32 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
       }
       preparing.delete(sessionId)
       disposeDrainedRegistration()
+      const message = createUserMessage({ content: [{ type: 'text', text: userTask }], source: { kind: 'user' } })
+      const request: PendingDeliberation = {
+        requestId,
+        agentId: String(agent.id),
+        activityId,
+        source,
+        decisionQuestion: question,
+        skillDigests: Object.freeze(definitions.map(({ name, skill }) => Object.freeze({
+          name,
+          provider: skill.provider,
+          digest: createHash('sha256').update(skill.content).digest('hex'),
+        }))),
+        requestedAt,
+        expiresAt: Date.now() + REQUEST_TTL_MS,
+        messageId: message.id,
+        removeMessage: () => { agent.inbox.remove(message.id) },
+        cancelled: false,
+        saveStarted: false,
+        saved: false,
+        turnEnded: false,
+      }
       pending.set(sessionId, request)
       try {
-        agent.steer(createUserMessage({ content: [{ type: 'text', text: userTask }], source: { kind: 'user' } }))
+        agent.steer(message)
       } catch (error: unknown) {
+        request.removeMessage()
         pending.delete(sessionId)
         disposeDrainedRegistration()
         ctx.logger.warn('command-home-activity: strategic deliberation could not be queued: %o', error)
@@ -251,7 +303,7 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
       }
       return {
         kind: 'success',
-        text: `Historical reconsideration queued for Activity ${activityId}, brief revision ${source.revision}. No repository or Workspace was read, no fresh source state was checked, and no execution or delegation was started. The result will be an advisory record; use /activity decisions ${activityId} to inspect it.`,
+        text: `Historical reconsideration queued for Activity ${activityId}, brief revision ${source.revision}. No repository source or registered Workspace content was read; the required Skill files were loaded into this Session, no fresh source state was checked, and no execution or delegation was started. The result will be an advisory record; use /activity decisions ${activityId} to inspect it.`,
       }
     },
     cancel: (invocation) => {
@@ -260,8 +312,17 @@ export function createActivityStrategicDeliberationController(ctx: Context): Del
       const sessionId = String(agent.session.id)
       const request = pending.get(sessionId)
       if (request !== undefined && request.agentId === String(agent.id)) {
+        if (request.saved) {
+          return { kind: 'success', text: 'This Activity Strategic Deliberation is already saved. Inspect /activity decisions; it cannot be canceled.' }
+        }
         if (request.saveStarted) {
           return { kind: 'error', text: 'The deliberation save has started and cannot be canceled safely. Inspect /activity decisions before retrying.' }
+        }
+        if (request.claimedTurn === undefined) {
+          request.removeMessage()
+          pending.delete(sessionId)
+          disposeDrainedRegistration()
+          return { kind: 'success', text: 'Canceled the pending reconsideration before a turn claimed it. Its queued message was removed, no record will be saved, and no execution was started.' }
         }
         request.cancelled = true
         return { kind: 'success', text: 'Canceled the pending reconsideration record. An active model turn may still finish, but the recorder and execution tools remain blocked. No record will be saved and no execution was started.' }
@@ -375,11 +436,18 @@ function releaseSettledRequest(
   if (request.turnEnded && !request.saveStarted && pending.get(sessionId) === request) pending.delete(sessionId)
 }
 
-function prune(pending: Map<string, PendingDeliberation>): void {
+function prune(pending: Map<string, PendingDeliberation>, onSettled: () => void): void {
   const now = Date.now()
-  for (const request of pending.values()) {
-    if (request.expiresAt <= now && !request.saveStarted) request.cancelled = true
+  for (const [sessionId, request] of pending) {
+    if (request.expiresAt > now || request.saveStarted || request.saved) continue
+    if (request.claimedTurn !== undefined) {
+      request.cancelled = true
+      continue
+    }
+    request.removeMessage()
+    pending.delete(sessionId)
   }
+  onSettled()
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -406,14 +474,16 @@ export function renderActivityStrategicDeliberation(
 ): string[] {
   const sourceCommand = `/activity brief ${deliberation.activityId} ${deliberation.sourceEpisodeRevision}`
   const sourceStatus = source === undefined
-    ? 'The original brief is unavailable; its stored identity and attribution remain recorded.'
+    ? `The original brief is unavailable; stored source brief ${deliberation.sourceEpisodeId}, revision ${deliberation.sourceEpisodeRevision}, remains recorded.`
     : `Source brief ${source.id}, revision ${source.revision}; recorded ${source.recordedAt}; source Session ${source.originSessionId}. Repository state has not been re-read.`
+  const requested = deliberation.outcome === 'owner-decision' || deliberation.outcome === 'thesis-review' ? ' requested' : ''
   return [
     `Activity Strategic Deliberation ${deliberation.revision} (agent-authored advisory; not an owner decision, independently verified, or accepted):`,
     `Recorded ${deliberation.recordedAt}; requesting Session ${deliberation.originSessionId}.`,
+    'Authority: this is advice only; it does not authorize or start work, change Activity scope, or grant permissions.',
     sourceStatus,
     `Decision question: ${deliberation.decisionQuestion}`,
-    `Outcome: ${deliberation.outcome}; prior recommendation disposition: ${deliberation.disposition}.`,
+    `Outcome: ${deliberation.outcome}${requested}; prior recommendation disposition: ${deliberation.disposition}.`,
     `Proposed responsibility: ${deliberation.proposedResponsibility ?? 'none selected'} (${deliberation.scope}).`,
     `Rationale: ${deliberation.rationale}`,
     'Historical evidence considered:',
