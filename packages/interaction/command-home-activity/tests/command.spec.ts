@@ -11,7 +11,7 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
-import { createToolResultMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
+import { createToolResultMessage, createUserMessage, ToolCallId, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Workspace } from '@deepseek-ai/dsh-workspace/types'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -42,6 +42,12 @@ import HomeActivityAnnotationService, {
 import HomeActivityStrategicEpisodeService from '@deepseek-ai/dsh-home-activity/strategic-episodes'
 import type { ActivityAnnotation, ActivityAnnotationId } from '@deepseek-ai/dsh-home-activity/annotations'
 import * as commandHomeActivity from '../src/index.ts'
+import {
+  cancelActivityStrategicAssessment,
+  registerActivityStrategicBriefTool,
+  renderActivityStrategicEpisodes,
+} from '../src/strategic-command.ts'
+import type { ActivityStrategicEpisode } from '@deepseek-ai/dsh-home-activity/strategic-episodes'
 
 const roots: string[] = []
 const contexts: Context[] = []
@@ -153,12 +159,13 @@ async function harness() {
     toolGuards,
     setCoordinatorAvailable(available: boolean) { coordinatorAvailable = available },
     steeredMessages: primary.steeredMessages,
+    secondarySteeredMessages: secondary.steeredMessages,
     skills: primary.skills,
   }
 }
 
-function createAgent(ctx: Context, id: ReturnType<typeof SessionId>) {
-  const session = ctx.sessions.create(id)
+function createAgent(ctx: Context, id: ReturnType<typeof SessionId>, cwd?: string) {
+  const session = ctx.sessions.create(id, cwd === undefined ? undefined : { meta: { cwd } })
   const inbox = createInboxStub()
   const steeredMessages: import('@deepseek-ai/dsh-session').UserMessage[] = []
   const agentContext = new Context()
@@ -187,7 +194,10 @@ function createAgent(ctx: Context, id: ReturnType<typeof SessionId>) {
     get status() { return status },
     send: () => {},
     followup: () => {},
-    steer: (message) => { steeredMessages.push(message) },
+    steer: (message) => {
+      steeredMessages.push(message)
+      inbox.append('next-step', message)
+    },
     inject(input) { this.inbox.append('next-step', input) },
     cancel() { status = 'idle' },
     runMaintenance: task => task(new AbortController().signal),
@@ -217,6 +227,100 @@ async function run(test: Awaited<ReturnType<typeof harness>>, suffix: string, ag
   )
   if (execution === undefined) throw new Error('/activity was not registered')
   return execution.result
+}
+
+/** Give the queued assessment to a turn, as the real AgentLoop inbox claim does. */
+function claimSteered(
+  ctx: Context,
+  agent: Agent,
+  messages: readonly UserMessage[],
+  turn = 1,
+): void {
+  const message = messages.at(-1)
+  if (message === undefined) throw new Error('No steered assessment message was available to claim')
+  agent.inbox.remove(message.id)
+  ctx.emit('agent/inbox/claimed', { agent, message, turn })
+}
+
+function appendSuccessfulCoordinatorResult(
+  test: Awaited<ReturnType<typeof harness>>,
+  session: Session,
+  callId: string,
+  turn = 1,
+): void {
+  const rows = [...test.workspaces.values()]
+  const call = session.append('tool/call', {
+    turn,
+    step: 1,
+    callId: ToolCallId(callId),
+    name: 'coordinate_repositories',
+    arguments: JSON.stringify({ repositories: rows.map(workspace => workspace.path), task: 'read selected repositories' }),
+  })
+  session.append('tool/result', {
+    turn,
+    step: 1,
+    message: createToolResultMessage({ callId: call.data.callId, content: [{ type: 'text', text: 'Read-only results' }], isError: false }),
+    meta: { repositories: rows.map((workspace, index) => ({
+      workspaceId: workspace.id,
+      root: workspace.path,
+      head: index === 0 ? 'a'.repeat(40) : 'b'.repeat(40),
+      execution: 'result',
+      childSessionId: `child-${String(index)}`,
+      runId: `run-${String(index)}`,
+      sourceChanged: false,
+      stagedCount: 0,
+      unstagedCount: 0,
+      untrackedCount: 0,
+      observedAtStart: `2026-11-23T10:00:0${String(index)}.000Z`,
+      observedAtEnd: `2026-11-23T10:00:1${String(index)}.000Z`,
+    })) },
+  }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+}
+
+function incompleteBriefJson(workspaces: readonly Workspace[]): string {
+  return JSON.stringify({
+    status: 'incomplete',
+    repositories: workspaces.map((workspace, index) => ({
+      workspaceId: workspace.id,
+      title: workspace.title,
+      status: 'observed',
+      revision: index === 0 ? 'a'.repeat(40) : 'b'.repeat(40),
+      workingTree: 'clean',
+      sourceChanged: false,
+      observedAtStart: `2026-11-23T10:00:0${String(index)}.000Z`,
+      observedAtEnd: `2026-11-23T10:00:1${String(index)}.000Z`,
+    })),
+    evidence: workspaces.map((workspace, index) => ({
+      id: `E${String(index + 1)}`,
+      workspaceId: workspace.id,
+      revision: index === 0 ? 'a'.repeat(40) : 'b'.repeat(40),
+      path: index === 0 ? 'README.md' : 'SKILL.md',
+      note: `Coordinator result for ${workspace.title}.`,
+    })),
+    findings: [{ kind: 'source-observation', category: 'capability', statement: 'Both repositories were inspected.', evidenceIds: ['E1', 'E2'] }],
+    alternatives: [
+      { name: 'Keep the current seam', consequence: 'Preserves one policy.', evidenceIds: ['E1', 'E2'], uncertaintyIds: [] },
+      { name: 'Add a new seam', consequence: 'Expands integration surface.', evidenceIds: ['E1', 'E2'], uncertaintyIds: [] },
+    ],
+    uncertainties: [],
+    recommendation: { disposition: 'INVESTIGATE', responsibility: 'Compare the result.', rationale: 'The coordinator reported both sources.', scope: 'within-activity', evidenceIds: ['E1', 'E2'], uncertaintyIds: [] },
+  })
+}
+
+function pendingAssessmentRecorder(test: Awaited<ReturnType<typeof harness>>) {
+  const instruction = test.steeredMessages.at(-1)?.content
+    .map(block => block.type === 'text' ? block.text : '').join('\n') ?? ''
+  const requestId = /Request ID: ([0-9a-f-]{36})/u.exec(instruction)?.[1]
+  if (requestId === undefined) throw new Error('The assessment instruction did not retain its request id')
+  const recorder = test.registeredTools.get('record_activity_strategic_brief')?.definition
+  if (recorder?.execute === undefined) throw new Error('The strategic brief recorder was not registered')
+  return {
+    requestId,
+    execute: (briefJson: string, callId: string, overrideRequestId?: string) => recorder.execute?.(
+      { requestId: overrideRequestId ?? requestId, briefJson },
+      { agent: test.agent, callId: ToolCallId(callId), signal: new AbortController().signal } as never,
+    ),
+  }
 }
 
 function guardDenial(
@@ -305,6 +409,7 @@ it('requires an explicit assessment command and steers the active Agent with loa
   expect(started.text).toContain('one read-only DSH child Session per Workspace')
   expect(started.text).toContain('cannot implement or mutate either repository')
   expect(test.steeredMessages).toHaveLength(1)
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
   const message = test.steeredMessages[0]
   if (message === undefined) throw new Error('The explicit assessment did not steer the active Agent')
   const text = message.content.map(block => block.type === 'text' ? block.text : '').join('\n')
@@ -479,6 +584,7 @@ it('releases an assessment after an errored or unattributed coordinator result w
     const queued = await run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`)
     expect(queued.kind).toBe('success')
     expect(test.steeredMessages).toHaveLength(1)
+    claimSteered(test.ctx, test.agent, test.steeredMessages)
 
     const workspaceRows = [...test.workspaces.values()]
     const call = test.session.append('tool/call', {
@@ -511,7 +617,7 @@ it('releases an assessment after an errored or unattributed coordinator result w
   }
 })
 
-it('discards an assessment when its turn ends without an attributable coordinator result', async () => {
+it('releases a claimed assessment whose turn ends without an attributable coordinator result', async () => {
   const test = await harness()
   const activity = await test.ctx.homeActivities.create({
     name: 'Sensemaking integration', objective: 'Assess selected repository sources.',
@@ -520,6 +626,7 @@ it('discards an assessment when its turn ends without an attributable coordinato
   const selectedIds = [...test.workspaces.keys()]
   await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
     .resolves.toMatchObject({ kind: 'success' })
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
 
   test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
@@ -528,6 +635,1094 @@ it('discards an assessment when its turn ends without an attributable coordinato
   await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
     .resolves.toMatchObject({ kind: 'success' })
   expect(test.steeredMessages).toHaveLength(2)
+})
+
+it('keeps an unclaimed assessment guarded across an unrelated turn end', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Unrelated turn', objective: 'Do not release a queued assessment before a claim.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  expect(test.agent.inbox.nextStep).toHaveLength(1)
+  test.ctx.emit('agent/inbox/claimed', {
+    agent: test.agent,
+    message: createUserMessage({ content: [{ type: 'text', text: 'An unrelated claimed message.' }], source: { kind: 'user' } }),
+    turn: 1,
+  })
+  expect(guardDenial(test, 'shell', 'unrelated-claim-shell')).toContain('no model turn has claimed it')
+
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } })
+  expect(guardDenial(test, 'shell', 'unclaimed-unrelated-turn-shell'))
+    .toContain('no model turn has claimed it')
+  expect(test.agent.inbox.nextStep).toHaveLength(1)
+
+  claimSteered(test.ctx, test.agent, test.steeredMessages, 2)
+  expect(guardDenial(test, 'shell', 'claimed-unrelated-turn-shell'))
+    .toContain('Activity Strategic Brief is active')
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'claimed-other-turn-end-shell'))
+    .toContain('Activity Strategic Brief is active')
+  test.session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'claimed-own-turn-end-shell')).toBeUndefined()
+})
+
+it('removes an unclaimed assessment message when it is canceled or expires', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    const test = await harness()
+    const activity = await test.ctx.homeActivities.create({
+      name: 'Queued cleanup', objective: 'Never leave a protected instruction without its guard.',
+      boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+    })
+    const selectedIds = [...test.workspaces.keys()]
+    const line = ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`
+
+    await expect(run(test, line)).resolves.toMatchObject({ kind: 'success' })
+    expect(test.agent.inbox.nextStep).toHaveLength(1)
+    expect((await run(test, ' assess cancel')).text).toContain('before a turn claimed it')
+    expect(test.agent.inbox.nextStep).toEqual([])
+    expect(guardDenial(test, 'shell', 'unclaimed-cancel-guard')).toBeUndefined()
+
+    await expect(run(test, line)).resolves.toMatchObject({ kind: 'success' })
+    const startedAt = Date.now()
+    vi.setSystemTime(startedAt + 45 * 60 * 1000 + 1)
+    expect(guardDenial(test, 'shell', 'unclaimed-expiry-guard')).toContain('request expired')
+    expect(test.agent.inbox.nextStep).toEqual([])
+    expect(guardDenial(test, 'shell', 'unclaimed-expiry-released')).toBeUndefined()
+    expect(await run(test, line)).toMatchObject({ kind: 'success' })
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('releases a saved assessment after a persistence write settles past turn end', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Save race', objective: 'Report a settled save truthfully after its turn ends.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
+  const instruction = test.steeredMessages.at(-1)?.content
+    .map(block => block.type === 'text' ? block.text : '').join('\n') ?? ''
+  const requestId = /Request ID: ([0-9a-f-]{36})/u.exec(instruction)?.[1]
+  if (requestId === undefined) throw new Error('The assessment instruction did not retain its request id')
+  const recorder = test.registeredTools.get('record_activity_strategic_brief')?.definition
+  if (recorder?.execute === undefined) throw new Error('The strategic brief recorder was not registered')
+
+  const rows = [...test.workspaces.values()]
+  const call = test.session.append('tool/call', {
+    turn: 1,
+    step: 1,
+    callId: ToolCallId('save-race-coordinator'),
+    name: 'coordinate_repositories',
+    arguments: JSON.stringify({ repositories: rows.map(workspace => workspace.path), task: 'read selected repositories' }),
+  })
+  test.session.append('tool/result', {
+    turn: 1,
+    step: 1,
+    message: createToolResultMessage({ callId: call.data.callId, content: [{ type: 'text', text: 'Read-only results' }], isError: false }),
+    meta: { repositories: rows.map((workspace, index) => ({
+      workspaceId: workspace.id,
+      root: workspace.path,
+      head: index === 0 ? 'a'.repeat(40) : 'b'.repeat(40),
+      execution: 'result',
+      childSessionId: `child-${String(index)}`,
+      runId: `run-${String(index)}`,
+      sourceChanged: false,
+      stagedCount: 0,
+      unstagedCount: 0,
+      untrackedCount: 0,
+      observedAtStart: `2026-11-23T10:00:0${String(index)}.000Z`,
+      observedAtEnd: `2026-11-23T10:00:1${String(index)}.000Z`,
+    })) },
+  }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+
+  const briefJson = JSON.stringify({
+    status: 'incomplete',
+    repositories: rows.map((workspace, index) => ({
+      workspaceId: workspace.id,
+      title: workspace.title,
+      status: 'observed',
+      revision: index === 0 ? 'a'.repeat(40) : 'b'.repeat(40),
+      workingTree: 'clean',
+      sourceChanged: false,
+      observedAtStart: `2026-11-23T10:00:0${String(index)}.000Z`,
+      observedAtEnd: `2026-11-23T10:00:1${String(index)}.000Z`,
+    })),
+    evidence: rows.map((workspace, index) => ({
+      id: `E${String(index + 1)}`,
+      workspaceId: workspace.id,
+      revision: index === 0 ? 'a'.repeat(40) : 'b'.repeat(40),
+      path: index === 0 ? 'README.md' : 'SKILL.md',
+      note: `Coordinator result for ${workspace.title}.`,
+    })),
+    findings: [{ kind: 'source-observation', category: 'capability', statement: 'Both repositories were inspected.', evidenceIds: ['E1', 'E2'] }],
+    alternatives: [],
+    uncertainties: [],
+    recommendation: { disposition: 'INVESTIGATE', responsibility: 'Compare the result.', rationale: 'The coordinator reported both sources.', scope: 'within-activity', evidenceIds: ['E1', 'E2'], uncertaintyIds: [] },
+  })
+  let releaseWrite!: () => void
+  let signalWriteStarted!: () => void
+  const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve })
+  const writeStarted = new Promise<void>((resolve) => { signalWriteStarted = resolve })
+  const originalRecord = test.ctx.homeActivityStrategicEpisodes.record.bind(test.ctx.homeActivityStrategicEpisodes)
+  vi.spyOn(test.ctx.homeActivityStrategicEpisodes, 'record').mockImplementation(async (request) => {
+    signalWriteStarted()
+    await writeGate
+    return originalRecord(request)
+  })
+  const saving = recorder.execute(
+    { requestId, briefJson },
+    { agent: test.agent, callId: ToolCallId('save-race-recorder'), signal: new AbortController().signal } as never,
+  )
+  await writeStarted
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'save-race-during-write')).toContain('Activity Strategic Brief is active')
+  releaseWrite()
+  await expect(saving).resolves.toMatchObject({ saved: true, revision: 1 })
+  expect(guardDenial(test, 'shell', 'save-race-after-write')).toBeUndefined()
+  const afterSave = await run(test, ' assess cancel')
+  expect(afterSave).toMatchObject({ kind: 'success', text: 'No unfinished Activity Strategic Brief request is waiting in this Session.' })
+  expect(afterSave.text).not.toContain('No record')
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toHaveLength(1)
+})
+
+it('withholds coordinator and recorder authority until the assessment is claimed', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Claim authority', objective: 'Do not let an unrelated turn use the assessment permission.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: [] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  const instruction = test.steeredMessages.at(-1)?.content
+    .map(block => block.type === 'text' ? block.text : '').join('\n') ?? ''
+  expect(instruction).toContain('out-of-scope statements: (none)')
+  const rows = [...test.workspaces.values()]
+  test.session.append('tool/call', {
+    turn: 1,
+    step: 1,
+    callId: ToolCallId('preclaim-coordinator'),
+    name: 'coordinate_repositories',
+    arguments: JSON.stringify({ repositories: rows.map(workspace => workspace.path), task: 'read selected repositories' }),
+  })
+  expect(guardDenial(test, 'coordinate_repositories', 'preclaim-coordinator'))
+    .toContain('no model turn has claimed it')
+  expect(guardDenial(test, 'record_activity_strategic_brief', 'preclaim-recorder'))
+    .toContain('no model turn has claimed it')
+  expect(test.registeredTools.get('record_activity_strategic_brief')?.options.when?.({ agent: test.agent } as never)).toBe(false)
+
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
+  expect(guardDenial(test, 'coordinate_repositories', 'preclaim-coordinator'))
+    .toContain('permits one coordinator call')
+  expect(guardDenial(test, 'record_activity_strategic_brief', 'claimed-recorder-before-result'))
+    .toContain('recorded only after the selected repository coordinator returns a result')
+  test.session.append('tool/call', {
+    turn: 1,
+    step: 2,
+    callId: ToolCallId('claimed-coordinator'),
+    name: 'coordinate_repositories',
+    arguments: JSON.stringify({ repositories: rows.map(workspace => workspace.path), task: 'read selected repositories' }),
+  })
+  expect(guardDenial(test, 'coordinate_repositories', 'claimed-coordinator')).toBeUndefined()
+  test.session.append('tool/result', {
+    turn: 1,
+    step: 2,
+    message: createToolResultMessage({
+      callId: ToolCallId('unknown-coordinator-result'),
+      content: [{ type: 'text', text: 'Unrelated result.' }],
+      isError: false,
+    }),
+    meta: {},
+  }, { surfaceOp: 'append' })
+  expect(guardDenial(test, 'shell', 'unknown-result-still-active')).toContain('Activity Strategic Brief is active')
+})
+
+it('keeps an expired claimed assessment guarded while another Session starts', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    const test = await harness()
+    const activity = await test.ctx.homeActivities.create({
+      name: 'Expired independence', objective: 'Keep active turn protection independent across Sessions.',
+      boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+    })
+    const selectedIds = [...test.workspaces.keys()]
+    const line = ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`
+    await expect(run(test, line)).resolves.toMatchObject({ kind: 'success' })
+    claimSteered(test.ctx, test.agent, test.steeredMessages)
+    const startedAt = Date.now()
+    vi.setSystemTime(startedAt + 45 * 60 * 1000 + 1)
+    expect(guardDenial(test, 'shell', 'expired-a-direct')).toContain('request expired')
+
+    await expect(run(test, line, test.secondaryAgent)).resolves.toMatchObject({ kind: 'success' })
+    expect(guardDenial(test, 'shell', 'expired-a-shell')).toContain('canceled')
+    expect(guardDenial(test, 'coordinate_repositories', 'expired-a-coordinator')).toContain('canceled')
+    expect(guardDenial(test, 'spawn', 'expired-a-provider')).toContain('canceled')
+    expect(guardDenial(test, 'delegate', 'expired-a-delegation')).toContain('canceled')
+    expect(guardDenial(test, 'shell', 'unclaimed-b-shell', test.secondaryAgent))
+      .toContain('no model turn has claimed it')
+
+    claimSteered(test.ctx, test.secondaryAgent, test.secondarySteeredMessages)
+    expect(guardDenial(test, 'shell', 'claimed-b-shell', test.secondaryAgent))
+      .toContain('Activity Strategic Brief is active')
+    test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(guardDenial(test, 'shell', 'expired-a-released')).toBeUndefined()
+    expect(guardDenial(test, 'shell', 'claimed-b-still-active', test.secondaryAgent))
+      .toContain('Activity Strategic Brief is active')
+    test.secondarySession.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(guardDenial(test, 'shell', 'claimed-b-released', test.secondaryAgent)).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('keeps an expired assessment guarded while its coordinator call is outstanding', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    const test = await harness()
+    const activity = await test.ctx.homeActivities.create({
+      name: 'Coordinator expiry', objective: 'Retain protection until an approved read returns.',
+      boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+    })
+    const selectedIds = [...test.workspaces.keys()]
+    await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+      .resolves.toMatchObject({ kind: 'success' })
+    claimSteered(test.ctx, test.agent, test.steeredMessages)
+    const rows = [...test.workspaces.values()]
+    const call = test.session.append('tool/call', {
+      turn: 1,
+      step: 1,
+      callId: ToolCallId('expired-inflight-coordinator'),
+      name: 'coordinate_repositories',
+      arguments: JSON.stringify({ repositories: rows.map(workspace => workspace.path), task: 'read selected repositories' }),
+    })
+    const startedAt = Date.now()
+    vi.setSystemTime(startedAt + 45 * 60 * 1000 + 1)
+    expect(guardDenial(test, 'shell', 'expired-inflight-shell')).toContain('Activity Strategic Brief is active')
+    test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(guardDenial(test, 'shell', 'expired-inflight-turn-end'))
+      .toContain('in-flight coordinator call must return before the guard is released')
+    test.session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId: call.data.callId,
+        content: [{ type: 'text', text: 'The approved read returned late.' }],
+        isError: true,
+      }),
+      meta: {},
+    }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+    expect(guardDenial(test, 'shell', 'expired-inflight-released')).toBeUndefined()
+    expect(test.registeredTools.get('record_activity_strategic_brief')?.options.when?.({ agent: test.agent } as never)).toBe(false)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('releases a failed assessment write after turn end and never retries it', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Failed save', objective: 'Report an uncertain write without retrying automatically.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
+  const instruction = test.steeredMessages.at(-1)?.content
+    .map(block => block.type === 'text' ? block.text : '').join('\n') ?? ''
+  const requestId = /Request ID: ([0-9a-f-]{36})/u.exec(instruction)?.[1]
+  if (requestId === undefined) throw new Error('The assessment instruction did not retain its request id')
+  const recorder = test.registeredTools.get('record_activity_strategic_brief')?.definition
+  if (recorder?.execute === undefined) throw new Error('The strategic brief recorder was not registered')
+  appendSuccessfulCoordinatorResult(test, test.session, 'failed-save-coordinator')
+
+  let rejectWrite!: () => void
+  let signalWriteStarted!: () => void
+  const writeGate = new Promise<void>((_resolve, reject) => { rejectWrite = () => { reject(new Error('disk unavailable')) } })
+  const writeStarted = new Promise<void>((resolve) => { signalWriteStarted = resolve })
+  const record = vi.spyOn(test.ctx.homeActivityStrategicEpisodes, 'record').mockImplementation(async () => {
+    signalWriteStarted()
+    await writeGate
+    throw new Error('disk unavailable')
+  })
+  const saving = recorder.execute(
+    { requestId, briefJson: incompleteBriefJson([...test.workspaces.values()]) },
+    { agent: test.agent, callId: ToolCallId('failed-save-recorder'), signal: new AbortController().signal } as never,
+  )
+  await writeStarted
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'failed-save-during-write')).toContain('Activity Strategic Brief is active')
+  rejectWrite()
+  await expect(saving).rejects.toThrow('Activity Strategic Brief could not be confirmed in storage. Open the Activity before retrying.')
+  expect(guardDenial(test, 'shell', 'failed-save-after-write')).toBeUndefined()
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
+  await expect(recorder.execute(
+    { requestId, briefJson: incompleteBriefJson([...test.workspaces.values()]) },
+    { agent: test.agent, callId: ToolCallId('failed-save-retry'), signal: new AbortController().signal } as never,
+  )).rejects.toThrow('does not match a live explicit assessment request')
+  expect(record).toHaveBeenCalledTimes(1)
+})
+
+it('retains a saved assessment guard through plugin unload until its turn ends', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Saved unload', objective: 'Keep a confirmed brief guarded until its turn ends.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
+  appendSuccessfulCoordinatorResult(test, test.session, 'saved-unload-coordinator')
+  const recorder = pendingAssessmentRecorder(test)
+  await expect(recorder.execute(incompleteBriefJson([...test.workspaces.values()]), 'saved-unload-recorder'))
+    .resolves.toMatchObject({ saved: true, revision: 1 })
+  expect(guardDenial(test, 'shell', 'saved-before-unload')).toContain('is saved')
+
+  await test.commandFiber.dispose()
+  expect(test.registeredTools.has('record_activity_strategic_brief')).toBe(false)
+  expect(guardDenial(test, 'shell', 'saved-after-unload')).toContain('is saved')
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'saved-after-turn-end')).toBeUndefined()
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toHaveLength(1)
+})
+
+it('retains an in-flight save through plugin unload and releases after settlement', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Unload during save', objective: 'Retain the guard while persistence is unresolved.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
+  appendSuccessfulCoordinatorResult(test, test.session, 'unload-save-coordinator')
+  const recorder = pendingAssessmentRecorder(test)
+  let releaseWrite!: () => void
+  let signalWriteStarted!: () => void
+  const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve })
+  const writeStarted = new Promise<void>((resolve) => { signalWriteStarted = resolve })
+  const originalRecord = test.ctx.homeActivityStrategicEpisodes.record.bind(test.ctx.homeActivityStrategicEpisodes)
+  vi.spyOn(test.ctx.homeActivityStrategicEpisodes, 'record').mockImplementation(async (request) => {
+    signalWriteStarted()
+    await writeGate
+    return originalRecord(request)
+  })
+  const saving = recorder.execute(incompleteBriefJson([...test.workspaces.values()]), 'unload-save-recorder')
+  await writeStarted
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  await test.commandFiber.dispose()
+  expect(guardDenial(test, 'shell', 'unload-save-during-write')).toContain('Activity Strategic Brief is active')
+  releaseWrite()
+  await expect(saving).resolves.toMatchObject({ saved: true, revision: 1 })
+  expect(guardDenial(test, 'shell', 'unload-save-after-write')).toBeUndefined()
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toHaveLength(1)
+})
+
+it('retains an in-flight save when its requesting Agent is disposed', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Agent disposal during save', objective: 'Do not release a guard before persistence settles.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
+  appendSuccessfulCoordinatorResult(test, test.session, 'dispose-save-coordinator')
+  const recorder = pendingAssessmentRecorder(test)
+  let releaseWrite!: () => void
+  let signalWriteStarted!: () => void
+  const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve })
+  const writeStarted = new Promise<void>((resolve) => { signalWriteStarted = resolve })
+  const originalRecord = test.ctx.homeActivityStrategicEpisodes.record.bind(test.ctx.homeActivityStrategicEpisodes)
+  vi.spyOn(test.ctx.homeActivityStrategicEpisodes, 'record').mockImplementation(async (request) => {
+    signalWriteStarted()
+    await writeGate
+    return originalRecord(request)
+  })
+  const saving = recorder.execute(incompleteBriefJson([...test.workspaces.values()]), 'dispose-save-recorder')
+  await writeStarted
+  test.ctx.emit('agent/disposed', { agent: test.agent })
+  expect(guardDenial(test, 'shell', 'dispose-save-during-write'))
+    .toContain('Its save must settle before the guard is released')
+  releaseWrite()
+  await expect(saving).resolves.toMatchObject({ saved: true, revision: 1 })
+  expect(guardDenial(test, 'shell', 'dispose-save-after-write')).toBeUndefined()
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toHaveLength(1)
+})
+
+it('keeps a canceled in-flight save guarded after a duplicate inbox discard', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Discard during save', objective: 'A duplicate discard must not release a pending save.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  const message = test.steeredMessages.at(-1)
+  if (message === undefined) throw new Error('The assessment did not queue an instruction')
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
+  appendSuccessfulCoordinatorResult(test, test.session, 'discard-save-coordinator')
+  const recorder = pendingAssessmentRecorder(test)
+  let releaseWrite!: () => void
+  let signalWriteStarted!: () => void
+  const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve })
+  const writeStarted = new Promise<void>((resolve) => { signalWriteStarted = resolve })
+  const originalRecord = test.ctx.homeActivityStrategicEpisodes.record.bind(test.ctx.homeActivityStrategicEpisodes)
+  vi.spyOn(test.ctx.homeActivityStrategicEpisodes, 'record').mockImplementation(async (request) => {
+    signalWriteStarted()
+    await writeGate
+    return originalRecord(request)
+  })
+  const saving = recorder.execute(incompleteBriefJson([...test.workspaces.values()]), 'discard-save-recorder')
+  await writeStarted
+  test.ctx.emit('agent/inbox/discarded', { agent: test.agent, message })
+  expect(guardDenial(test, 'shell', 'discard-save-during-write'))
+    .toContain('Its save must settle and the current turn must end')
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  releaseWrite()
+  await expect(saving).resolves.toMatchObject({ saved: true, revision: 1 })
+  expect(guardDenial(test, 'shell', 'discard-save-after-write')).toBeUndefined()
+  expect(test.ctx.homeActivityStrategicEpisodes.list(activity.id)).toHaveLength(1)
+})
+
+it('removes an unclaimed assessment on inbox discard or requesting Agent disposal', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Inbox lifecycle', objective: 'Release only when the queued instruction is safely removed.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  const line = ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`
+
+  await expect(run(test, line)).resolves.toMatchObject({ kind: 'success' })
+  const discarded = test.agent.inbox.nextStep[0]
+  if (discarded === undefined) throw new Error('The assessment did not queue an instruction')
+  test.ctx.emit('agent/inbox/discarded', {
+    agent: test.agent,
+    message: createUserMessage({ content: [{ type: 'text', text: 'An unrelated inbox message.' }], source: { kind: 'user' } }),
+  })
+  expect(guardDenial(test, 'shell', 'unrelated-discard-guard')).toContain('no model turn has claimed it')
+  test.ctx.emit('agent/inbox/discarded', { agent: test.agent, message: discarded })
+  expect(test.agent.inbox.nextStep).toEqual([])
+  expect(guardDenial(test, 'shell', 'discarded-assessment-guard')).toBeUndefined()
+
+  await expect(run(test, line)).resolves.toMatchObject({ kind: 'success' })
+  test.ctx.emit('agent/disposed', { agent: { ...test.agent, id: SessionId('other-agent') } })
+  expect(guardDenial(test, 'shell', 'other-agent-dispose-guard')).toContain('no model turn has claimed it')
+  test.ctx.emit('agent/disposed', { agent: test.agent })
+  expect(test.agent.inbox.nextStep).toEqual([])
+  expect(guardDenial(test, 'shell', 'disposed-assessment-guard')).toBeUndefined()
+})
+
+it('retains a claimed assessment when a duplicate discard arrives before turn end', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Claimed discard', objective: 'Do not release a claimed assessment before its turn ends.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  const message = test.steeredMessages.at(-1)
+  if (message === undefined) throw new Error('The assessment did not queue an instruction')
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
+  test.ctx.emit('agent/inbox/discarded', { agent: test.agent, message })
+  expect(guardDenial(test, 'shell', 'claimed-discard-guard')).toContain('canceled')
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  expect(guardDenial(test, 'shell', 'claimed-discard-released')).toBeUndefined()
+})
+
+it('removes only recognized orphaned assessment instructions on Agent creation', async () => {
+  const test = await harness()
+  const orphan = createUserMessage({
+    content: [{
+      type: 'text',
+      text: 'The user explicitly requested an advisory Activity Strategic Brief. Request ID: 00000000-0000-4000-8000-000000000099.\nActivity ID: fixture\nActivity name: fixture',
+    }],
+    source: { kind: 'user' },
+  })
+  const lookalike = createUserMessage({
+    content: [{ type: 'text', text: 'The user explicitly requested an advisory Activity Strategic Brief. Request ID: not-a-request-id.\nActivity ID: fixture' }],
+    source: { kind: 'user' },
+  })
+  const ordinary = createUserMessage({ content: [{ type: 'text', text: 'An ordinary queued message.' }], source: { kind: 'user' } })
+  test.agent.inbox.append('next-step', orphan)
+  test.agent.inbox.append('next-step', lookalike)
+  test.agent.inbox.append('next-step', ordinary)
+  test.ctx.emit('agent/created', { agent: test.agent, source: 'startup' })
+  expect(test.agent.inbox.nextStep).toEqual([lookalike, ordinary])
+
+  test.agent.inbox.clear()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Orphan sweep', objective: 'Keep a live request while removing only stale instructions.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  test.ctx.emit('agent/created', { agent: test.agent, source: 'startup' })
+  expect(test.agent.inbox.nextStep).toHaveLength(1)
+})
+
+it('removes an unclaimed assessment when the command plugin unloads', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Unload queued assessment', objective: 'Do not leave a queued instruction without its guard.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  await test.commandFiber.dispose()
+  expect(test.agent.inbox.nextStep).toEqual([])
+  expect(guardDenial(test, 'shell', 'unloaded-assessment-guard')).toBeUndefined()
+  expect(test.toolGuards).toHaveLength(0)
+  expect(test.registeredTools.has('record_activity_strategic_brief')).toBe(false)
+})
+
+it('ignores tool executions without an Agent identity and requires a live Agent to cancel', async () => {
+  const test = await harness()
+  for (const guard of test.toolGuards) {
+    expect(guard({
+      name: 'shell',
+      callId: ToolCallId('anonymous-guard'),
+      arguments: {},
+      signal: new AbortController().signal,
+    } as never)).toBeUndefined()
+  }
+  const detached = { ...test.agent, id: SessionId('detached-agent') } as Agent
+  expect(cancelActivityStrategicAssessment(test.ctx, { agent: detached } as never))
+    .toMatchObject({ kind: 'error', text: expect.stringContaining('live requesting Agent') })
+  await test.commandFiber.dispose()
+  expect(() => cancelActivityStrategicAssessment(test.ctx, { agent: test.agent } as never))
+    .toThrow('recorder is not registered')
+})
+
+it('rejects an unknown Activity, failed Skill loading, missing Skills, and oversized Skills before queueing', async () => {
+  const test = await harness()
+  const selectedIds = [...test.workspaces.keys()]
+  const missingActivity = randomUUID()
+  expect((await run(test, ` assess ${missingActivity} ${selectedIds[0]} ${selectedIds[1]}`)).text)
+    .toContain('No saved Activity')
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Setup failures', objective: 'Fail visibly before starting an assessment.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const line = ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`
+  const getSkill = test.skills.get.bind(test.skills)
+
+  const loadFailure = vi.spyOn(test.skills, 'get').mockRejectedValue(new Error('Skill source unavailable'))
+  expect((await run(test, line)).text).toContain('Sensemaking Skills could not be loaded')
+  loadFailure.mockRestore()
+
+  const missing = vi.spyOn(test.skills, 'get').mockResolvedValue(undefined as never)
+  expect((await run(test, line)).text).toContain('Required Sensemaking Skills are unavailable')
+  missing.mockRestore()
+
+  const oversized = vi.spyOn(test.skills, 'get').mockImplementation(async (name) => {
+    const skill = await getSkill(name)
+    return skill === undefined ? undefined : { ...skill, content: 'x'.repeat(70_000) }
+  })
+  expect((await run(test, line)).text).toContain('exceed the assessment context limit')
+  oversized.mockRestore()
+
+  expect(test.steeredMessages).toEqual([])
+  expect(guardDenial(test, 'shell', 'setup-failure-no-guard')).toBeUndefined()
+})
+
+it('removes a queued assessment when steering fails', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Steering failure', objective: 'Remove an instruction that was never queued.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  vi.spyOn(test.agent, 'steer').mockImplementationOnce(() => { throw new Error('inbox rejected') })
+  expect((await run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`)).text)
+    .toContain('was not queued')
+  expect(test.agent.inbox.nextStep).toEqual([])
+  expect(guardDenial(test, 'shell', 'steering-failure-guard')).toBeUndefined()
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+})
+
+it('rejects the thirty-third concurrently pending assessment', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Request cap', objective: 'Bound concurrent assessment requests.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  const line = ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`
+  const agents: Agent[] = []
+  for (let index = 0; index < 32; index += 1) {
+    const created = createAgent(test.ctx, SessionId(`assessment-cap-${String(index)}-${randomUUID()}`))
+    agents.push(created.agent)
+    expect(await run(test, line, created.agent)).toMatchObject({ kind: 'success' })
+  }
+  const extra = createAgent(test.ctx, SessionId(`assessment-cap-extra-${randomUUID()}`))
+  expect((await run(test, line, extra.agent)).text).toContain('Too many Activity Strategic Brief requests')
+})
+
+it('renders unavailable observations, stale applicability, source ranges, and no-change briefs', () => {
+  const activityId = ActivityId(randomUUID())
+  const revision = (character: string): string => character.repeat(40)
+  const episode = (
+    number: number,
+    overrides: Partial<ActivityStrategicEpisode>,
+  ): ActivityStrategicEpisode => ({
+    id: `episode-${String(number)}` as ActivityStrategicEpisode['id'],
+    activityId,
+    revision: number,
+    originSessionId: `session-${String(number)}`,
+    producer: 'dsh-active-agent',
+    requestId: `request-${String(number)}`,
+    objective: 'Render every strategic history state.',
+    status: 'incomplete',
+    repositories: [],
+    skillDigests: [],
+    evidence: [],
+    findings: [],
+    alternatives: [],
+    uncertainties: [],
+    recommendation: {
+      disposition: 'NO_CHANGE',
+      responsibility: null,
+      rationale: 'No next responsibility is warranted.',
+      scope: 'within-activity',
+      evidenceIds: [],
+      uncertaintyIds: [],
+    },
+    requestedAt: `2026-11-2${String(number)}T10:00:00.000Z`,
+    recordedAt: `2026-11-2${String(number)}T10:01:00.000Z`,
+    ...overrides,
+  })
+  const first = episode(1, {
+    repositories: [
+      {
+        workspaceId: 'workspace-one', title: 'One', status: 'observed', revision: revision('a'),
+        workingTree: 'dirty', sourceChanged: null, observedAtStart: '2026-11-21T10:00:00.000Z', observedAtEnd: null,
+      },
+      {
+        workspaceId: 'workspace-two', title: 'Two', status: 'unavailable', revision: null,
+        workingTree: 'unknown', sourceChanged: null, observedAtStart: null, observedAtEnd: null,
+      },
+    ],
+    evidence: [
+      { id: 'E1', workspaceId: 'workspace-one', revision: revision('a'), path: 'README.md', lineStart: 3, note: 'First range.' },
+      { id: 'E2', workspaceId: 'workspace-one', revision: revision('a'), path: 'README.md', lineStart: 4, lineEnd: 4, note: 'Equal range.' },
+      { id: 'E3', workspaceId: 'workspace-one', revision: revision('a'), path: 'README.md', lineStart: 5, lineEnd: 9, note: 'Spanning range.' },
+    ],
+    findings: [{ kind: 'interpretation', category: 'opportunity', statement: 'No cited evidence.', evidenceIds: [] }],
+    alternatives: [{ name: 'Do nothing', consequence: 'No source support.', evidenceIds: [], uncertaintyIds: [] }],
+    uncertainties: [{ id: 'U1', statement: 'No evidence.', evidenceIds: [] }],
+  })
+  const second = episode(2, {
+    repositories: [
+      {
+        workspaceId: 'workspace-one', title: 'One', status: 'observed', revision: revision('b'),
+        workingTree: 'clean', sourceChanged: false, observedAtStart: '2026-11-22T10:00:00.000Z', observedAtEnd: '2026-11-22T10:10:00.000Z',
+      },
+      {
+        workspaceId: 'workspace-two', title: 'Two', status: 'observed', revision: revision('c'),
+        workingTree: 'unknown', sourceChanged: false, observedAtStart: '2026-11-22T10:00:00.000Z', observedAtEnd: '2026-11-22T10:10:00.000Z',
+      },
+    ],
+  })
+  const third = episode(3, {
+    repositories: [
+      {
+        workspaceId: 'workspace-one', title: 'One', status: 'unavailable', revision: null,
+        workingTree: 'unknown', sourceChanged: null, observedAtStart: null, observedAtEnd: null,
+      },
+      {
+        workspaceId: 'workspace-two', title: 'Two', status: 'observed', revision: revision('d'),
+        workingTree: 'clean', sourceChanged: true, observedAtStart: '2026-11-23T10:00:00.000Z', observedAtEnd: '2026-11-23T10:10:00.000Z',
+      },
+    ],
+    recommendation: {
+      disposition: 'BUILD', responsibility: 'Proceed with the bounded change.', rationale: 'The latest evidence supports it.',
+      scope: 'within-activity', evidenceIds: [], uncertaintyIds: [],
+    },
+  })
+
+  const latest = renderActivityStrategicEpisodes([first, second, third], activityId).join('\n')
+  expect(latest).toContain('2 earlier briefs remain saved')
+  expect(latest).toContain('unavailable during this assessment; no source claims are confirmed')
+  expect(latest).toContain('Recommendation: BUILD — Proceed with the bounded change.')
+  expect(latest).toContain('this is the latest saved observation')
+  expect(latest).toContain('source changed during observation; findings may be stale')
+
+  const historical = renderActivityStrategicEpisodes([first, second, third], activityId, 1).join('\n')
+  expect(historical).toContain('Activity Strategic Brief revision 1')
+  expect(historical).toContain('Recommendation: NO_CHANGE — no next responsibility selected')
+  expect(historical).toContain('working tree dirty')
+  expect(historical).toContain('source stability is unknown')
+  expect(historical).toContain('end time unavailable')
+  expect(historical).toContain('a later assessment could not observe this Workspace')
+  expect(historical).toContain('No cited evidence. [no source reference]')
+  expect(historical).toContain('Alternative: Do nothing — No source support.')
+  expect(historical).toContain('Uncertainty U1: No evidence.')
+  expect(historical).toContain('E1: workspace-one@')
+  expect(historical).toContain('README.md:3')
+  expect(historical).toContain('README.md:4')
+  expect(historical).not.toContain('README.md:4-4')
+  expect(historical).toContain('README.md:5-9')
+  expect(historical).toContain('citation may refer to staged or working-tree content')
+})
+
+it('rejects malformed coordinator reports without arming the recorder', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Coordinator validation', objective: 'Treat coordinator output as untrusted.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  const rows = [...test.workspaces.values()]
+  const validRow = (index: number) => ({
+    workspaceId: rows[index]?.id,
+    root: rows[index]?.path,
+    head: index === 0 ? 'a'.repeat(40) : 'b'.repeat(40),
+    execution: 'result',
+    childSessionId: `child-${String(index)}`,
+    runId: `run-${String(index)}`,
+    sourceChanged: false,
+    stagedCount: 0,
+    unstagedCount: 0,
+    untrackedCount: 0,
+    observedAtStart: `2026-11-24T10:00:0${String(index)}.000Z`,
+    observedAtEnd: `2026-11-24T10:00:1${String(index)}.000Z`,
+  })
+  const malformed: unknown[] = [
+    { repositories: 'two' },
+    { repositories: [] },
+    { repositories: [validRow(0), null] },
+    { repositories: [validRow(0), { ...validRow(1), workspaceId: 5 }] },
+    { repositories: [validRow(0), { ...validRow(1), root: 5 }] },
+    { repositories: [validRow(0), { ...validRow(1), head: 5 }] },
+    { repositories: [validRow(0), { ...validRow(1), head: 'c'.repeat(39) }] },
+    { repositories: [validRow(0), { ...validRow(1), execution: 'other' }] },
+    { repositories: [validRow(0), { ...validRow(1), sourceChanged: 'no' }] },
+    { repositories: [validRow(0), { ...validRow(1), childSessionId: 5 }] },
+    { repositories: [validRow(0), { ...validRow(1), runId: 5 }] },
+    { repositories: [validRow(0), { ...validRow(1), stagedCount: -1 }] },
+    { repositories: [validRow(0), { ...validRow(1), unstagedCount: 1.5 }] },
+    { repositories: [validRow(0), { ...validRow(1), untrackedCount: '0' }] },
+    { repositories: [validRow(0), { ...validRow(1), observedAtStart: 'not-a-date' }] },
+    { repositories: [validRow(0), { ...validRow(1), observedAtEnd: 'not-a-date' }] },
+    { repositories: [validRow(0), { ...validRow(1), workspaceId: validRow(0).workspaceId }] },
+  ]
+
+  for (const [index, meta] of malformed.entries()) {
+    const turn = index + 1
+    await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+      .resolves.toMatchObject({ kind: 'success' })
+    claimSteered(test.ctx, test.agent, test.steeredMessages, turn)
+    const call = test.session.append('tool/call', {
+      turn,
+      step: 1,
+      callId: ToolCallId(`malformed-coordinator-${String(index)}`),
+      name: 'coordinate_repositories',
+      arguments: JSON.stringify({ repositories: rows.map(workspace => workspace.path), task: 'read selected repositories' }),
+    })
+    test.session.append('tool/result', {
+      turn,
+      step: 1,
+      message: createToolResultMessage({
+        callId: call.data.callId,
+        content: [{ type: 'text', text: 'Malformed report.' }],
+        isError: false,
+      }),
+      meta: meta as never,
+    }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+    expect(guardDenial(test, 'shell', `malformed-shell-${String(index)}`)).toContain('canceled')
+    expect(test.registeredTools.get('record_activity_strategic_brief')?.options.when?.({ agent: test.agent } as never)).toBe(false)
+    test.session.append('turn/end', { turn, reason: { kind: 'completed' } })
+    expect(guardDenial(test, 'shell', `malformed-released-${String(index)}`)).toBeUndefined()
+  }
+})
+
+it('rejects coordinator call arguments that do not match the selected roots', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Coordinator arguments', objective: 'Authorize only the exact selected roots.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  const rows = [...test.workspaces.values()]
+  const variants = [
+    'not-json',
+    JSON.stringify({ repositories: 'two' }),
+    JSON.stringify({ repositories: [rows[0]?.path] }),
+    JSON.stringify({ repositories: [rows[0]?.path, 5] }),
+    JSON.stringify({ repositories: [rows[0]?.path, rows[0]?.path] }),
+    JSON.stringify({ repositories: ['C:\\other-one', 'C:\\other-two'] }),
+  ]
+  for (const [index, argumentsJson] of variants.entries()) {
+    const turn = index + 1
+    await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+      .resolves.toMatchObject({ kind: 'success' })
+    claimSteered(test.ctx, test.agent, test.steeredMessages, turn)
+    test.session.append('tool/call', {
+      turn,
+      step: 1,
+      callId: ToolCallId(`unmatched-coordinator-${String(index)}`),
+      name: 'coordinate_repositories',
+      arguments: argumentsJson,
+    })
+    expect(guardDenial(test, 'coordinate_repositories', `unmatched-coordinator-${String(index)}`))
+      .toContain('permits one coordinator call')
+    test.session.append('turn/end', { turn, reason: { kind: 'completed' } })
+  }
+})
+
+it('sweeps an existing orphan at registration and tolerates repeated disposal', async () => {
+  const test = await harness()
+  const orphan = createUserMessage({
+    content: [{
+      type: 'text',
+      text: 'The user explicitly requested an advisory Activity Strategic Brief. Request ID: 00000000-0000-4000-8000-000000000097.\nActivity ID: fixture',
+    }],
+    source: { kind: 'user' },
+  })
+  test.agent.inbox.append('next-step', orphan)
+  const dispose = registerActivityStrategicBriefTool(test.ctx)
+  const secondRegistration = registerActivityStrategicBriefTool(test.ctx)
+  expect(test.agent.inbox.nextStep).toEqual([])
+  dispose()
+  dispose()
+  secondRegistration()
+  expect(test.registeredTools.has('record_activity_strategic_brief')).toBe(false)
+})
+
+it('blocks a sibling Agent while assessment Skills are loading', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Sibling setup', objective: 'Keep Agent identity scoped during setup.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  let releaseSkills!: () => void
+  let reportLoading!: () => void
+  const skillsGate = new Promise<void>((resolve) => { releaseSkills = resolve })
+  const skillsLoading = new Promise<void>((resolve) => { reportLoading = resolve })
+  const getSkill = test.skills.get.bind(test.skills)
+  vi.spyOn(test.skills, 'get').mockImplementation(async (name) => {
+    reportLoading()
+    await skillsGate
+    return getSkill(name)
+  })
+  const preparing = run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`)
+  await skillsLoading
+  const sibling = { ...test.agent, id: SessionId('sibling-during-setup') } as Agent
+  expect(guardDenial(test, 'shell', 'sibling-during-setup', sibling)).toContain('another Agent')
+  releaseSkills()
+  await expect(preparing).resolves.toMatchObject({ kind: 'success' })
+})
+
+it('reports an already-canceled claimed assessment on a repeated cancel', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Repeated cancel', objective: 'Keep cancellation truthful and idempotent.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
+  expect((await run(test, ' assess cancel')).text).toContain('Canceled unfinished Activity Strategic Brief')
+  expect((await run(test, ' assess cancel')).text).toContain('already canceled')
+})
+
+it('renders a generic result when the recorder output is malformed', async () => {
+  const test = await harness()
+  const recorder = test.registeredTools.get('record_activity_strategic_brief')?.definition
+  const render = recorder?.output.render
+  if (render === undefined) throw new Error('The recorder has no output renderer')
+  expect(render(undefined as never, {} as never)[0]).toMatchObject({
+    type: 'text',
+    text: 'Saved advisory Activity Strategic Brief. It has not been independently verified or accepted.',
+  })
+  expect(render(undefined as never, {
+    saved: true, episodeId: 'episode-9', revision: 9, recordedAt: '2026-11-24T10:00:00.000Z',
+  } as never)[0]).toMatchObject({
+    type: 'text',
+    text: expect.stringContaining('revision 9'),
+  })
+  await expect(recorder?.execute?.(
+    { requestId: 'anonymous', briefJson: '{}' },
+    { agent: undefined, callId: ToolCallId('anonymous-recorder'), signal: new AbortController().signal } as never,
+  )).rejects.toThrow('recording requires the live requesting Agent')
+})
+
+it('prunes an unclaimed expired assessment when another Session starts', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    const test = await harness()
+    const activity = await test.ctx.homeActivities.create({
+      name: 'Prune unclaimed', objective: 'Remove an expired instruction that no turn claimed.',
+      boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+    })
+    const selectedIds = [...test.workspaces.keys()]
+    const line = ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`
+    await expect(run(test, line)).resolves.toMatchObject({ kind: 'success' })
+    const startedAt = Date.now()
+    vi.setSystemTime(startedAt + 45 * 60 * 1000 + 1)
+    await expect(run(test, line, test.secondaryAgent)).resolves.toMatchObject({ kind: 'success' })
+    expect(test.agent.inbox.nextStep).toEqual([])
+    expect(guardDenial(test, 'shell', 'pruned-unclaimed-shell')).toBeUndefined()
+    expect(guardDenial(test, 'shell', 'pruned-unclaimed-new-session', test.secondaryAgent))
+      .toContain('no model turn has claimed it')
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('validates recorder arguments, workspace identity, and complete-brief evidence', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Recorder validation', objective: 'Reject malformed or unsupported briefs before storage.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  const rows = [...test.workspaces.values()]
+  const callLine = () => ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`
+  const prepare = async (turn: number, meta: unknown) => {
+    await expect(run(test, callLine())).resolves.toMatchObject({ kind: 'success' })
+    claimSteered(test.ctx, test.agent, test.steeredMessages, turn)
+    const call = test.session.append('tool/call', {
+      turn,
+      step: 1,
+      callId: ToolCallId(`recorder-validation-${String(turn)}`),
+      name: 'coordinate_repositories',
+      arguments: JSON.stringify({ repositories: rows.map(workspace => workspace.path), task: 'read selected repositories' }),
+    })
+    test.session.append('tool/result', {
+      turn,
+      step: 1,
+      message: createToolResultMessage({ callId: call.data.callId, content: [{ type: 'text', text: 'Coordinator report.' }], isError: false }),
+      meta: meta as never,
+    }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+    return pendingAssessmentRecorder(test)
+  }
+  const validRows = rows.map((workspace, index) => ({
+    workspaceId: workspace.id,
+    root: workspace.path,
+    head: index === 0 ? 'a'.repeat(40) : 'b'.repeat(40),
+    execution: 'result',
+    childSessionId: `child-${String(index)}`,
+    runId: `run-${String(index)}`,
+    sourceChanged: false,
+    stagedCount: 0,
+    unstagedCount: 0,
+    untrackedCount: 0,
+    observedAtStart: `2026-11-24T10:00:0${String(index)}.000Z`,
+    observedAtEnd: `2026-11-24T10:00:1${String(index)}.000Z`,
+  }))
+  const recorder = await prepare(1, { repositories: validRows })
+  await expect(recorder.execute(incompleteBriefJson(rows), 'invalid-recorder', randomUUID()))
+    .rejects.toThrow('does not match a live explicit assessment request')
+  await expect(recorder.execute('x'.repeat(64 * 1024 + 1), 'oversized-recorder'))
+    .rejects.toThrow('exceeds the 64 KiB limit')
+  await expect(recorder.execute('not-json', 'invalid-json-recorder'))
+    .rejects.toThrow('must be valid JSON')
+  await expect(recorder.execute('{}', 'invalid-schema-recorder'))
+    .rejects.toThrow('Activity Strategic Brief was not saved')
+  const wrongWorkspace = JSON.parse(incompleteBriefJson(rows)) as {
+    repositories: { workspaceId: string }[]
+    evidence: { workspaceId: string }[]
+  }
+  const otherWorkspace = randomUUID()
+  if (wrongWorkspace.repositories[0] !== undefined) wrongWorkspace.repositories[0].workspaceId = otherWorkspace
+  if (wrongWorkspace.evidence[0] !== undefined) wrongWorkspace.evidence[0].workspaceId = otherWorkspace
+  await expect(recorder.execute(JSON.stringify(wrongWorkspace), 'wrong-workspace-recorder'))
+    .rejects.toThrow('must report exactly the two explicitly selected Workspaces')
+  test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+  const unavailableRows = validRows.map((row, index) => index === 0
+    ? { ...row, execution: 'startup-error', childSessionId: null, runId: null, observedAtEnd: null }
+    : row)
+  const unavailable = await prepare(2, { repositories: unavailableRows })
+  const complete = JSON.parse(incompleteBriefJson(rows)) as { status: string }
+  complete.status = 'complete'
+  await expect(unavailable.execute(JSON.stringify(complete), 'unavailable-recorder'))
+    .rejects.toThrow('cannot be complete when a selected Workspace was unavailable')
+  test.session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+
+  const unknownStabilityRows = validRows.map(row => ({ ...row, sourceChanged: null }))
+  const unknownStability = await prepare(3, { repositories: unknownStabilityRows })
+  await expect(unknownStability.execute(JSON.stringify(complete), 'unknown-stability-recorder'))
+    .rejects.toThrow('cannot be complete when a selected Workspace changed during observation')
+  test.session.append('turn/end', { turn: 3, reason: { kind: 'completed' } })
+
+  const wrongIdRows = validRows.map((row, index) => ({ ...row, workspaceId: `other-${String(index)}` }))
+  const wrongIds = await prepare(4, { repositories: wrongIdRows })
+  await expect(wrongIds.execute(incompleteBriefJson(rows), 'wrong-id-recorder'))
+    .rejects.toThrow('requires a successful read-only coordinator result')
+  test.session.append('turn/end', { turn: 4, reason: { kind: 'completed' } })
+
+  const domainFailure = await prepare(5, { repositories: validRows })
+  const storageError = new Error('Storage exploded.')
+  storageError.name = 'ActivityStrategicEpisodeStorageError'
+  vi.spyOn(test.ctx.homeActivityStrategicEpisodes, 'record').mockRejectedValueOnce(storageError)
+  await expect(domainFailure.execute(incompleteBriefJson(rows), 'domain-failure-recorder'))
+    .rejects.toThrow('Storage exploded.')
+  test.session.append('turn/end', { turn: 5, reason: { kind: 'completed' } })
+})
+
+it('treats coordinator roots case-sensitively outside win32', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Path normalization', objective: 'Authorize only exact platform-normalized roots.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  const rows = [...test.workspaces.values()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
+    .resolves.toMatchObject({ kind: 'success' })
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+  if (descriptor === undefined) throw new Error('process.platform is unavailable')
+  try {
+    Object.defineProperty(process, 'platform', { ...descriptor, value: 'linux' })
+    test.session.append('tool/call', {
+      turn: 1,
+      step: 1,
+      callId: ToolCallId('case-mismatched-coordinator'),
+      name: 'coordinate_repositories',
+      arguments: JSON.stringify({ repositories: rows.map(workspace => workspace.path.toUpperCase()), task: 'read selected repositories' }),
+    })
+    expect(guardDenial(test, 'coordinate_repositories', 'case-mismatched-coordinator'))
+      .toContain('permits one coordinator call')
+  } finally {
+    Object.defineProperty(process, 'platform', descriptor)
+  }
+})
+
+it('passes the Session working directory to Skill loading', async () => {
+  const test = await harness()
+  const created = createAgent(test.ctx, SessionId(`cwd-assessment-${randomUUID()}`), 'C:\\session-cwd')
+  const getSkill = vi.spyOn(created.skills, 'get')
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Session cwd', objective: 'Load Skills relative to the Session working directory.',
+    boundaries: { inScope: ['Read selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const selectedIds = [...test.workspaces.keys()]
+  await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`, created.agent))
+    .resolves.toMatchObject({ kind: 'success' })
+  expect(getSkill).toHaveBeenCalledWith('using-sensemaking', expect.objectContaining({ cwd: 'C:\\session-cwd' }))
 })
 
 it('rejects assessment before setup when the active profile has no repository coordinator', async () => {
@@ -565,6 +1760,7 @@ it('serializes same-Session assessment setup and lets the user discard an unfini
   const recorder = test.registeredTools.get('record_activity_strategic_brief')
   if (recorder?.options.when === undefined) throw new Error('The request-scoped recorder has no visibility condition')
   expect(recorder.options.when({ agent: test.agent } as never)).toBe(false)
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
 
   const workspaceRows = [...test.workspaces.values()]
   const coordinatorCall = test.session.append('tool/call', {
@@ -673,6 +1869,7 @@ it('keeps the active request guard until its turn ends when the command plugin i
   const selectedIds = [...test.workspaces.keys()]
   await expect(run(test, ` assess ${activity.id} ${selectedIds[0]} ${selectedIds[1]}`))
     .resolves.toMatchObject({ kind: 'success' })
+  claimSteered(test.ctx, test.agent, test.steeredMessages)
   const workspaces = [...test.workspaces.values()]
   const coordinatorCall = test.session.append('tool/call', {
     turn: 1,

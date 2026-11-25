@@ -33,9 +33,11 @@ import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import HomeActivityService from '@deepseek-ai/dsh-home-activity'
 import HomeActivityAssociationService from '@deepseek-ai/dsh-home-activity/associations'
 import HomeActivityArtifactService from '@deepseek-ai/dsh-home-activity/artifacts'
+import HomeActivityHandoffService from '@deepseek-ai/dsh-home-activity/handoffs'
 import HomeActivityDelegations, { ActivityDelegationError } from '@deepseek-ai/dsh-home-activity/delegations'
 import HomeActivityReviewService from '@deepseek-ai/dsh-home-activity/reviews'
 import HomeActivityAnnotationService from '@deepseek-ai/dsh-home-activity/annotations'
+import HomeActivityStrategicEpisodeService from '@deepseek-ai/dsh-home-activity/strategic-episodes'
 import type { ActivityDelegation, ActivityDelegationUncertainty } from '@deepseek-ai/dsh-home-activity/delegations'
 import * as commandHomeActivity from '../src/index.ts'
 import { executeActivityDelegation, renderActivityDelegation } from '../src/delegation-command.ts'
@@ -141,10 +143,12 @@ async function harness(adapter: DelegationAdapter, existingRoot?: string) {
   await ctx.plugin(StorageDomain, { backend: 'json' })
   await ctx.plugin(CommandRuntime)
   await ctx.plugin(HomeActivityService)
+  await ctx.plugin(HomeActivityStrategicEpisodeService)
   await ctx.plugin(HomeActivityDelegations)
   ctx.provide('workspaceRegistry', { get: () => undefined, list: () => [] } as never)
   await ctx.plugin(HomeActivityAssociationService)
   await ctx.plugin(HomeActivityArtifactService)
+  await ctx.plugin(HomeActivityHandoffService)
   await ctx.plugin(HomeActivityReviewService)
   await ctx.plugin(HomeActivityAnnotationService)
   await ctx.plugin(commandHomeActivity)
