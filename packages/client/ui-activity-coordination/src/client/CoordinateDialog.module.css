@@ -473,4 +473,13 @@
   .proposalDetails dd + dt {
     margin-top: 6px;
   }
+
+  .confirmationActions button {
+    width: 100%;
+  }
+}
+
+.confirmationActions {
+  display: flex;
+  justify-content: flex-end;
 }

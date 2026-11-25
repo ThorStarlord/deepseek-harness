@@ -179,9 +179,90 @@ describe('web e2e: Activity cross-Session coordination', () => {
     const savedHistory = scaffold.ctx.homeActivityResponsibilities.list(activity.id)[0]
     if (savedHistory === undefined) throw new Error('The proposal was not saved in the Activity history.')
     const savedProposal = savedHistory.proposal
-    expect(savedProposal.source).toMatchObject({ sessionId: coordinatorSessionId, eventSeq: expect.any(Number) })
+    expect(savedProposal.source.sessionId).toBe(coordinatorSessionId)
+    expect(savedProposal.source.eventSeq).toBeGreaterThan(0)
     expect(savedProposal.proposal.target).toEqual({ workspaceId: firstTarget.workspaceId, sessionId: firstTarget.id })
-    await page.screenshot({ path: join(SCREENSHOT_DIR, 'activity-coordination-confirmation.png'), fullPage: true })
+    const confirmation = responsibilityDialog.locator('section[aria-label="Confirm exact responsibility"]')
+    const confirmationText = await confirmation.innerText()
+    for (const proposalText of [
+      firstTarget.id,
+      savedTask,
+      'Summarize the latest recorded work in this Session.',
+      'Identify unresolved items and cite source events.',
+      'Do not modify repository files.',
+      'Do not delegate further work.',
+      'A source-attributed status report with uncertainty stated.',
+    ]) {
+      expect(confirmationText).toContain(proposalText)
+    }
+    expect(await responsibilityDialog.innerText()).toContain(
+      'Review the complete responsibility below, then scroll to its confirmation action.',
+    )
+    await page.screenshot({ path: join(SCREENSHOT_DIR, 'activity-coordination-confirmation.png') })
+    const viewport = page.viewportSize()
+    if (viewport === null) throw new Error('The browser viewport is not available for the confirmation check.')
+    const confirmationScroll = await confirmation.evaluate((node) => {
+      let parent = node.parentElement
+      while (parent !== null && parent !== document.body) {
+        const style = getComputedStyle(parent)
+        if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && parent.scrollHeight > parent.clientHeight) {
+          const before = parent.scrollTop
+          const maximum = parent.scrollHeight - parent.clientHeight
+          parent.scrollTop = maximum
+          return { before, after: parent.scrollTop, maximum }
+        }
+        parent = parent.parentElement
+      }
+      return null
+    })
+    expect(confirmationScroll).not.toBeNull()
+    expect(confirmationScroll?.maximum).toBeGreaterThan(0)
+    expect(confirmationScroll?.after).toBeGreaterThan(confirmationScroll?.before ?? 0)
+    const confirmButton = responsibilityDialog.getByRole('button', { name: 'Confirm and send to this Session' })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await confirmation.evaluate((node) => {
+      let parent = node.parentElement
+      while (parent !== null && parent !== document.body) {
+        const style = getComputedStyle(parent)
+        if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && parent.scrollHeight > parent.clientHeight) {
+          parent.scrollTop = 0
+          return
+        }
+        parent = parent.parentElement
+      }
+    })
+    const confirmButtonBeforeReview = await confirmButton.evaluate(button => button.getBoundingClientRect().top)
+    expect(confirmButtonBeforeReview).toBeGreaterThan(844)
+    const narrowOverflow = await responsibilityDialog.evaluate(dialog => ({
+      content: dialog.scrollWidth - dialog.clientWidth,
+    }))
+    expect(narrowOverflow.content).toBeLessThanOrEqual(1)
+    await page.screenshot({ path: join(SCREENSHOT_DIR, 'activity-coordination-confirmation-narrow.png') })
+    const narrowScroll = await confirmation.evaluate((node) => {
+      let parent = node.parentElement
+      while (parent !== null && parent !== document.body) {
+        const style = getComputedStyle(parent)
+        if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && parent.scrollHeight > parent.clientHeight) {
+          const maximum = parent.scrollHeight - parent.clientHeight
+          parent.scrollTop = maximum
+          return { after: parent.scrollTop, maximum }
+        }
+        parent = parent.parentElement
+      }
+      return null
+    })
+    expect(narrowScroll).not.toBeNull()
+    expect(narrowScroll?.after).toBeGreaterThan(0)
+    const confirmButtonBounds = await confirmButton.evaluate((button) => {
+      const bounds = button.getBoundingClientRect()
+      return { top: bounds.top, right: bounds.right, bottom: bounds.bottom, left: bounds.left }
+    })
+    await page.screenshot({ path: join(SCREENSHOT_DIR, 'activity-coordination-confirmation-narrow-bottom.png') })
+    expect(confirmButtonBounds.top).toBeGreaterThanOrEqual(0)
+    expect(confirmButtonBounds.left).toBeGreaterThanOrEqual(0)
+    expect(confirmButtonBounds.bottom).toBeLessThanOrEqual(844)
+    expect(confirmButtonBounds.right).toBeLessThanOrEqual(390)
+    await page.screenshot({ path: join(SCREENSHOT_DIR, 'activity-coordination-confirmation-bottom.png') })
 
     await responsibilityDialog.getByRole('button', { name: 'Confirm and send to this Session' }).click()
     await responsibilityDialog.getByRole('status').filter({
@@ -191,13 +272,13 @@ describe('web e2e: Activity cross-Session coordination', () => {
     expect(dispatchedHistory?.facts.map(fact => fact.kind)).toEqual(['proposed', 'confirmed', 'dispatch-attempted', 'dispatch-settled'])
     const dispatchAttempt = dispatchedHistory?.facts.find(fact => fact.kind === 'dispatch-attempted')
     if (dispatchAttempt === undefined) throw new Error('The confirmed responsibility lacks its durable dispatch identity.')
-    const targetEventsAfterDispatch = await readPersistedEvents(scaffold, firstTarget.id)
     const countDeliveryInputs = (events: Awaited<ReturnType<typeof readPersistedEvents>>): number => events.filter(event =>
       event.type === 'user/message' && event.data.source.kind === 'user' && 'rpcId' in event.data.source
       && String(event.data.source.rpcId) === String(dispatchAttempt.promptRequestId),
     ).length
-    expect(countDeliveryInputs(targetEventsAfterDispatch)).toBe(1)
+    await expect.poll(async () => countDeliveryInputs(await readPersistedEvents(scaffold, firstTarget.id)), { timeout: 5_000 }).toBe(1)
     await responsibilityDialog.getByRole('button', { name: 'Cancel' }).click()
+    await page.setViewportSize(viewport)
 
     const existingSessionIds = new Set(scaffold.ctx.workspaceRegistry.list().flatMap(workspace => workspace.sessionIds))
     await page.getByRole('button', { name: 'New session', exact: true }).filter({ hasText: 'New Session' }).click()
@@ -209,8 +290,6 @@ describe('web e2e: Activity cross-Session coordination', () => {
     if (freshCoordinatorSessionId === undefined || freshCoordinatorSessionId === coordinatorSessionId) {
       throw new Error('The recovery journey did not create an independent coordinator Session.')
     }
-    await scaffold.ctx.homeActivityAssociations.linkSession(activity.id, freshCoordinatorSessionId)
-
     await input.fill('/coo')
     const reopenSuggestions = page.getByRole('listbox').last()
     await reopenSuggestions.waitFor({ timeout: 10_000 })

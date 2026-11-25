@@ -27,7 +27,7 @@ Open `/coordinate` in a root Session to select Activity-linked Workspaces and Se
 
 Mount the Web client package with its declared dependencies and the Host `home-activity` service. In a root Session, `/coordinate` opens the read-only discovery panel; a finalized assistant message also offers **Propose responsibility**.
 
-The user selects an Activity and its associated Workspace/Session pairs, previews bounded recent evidence, and explicitly chooses whether to add it to the coordinator conversation. A recommendation is saved against its exact assistant message. The panel displays the task and target for review; only **Confirm and send to this Session** uses the authenticated Host route to prompt the selected target.
+The user selects an Activity and its associated Workspace/Session pairs, previews bounded recent evidence, and explicitly chooses whether to add it to the coordinator conversation. A recommendation is saved against its exact assistant message. The confirmation view displays the Activity and target identities, task, included and excluded scope, prerequisites, known conflicts, and expected outcome. The dialog instructs the user to review the complete responsibility; its send action follows all proposal details. Only **Confirm and send to this Session** uses the authenticated Host route to prompt the selected target.
 
 To reconsider a prior responsibility in another coordinator Session, expand its saved history and choose **Add this responsibility to this conversation**. DSH queues the complete append-only record as a user message; it refuses records over the message limit, and an uncertain submission requires checking the current conversation before trying again.
 

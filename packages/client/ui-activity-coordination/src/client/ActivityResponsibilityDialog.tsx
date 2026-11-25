@@ -43,7 +43,9 @@ export function ActivityResponsibilityDialog({
     <Modal
       open={state.open && state.mode === 'responsibility'}
       title={t('responsibility.dialog.title')}
-      description={t('responsibility.dialog.description')}
+      description={state.responsibilityPhase === 'confirm'
+        ? t('responsibility.confirm.dialog-description')
+        : t('responsibility.dialog.description')}
       closeLabel={t('close')}
       onClose={dismiss}
       className={css.dialog as string}
@@ -54,11 +56,6 @@ export function ActivityResponsibilityDialog({
           {state.responsibilityPhase === 'draft' && (
             <Button variant="primary" disabled={!canSave || busy} onClick={() => { void proposeResponsibility() }}>
               {busy ? t('responsibility.proposal.saving') : t('responsibility.proposal.save')}
-            </Button>
-          )}
-          {state.responsibilityPhase === 'confirm' && (
-            <Button variant="primary" onClick={() => { void confirmAndDispatch() }}>
-              {t('responsibility.confirm.button')}
             </Button>
           )}
         </div>
@@ -195,6 +192,7 @@ export function ActivityResponsibilityDialog({
             activityId={state.proposalFact.activityId}
             responsibilityId={state.proposalFact.responsibilityId}
             targetTitle={selectedTarget?.workspace.title}
+            confirmAndDispatch={confirmAndDispatch}
             t={t}
           />
         )}
@@ -228,8 +226,8 @@ export function ActivityResponsibilityDialog({
 }
 
 function ProposalConfirmation({
-  proposal, activityId, responsibilityId, targetTitle, t,
-}: Pick<ActivityCoordinationProps, 't'> & {
+  proposal, activityId, responsibilityId, targetTitle, confirmAndDispatch, t,
+}: Pick<ActivityCoordinationProps, 'confirmAndDispatch' | 't'> & {
   readonly proposal: NonNullable<ActivityCoordinationState['proposalFact']>['proposal']
   readonly activityId: ActivityCoordinationState['selectedActivityId']
   readonly responsibilityId: NonNullable<ActivityCoordinationState['proposalFact']>['responsibilityId']
@@ -253,6 +251,11 @@ function ProposalConfirmation({
         <dt>{t('responsibility.field.prerequisites')}</dt><dd>{proposal.prerequisites.length === 0 ? t('responsibility.none') : proposal.prerequisites.join('\n')}</dd>
         <dt>{t('responsibility.field.conflicts')}</dt><dd>{proposal.conflictingWork.length === 0 ? t('responsibility.none') : proposal.conflictingWork.join('\n')}</dd>
       </dl>
+      <div className={css.confirmationActions}>
+        <Button variant="primary" onClick={() => { void confirmAndDispatch() }}>
+          {t('responsibility.confirm.button')}
+        </Button>
+      </div>
     </section>
   )
 }
