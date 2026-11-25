@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Open `/coordinate` in a root Session to select Activity-linked Workspaces and Sessions, inspect bounded authenticated snapshots, and deliberately add selected, attributed evidence to the coordinator conversation. The same panel can save a bounded recommendation, require authenticated confirmation before sending it to a target Session, and add a complete saved responsibility history to a later coordinator conversation. Confirmation grants no additional target permissions, and admission does not establish task completion.
+Open `/coordinate` in a root Session to select Activity-linked Workspaces and Sessions, inspect bounded authenticated snapshots, and deliberately add selected, attributed evidence to the coordinator conversation. The same panel can save a bounded recommendation, require authenticated confirmation before sending it to a target Session, and add a complete saved responsibility history to a later coordinator conversation. It also displays target-authored progress reports with their source Session and call event; these reports do not establish completion, verification, or user acceptance.
 
 ## Table of Contents
 
@@ -39,6 +39,8 @@ To reconsider a prior responsibility in another coordinator Session, expand its 
 The Client derives candidate pairs from saved Activity references and current Workspace membership. The authenticated Remote rechecks access and identity before reading; discovery does not activate a target Session. Context enters the coordinator only as a normal queued user message that records the exact Activity, source Sessions, cursors, observation times, runtime facts, and included text as untrusted historical evidence.
 
 Responsibility facts use a versioned append-only StorageDomain. A proposal names its coordinating Session, assistant event, target Workspace and Session, bounded task, exclusions, prerequisites, and expected result. An authenticated confirmation is bound to that saved proposal; Host dispatch goes through the Session Gateway and preserves the target's native runtime and permissions. Later reconciliation reads target history without retrying, resuming, or rewriting the delivery.
+
+Interim status reports use a separate append-only versioned domain and are returned only with responsibility histories the caller may read. The history view shows each status, source event, recorded time, and bounded summary, with a notice that self-reports do not establish completion, verification, or user acceptance; refresh reads stored data and never prompts the target.
 
 </details>
 
@@ -97,7 +99,21 @@ The full record is added as one queued user message when it fits the message lim
 
 #### KV Cache effect
 
-The user message uses the coordinator provider's normal cache behavior; target Session history and responsibility facts are not changed.
+The user message uses the coordinator model's normal cache behavior; target Session history and responsibility facts are not modified.
+
+### Target-reported progress
+
+#### What the model sees
+
+The target Session receives the status tool only while it has an admitted or unresolved responsibility without a final report. A saved tool result says that the status is target-reported and is not independently verified, accepted, or a completion record.
+
+#### Token effect
+
+The tool definition is available only in eligible target Sessions. Its summary is limited to one line and 1,000 characters.
+
+#### KV Cache effect
+
+Opening history is read-only. Adding history to a later coordinator conversation is an explicit user action and does not resume or prompt the target Session.
 
 ## Known Limitations and Deferred Work
 

@@ -494,11 +494,13 @@ describe('agent loop', () => {
       textResponse('done'),
     ])
     const ctx = await harness(adapter)
+    let sourceEventSeq: number | undefined
     ctx.tools.register(defineContentToolFixture({
       name: 'echo',
       description: 'echo back',
       parameters: { text: { type: 'string' } },
-      async execute(args) {
+      async execute(args, exec) {
+        sourceEventSeq = exec.sourceEventSeq
         return [{ type: 'text', text: `echo: ${args.text}` }]
       },
     }))
@@ -522,6 +524,8 @@ describe('agent loop', () => {
     const types = agent.session.snapshotEvents().map(e => e.type)
     expect(types).toContain('tool/call')
     expect(types).toContain('tool/result')
+    const call = agent.session.snapshotEvents().find(event => event.type === 'tool/call')
+    expect(call?.seq).toBe(sourceEventSeq)
   })
 
   it('renders harness identity, then the persona, then tool guidance — with {{variables}} resolved', async () => {

@@ -16,6 +16,8 @@ Home Activity 是由用户发起并持久保存的事务，具有稳定身份、
 
 对于降级结果，打开 Activity 时会为待处理或不确定的启动显示检查提示。只有已保存事实支持新工作且所选提供方路由已注册时，才会提示用户单独、明确地发起新请求；路由注册不代表凭据可用、用户同意、原生权限或已获准入。Activity 不提供停止操作，外部一次性运行没有 Activity 状态查询、转录检查或恢复操作。未知结果会继续保持未解决状态，打开 Activity 不会启动或恢复执行。
 
+
+目标 Session 可以为已准入或结果未确定的责任追加临时状态报告。每份报告都保存在独立的版本 1 `home_activity_responsibility_status_reports` 域中，并关联目标 Session、已发送的提示和日志中的确切工具调用事件。报告不会更改责任事实，也不能证明完成、验证或用户接受；重新打开历史记录不会提示目标 Session。
 ## 上下文关联
 
 独立的版本 1 `home_activity_associations` 域会在 Activity 记录之外保存用户选定的 Workspace 和 DSH Session id，每种引用最多 256 个。两类 id 分别选择；共享 Activity 不会把 Session 分配给 Workspace，也不会从 Workspace 目录推断 Git 仓库根目录。删除引用只修改关联记录，不会重写 Workspace 记录或 Session 日志。
@@ -47,6 +49,8 @@ Home Activity 是由用户发起并持久保存的事务，具有稳定身份、
 独立的版本 1 `home_activity_strategic_episodes` 域会追加由 agent 撰写的建议性简报，不改变 Activity 意图、备注或委派事实。`/activity assess` 会加载现有 Sensemaking Skills 和明确选择的 Workspace；仓库读取使用现有只读协调工具，并须另行获得一次性批准。每条记录保留 Activity 目标、来源 Session、Workspace id、由协调工具报告的 Git 修订和观察时间、是否存在暂存、未暂存或未跟踪的来源文件、来源引用、已加载 Skill 内容摘要、发现、替代方案、不确定性，以及建议或不选择。记录器会将仓库 id 和来源元数据绑定到来源 Session 中匹配的成功协调器工具结果；但不会独立验证来源内容、引用或发现。来源不可用、存在未提交变更、观察期间变化或稳定性未知时，简报必须标为不完整。后续简报会取代建议，但保留早期记录。`/activity open` 显示最新简报，`/activity brief` 可检索指定的历史版本，不会重新读取仓库；后续保存的观察会让早期适用性变得不确定，没有后续观察时当前适用性仍未确认。`/activity assess cancel` 会阻止保存未完成简报，但不会停止已获准并正在运行的读取。
 
 独立的版本 1 `home_activity_responsibilities` 域会为分配到所选 Workspace 和现有 DSH 根 Session 的有界责任追加事实。提议、经过身份验证的用户确认、提示分发意图与结果、被动 Session 观察、目标报告、验证证据和用户接受会作为不同记录保存。每条事实都包含稳定的 Activity 和责任身份、修订号与前序记录、幂等请求身份及来源归属。确认记录保存完整提议内容和可信 Host 路由提供的本地所有者身份；不会持久化无关 Peer 元数据。持久化服务本身不会认证调用方或授权目标访问。Session Controller 接受提示只表示目标 Session 接受了输入。目标报告保存有界摘要和来源事件序列，不复制 Session transcript。验证证据记录命名来源及其报告结果；接受仍是单独的用户决定。列出责任历史不会查询、恢复或提示目标 Session。
+
+如果一项已准入或结果未确定的责任分配给确切的实时根 Session，目标 Session 可以通过条件模型工具追加临时进展。每份报告都存储在独立的版本 1 `home_activity_responsibility_status_reports` 域中，并引用目标 Session 日志中的工具调用事件。报告是目标自我归属的状态证据，不会更改责任事实，也不能证明完成、验证或用户接受。
 
 可选的 `ctx.homeActivityCoordination` Host 服务通过 Client 路由提供所有者授权的有界 Session 发现、提议记录、确认后的提示分发和被动协调。每次发现都会重新检查 Activity 关联、Workspace 成员关系、根 Session 身份、匹配的仓库路径及当前资源访问权限。只有调用者有权读取来源协调 Session、目标 Session 和 Workspace 时，服务才会返回责任历史；Activity 关联本身不会授予访问权。提议必须引用关联协调根 Session 中由模型撰写的事件。分发仅在经过身份验证的所有者确认完全相同的已保存提议后接受，并会重新检查目标身份与访问权限；目标 Session 保留自己的运行时、权限和写入者所有权。打开协调历史不会提示或恢复任何目标 Session。客户端工作流请参阅[协调 UI 包](../../packages/client/ui-activity-coordination/README.zh.md)。
 
@@ -422,6 +426,27 @@ recordObservation(request: RecordActivityResponsibilityObservationRequest): Prom
  */
 recordReport(request: RecordActivityResponsibilityReportRequest): Promise<ActivityResponsibilityReportedFact>
 
+/** Append a status report from the exact target Session of a confirmed responsibility.
+ * @param request - Activity, responsibility, trusted caller Session and logged tool-call sequence.
+ * @returns The idempotent target-authored report; it does not mark work complete or verified.
+ * @throws {ActivityResponsibilityError} when the caller, dispatch, or report identity is unavailable.
+ * @throws {ActivityResponsibilityStorageError} when persistence cannot be confirmed.
+ */
+recordTargetStatusReport(request: RecordActivityResponsibilityStatusReportRequest): Promise<ActivityResponsibilityStatusReport>
+
+/** Whether one Session has an unresolved or admitted responsibility that can accept a self-report.
+ * @param targetSessionId - Session identity from a live ToolActivationContext Agent.
+ * @returns True only when an existing responsibility is dispatched to this Session and has no final report.
+ */
+hasReportableTargetSession(targetSessionId: SessionId): boolean
+
+/** Read immutable status reports without contacting or resuming the target Session.
+ * @param activityId - Owning Activity identity.
+ * @param responsibilityId - Stable responsibility identity.
+ * @returns Target-authored reports in Session event order.
+ */
+listTargetStatusReports( activityId: ActivityId, responsibilityId: ActivityResponsibilityId, ): readonly ActivityResponsibilityStatusReport[]
+
 /** Record separately attributed evidence about one saved target report.
  * @param request - Report identity, recorder, and named verification evidence.
  * @returns The evidence fact; DSH does not independently inspect its source.
@@ -455,6 +480,8 @@ get(activityId: ActivityId, responsibilityId: ActivityResponsibilityId): Activit
  */
 list(activityId: ActivityId): readonly ActivityResponsibilityHistory[]
 ```
+
+Types: [SessionId](core.zh.md)
 
 Source: [`packages/home/activity/src/responsibilities.ts`](../../packages/home/activity/src/responsibilities.ts)
 

@@ -13,6 +13,7 @@ import type {
   ActivityCoordinationSessionSnapshot,
   ActivityCoordinationTarget,
 } from '@deepseek-ai/dsh-home-activity/coordination-types'
+import type { ActivityResponsibilityStatusReport } from '@deepseek-ai/dsh-home-activity/responsibility-types'
 import type { ActivityId } from '@deepseek-ai/dsh-home-activity/activity-types'
 import type {
   ActivityResponsibilityHistory,
@@ -101,6 +102,8 @@ export interface ActivityCoordinationState {
   readonly selectedKeys: readonly string[]
   readonly snapshots: readonly ActivityCoordinationSessionSnapshot[]
   readonly histories: readonly ActivityResponsibilityHistory[]
+  /** Target-authored progress reports loaded for the selected Activity. */
+  readonly statusReports: readonly ActivityResponsibilityStatusReport[]
   readonly historyShares: readonly ActivityResponsibilityShareStatus[]
   readonly historyLoading: boolean
   readonly sourceMessage: ActivityCoordinationSourceMessage | null
@@ -153,6 +156,7 @@ const INITIAL: ActivityCoordinationState = {
   selectedKeys: [],
   snapshots: [],
   histories: [],
+  statusReports: [],
   historyShares: [],
   historyLoading: false,
   sourceMessage: null,
@@ -457,6 +461,7 @@ export class ActivityCoordinationSurface {
         ...state,
         reconciling,
         histories: upsertHistory(state.histories, result.value.history),
+        statusReports: upsertStatusReports(state.statusReports, result.value.statusReports ?? []),
         reconcileResults: upsertReconcileResult(state.reconcileResults, result.value),
         failure: null,
       })
@@ -592,7 +597,7 @@ export class ActivityCoordinationSurface {
     const generation = ++this.historyGeneration
     const current = this.state.getSnapshot()
     if (!current.open || current.selectedActivityId !== activityId) return
-    this.state.set({ ...current, historyLoading: true })
+    this.state.set({ ...current, historyLoading: true, statusReports: [] })
     try {
       const result = await this.options.remote.responsibilities({ activityId })
       const state = this.state.getSnapshot()
@@ -602,6 +607,7 @@ export class ActivityCoordinationSurface {
           ...state,
           historyLoading: false,
           histories: [],
+          statusReports: [],
           failure: state.failure === null ? 'history' : state.failure,
         })
         return
@@ -610,6 +616,7 @@ export class ActivityCoordinationSurface {
         ...state,
         historyLoading: false,
         histories: result.value.items,
+        statusReports: result.value.statusReports ?? [],
         failure: state.failure === 'history' ? null : state.failure,
       })
     } catch (_error: unknown) {
@@ -619,6 +626,7 @@ export class ActivityCoordinationSurface {
         ...state,
         historyLoading: false,
         histories: [],
+        statusReports: [],
         failure: state.failure === null ? 'history' : state.failure,
       })
     }
@@ -873,6 +881,17 @@ function upsertReconcileResult(
   next: ActivityCoordinationReconcileResult,
 ): ActivityCoordinationReconcileResult[] {
   return [...results.filter(result => result.history.id !== next.history.id), next]
+}
+
+function upsertStatusReports(
+  current: readonly ActivityResponsibilityStatusReport[],
+  updated: readonly ActivityResponsibilityStatusReport[],
+): ActivityResponsibilityStatusReport[] {
+  const reports = new Map(current.map(report => [report.id, report]))
+  for (const report of updated) reports.set(report.id, report)
+  return [...reports.values()].sort((left, right) =>
+    left.targetSessionId.localeCompare(right.targetSessionId)
+    || left.sourceEventSeq - right.sourceEventSeq)
 }
 
 function upsertHistoryShare(

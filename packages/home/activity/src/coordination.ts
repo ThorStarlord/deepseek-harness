@@ -199,10 +199,15 @@ export class ActivityCoordinationService extends TypertRemoteService {
    */
   @Remote({ resources: { activity: request => request.activityId } })
   responsibilities(request: { readonly activityId: ActivityId }): ActivityCoordinationResponsibilityList {
-    return { items: this.ctx.homeActivityResponsibilities.list(request.activityId)
+    const items = this.ctx.homeActivityResponsibilities.list(request.activityId)
       .filter((history) => {
         return this.canReadHistory(history)
-      }) }
+      })
+    return {
+      items,
+      statusReports: Object.freeze(items.flatMap(history =>
+        this.ctx.homeActivityResponsibilities.listTargetStatusReports(request.activityId, history.id))),
+    }
   }
 
   /**
@@ -360,7 +365,7 @@ export class ActivityCoordinationService extends TypertRemoteService {
       requestId: promptRequestId,
       sessionId: target.sessionId,
       mode: 'queue',
-      content: [{ type: 'text', text: assignmentPrompt(activity, request.proposal) }],
+      content: [{ type: 'text', text: assignmentPrompt(activity, responsibilityId, request.proposal) }],
     }
     let outcome: ActivityCoordinationDispatchResult['outcome'] = 'uncertain'
     let diagnostic: ActivityCoordinationDispatchResult['diagnostic'] = 'delivery-uncertain'
@@ -497,6 +502,17 @@ export class ActivityCoordinationService extends TypertRemoteService {
       queueAvailable: state.queue !== null,
       pendingInput: state.pendingInput,
     }
+    const withStatusReports = (
+      currentHistory: ActivityResponsibilityHistory,
+      reportState: ActivityCoordinationReconcileResult['reportState'],
+      report?: ActivityResponsibilityReportedFact,
+    ): ActivityCoordinationReconcileResult => ({
+      history: currentHistory,
+      statusReports: this.ctx.homeActivityResponsibilities.listTargetStatusReports(request.activityId, history.id),
+      observed: status,
+      reportState,
+      ...(report === undefined ? {} : { report }),
+    })
     await this.ctx.homeActivityResponsibilities.recordObservation({
       activityId: request.activityId,
       responsibilityId: history.id,
@@ -514,14 +530,14 @@ export class ActivityCoordinationService extends TypertRemoteService {
     })
     const latest = this.ctx.homeActivityResponsibilities.get(request.activityId, history.id) ?? history
     const attempt = latest.facts.find(fact => fact.kind === 'dispatch-attempted')
-    if (attempt === undefined) return { history: latest, observed: status, reportState: 'no-dispatch' }
+    if (attempt === undefined) return withStatusReports(latest, 'no-dispatch')
     const settled = latest.facts.find((fact): fact is Extract<ActivityResponsibilityHistory['facts'][number], { kind: 'dispatch-settled' }> =>
       fact.kind === 'dispatch-settled' && fact.promptRequestId === attempt.promptRequestId)
-    if (settled?.outcome === 'not-admitted') return { history: latest, observed: status, reportState: 'no-dispatch' }
+    if (settled?.outcome === 'not-admitted') return withStatusReports(latest, 'no-dispatch')
     const priorReport = latest.facts.find((fact): fact is ActivityResponsibilityReportedFact =>
       fact.kind === 'reported' && fact.promptRequestId === attempt.promptRequestId,
     )
-    if (priorReport !== undefined) return { history: latest, observed: status, reportState: 'reported', report: priorReport }
+    if (priorReport !== undefined) return withStatusReports(latest, 'reported', priorReport)
 
     const observation = await this.ctx.sessionQuery.observeSession(request.sessionId, { signal, projectionMode: 'none' })
     using owned = observation
@@ -529,7 +545,7 @@ export class ActivityCoordinationService extends TypertRemoteService {
       event.type === 'user/message' && event.data.source.kind === 'user'
       && 'rpcId' in event.data.source
       && String(event.data.source.rpcId) === String(attempt.promptRequestId))
-    if (userInput === undefined) return { history: latest, observed: status, reportState: 'awaiting-target-input' }
+    if (userInput === undefined) return withStatusReports(latest, 'awaiting-target-input')
     if (settled === undefined) {
       await this.ctx.homeActivityResponsibilities.settleDispatch({
         activityId: request.activityId,
@@ -539,26 +555,26 @@ export class ActivityCoordinationService extends TypertRemoteService {
       })
     }
     const turnStart = containingTurnStart(owned.events, userInput.seq)
-    if (turnStart === undefined) return { history: this.ctx.homeActivityResponsibilities.get(request.activityId, history.id) ?? latest, observed: status, reportState: 'awaiting-turn-end' }
+    if (turnStart === undefined) return withStatusReports(this.ctx.homeActivityResponsibilities.get(request.activityId, history.id) ?? latest, 'awaiting-turn-end')
     const turnEnd = owned.events.find((event): event is Extract<SessionEvent, { type: 'turn/end' }> =>
       event.type === 'turn/end' && event.seq > userInput.seq && event.data.turn === turnStart.data.turn)
-    if (turnEnd === undefined) return { history: this.ctx.homeActivityResponsibilities.get(request.activityId, history.id) ?? latest, observed: status, reportState: 'awaiting-turn-end' }
+    if (turnEnd === undefined) return withStatusReports(this.ctx.homeActivityResponsibilities.get(request.activityId, history.id) ?? latest, 'awaiting-turn-end')
     if (turnEnd.data.reason.kind !== 'completed') {
-      return { history: this.ctx.homeActivityResponsibilities.get(request.activityId, history.id) ?? latest, observed: status, reportState: 'no-completed-response' }
+      return withStatusReports(this.ctx.homeActivityResponsibilities.get(request.activityId, history.id) ?? latest, 'no-completed-response')
     }
     const assistant = owned.events.findLast(event => event.type === 'assistant/message'
       && event.data.turn === turnStart.data.turn && event.seq > userInput.seq
       && event.seq < turnEnd.seq
       && event.data.message.content.some(block => block.type === 'text' && block.text.trim().length > 0))
     if (assistant?.type !== 'assistant/message') {
-      return { history: this.ctx.homeActivityResponsibilities.get(request.activityId, history.id) ?? latest, observed: status, reportState: 'no-completed-response' }
+      return withStatusReports(this.ctx.homeActivityResponsibilities.get(request.activityId, history.id) ?? latest, 'no-completed-response')
     }
     const summary = truncateUnicodeCodePoints(assistant.data.message.content
       .flatMap(block => block.type === 'text' ? [block.text] : []).join(' ')
       .replace(/\s+/gu, ' ').trim(), 4_000).text
     /* v8 ignore next 2 -- findLast accepts only trimmed assistant text after whitespace normalization. */
     if (summary.length === 0) {
-      return { history: this.ctx.homeActivityResponsibilities.get(request.activityId, history.id) ?? latest, observed: status, reportState: 'no-completed-response' }
+      return withStatusReports(this.ctx.homeActivityResponsibilities.get(request.activityId, history.id) ?? latest, 'no-completed-response')
     }
     await this.ctx.homeActivityResponsibilities.recordReport({
       activityId: request.activityId,
@@ -574,8 +590,8 @@ export class ActivityCoordinationService extends TypertRemoteService {
       fact.kind === 'reported' && fact.promptRequestId === attempt.promptRequestId,
     )
     return report === undefined
-      ? { history: updated, observed: status, reportState: 'no-completed-response' }
-      : { history: updated, observed: status, reportState: 'reported', report }
+      ? withStatusReports(updated, 'no-completed-response')
+      : withStatusReports(updated, 'reported', report)
   }
 
   /** Revalidate an associated Workspace/Session pair and dispose the passive observation before returning. */
@@ -730,9 +746,15 @@ function dispatchDiagnostic(error: RemoteError): ActivityCoordinationDispatchRes
 }
 
 /** Construct one bounded target prompt from the exact proposal the user confirmed. */
-function assignmentPrompt(activity: Activity, proposal: ActivityResponsibilityProposal): string {
+function assignmentPrompt(
+  activity: Activity,
+  responsibilityId: ActivityResponsibilityId,
+  proposal: ActivityResponsibilityProposal,
+): string {
   return [
     `Activity: ${activity.name}`,
+    `Activity ID: ${activity.id}`,
+    `Responsibility ID: ${responsibilityId}`,
     `Objective: ${activity.objective}`,
     `Task: ${proposal.task}`,
     `Scope: ${proposal.inScope.join('; ')}`,
@@ -740,7 +762,7 @@ function assignmentPrompt(activity: Activity, proposal: ActivityResponsibilityPr
     `Prerequisites: ${proposal.prerequisites.length === 0 ? 'None recorded.' : proposal.prerequisites.join('; ')}`,
     `Conflicting work to account for: ${proposal.conflictingWork.length === 0 ? 'None recorded.' : proposal.conflictingWork.join('; ')}`,
     `Expected outcome: ${proposal.expectedOutcome}`,
-    'Use this Session’s existing runtime, permissions, and repository context. Do not expand the task or change permissions. Do not commit, merge, deploy, publish, or release unless that exact action is separately authorized in this Session. Report what you did and what remains uncertain; do not label work independently verified or accepted.',
+    'Use this Session’s existing runtime, permissions, and repository context. Do not expand the task or change permissions. Do not commit, merge, deploy, publish, or release unless that exact action is separately authorized in this Session. For meaningful milestones or blockers, call report_activity_responsibility_status with these exact IDs and a concise one-line status. A status report is only your report; do not label work independently verified, user-accepted, or complete. Continue with the task and provide a final outcome when the turn finishes.',
   ].join('\n')
 }
 

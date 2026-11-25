@@ -1,0 +1,9 @@
+version: 1
+scenario: activity-responsibility-status
+profile: sdk
+composition: sdk-default
+recording: authored
+environment:
+  DEEPSEEK_BASE_URL: http://127.0.0.1:1/v1
+header:
+  class: sdk-default

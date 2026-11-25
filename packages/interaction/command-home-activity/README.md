@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use `/activity` in Web or SDK `session.run()` to manage saved Activities and explicitly request source-grounded strategic briefs or bounded delegation. An assessment loads existing Sensemaking Skills and reads selected repositories only through the separate approval. Opening a saved brief does not rerun it. Delegation records provider reports separately from verification and user acceptance; Codex and Claude Code retain their native authentication and one-shot behavior.
+Use `/activity` in Web or SDK `session.run()` to manage saved Activities and explicitly request source-grounded strategic briefs or bounded delegation. An assessment loads existing Sensemaking Skills and reads selected repositories only through the separate approval. Opening a saved brief does not rerun it. A dispatched target DSH Session can append bounded, source-attributed progress reports; these remain self-reports and do not imply task completion. Delegation records provider reports separately from verification and user acceptance; Codex and Claude Code retain their native authentication and one-shot behavior.
 
 ## Table of Contents
 
@@ -85,6 +85,7 @@ The command is registered for explicit human invocation, not as a model tool. Sa
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Command registration and dispatch |
+| [`src/responsibility-status.ts`](src/responsibility-status.ts) | Target-only status tool bound to the live Session and logged call event |
 | [`src/delegation-command.ts`](src/delegation-command.ts) | Delegation parsing, lifecycle, and user-facing results |
 | [`src/next-actions.ts`](src/next-actions.ts) | Read-only recovery guidance from saved outcomes and registered provider routes |
 | [`src/continuation-command.ts`](src/continuation-command.ts) | Explicit continuation parsing and delegation through the existing provider path |
@@ -113,11 +114,11 @@ The command is registered for explicit human invocation, not as a model tool. Sa
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through explicit `/activity assess`, `/activity delegate`, and `/activity continue` commands. Assessment steers the current Agent and records an advisory source-grounded brief only for the matching explicit request; it uses the existing read-only repository coordinator after its separate approval. Delegation starts one provider execution and records the request, DSH admission, and provider report separately without implying verification or user acceptance. Continuation creates a new request from the saved objective, selected descriptive scope statement, and user's next step; it does not resume prior provider execution.
+Indirectly, through explicit Activity commands that add selected coordination context or enable a status report from an eligible target Session.
 
 #### KV Cache effect
 
-An explicit assessment adds the Activity objective, selected Workspace roots, and loaded Sensemaking Skill bodies to the active Session. After separate one-shot approval of the exact task and selected repositories, the existing coordinator starts one read-only DSH child Session per repository; those Sessions can inspect repository sources but cannot implement or mutate either repository. An assessment itself does not start implementation, grant write access, or change the active Agent's existing tools or permissions. Implementation delegation remains a separate Activity action with its own provider authorization.
+An explicit assessment adds the Activity objective, selected Workspace roots, and loaded Sensemaking Skill bodies to the active Session. After separate one-shot approval of the exact task and selected repositories, the coordinator starts one read-only DSH child Session per repository; those Sessions can inspect repository sources but cannot implement or mutate either repository. An assessment itself does not start implementation, grant write access, or change the active Agent's existing tools or permissions. Implementation delegation remains a separate Activity action with its own provider authorization. The target status tool is available only in an eligible live root DSH Session and appends a bounded self-report; it cannot dispatch work or change completion, verification, or acceptance state.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

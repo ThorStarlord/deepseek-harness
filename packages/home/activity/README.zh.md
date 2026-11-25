@@ -76,6 +76,8 @@ Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associ
 
 跨 Session 责任事实保存在独立、只追加的版本 1 `home_activity_responsibilities` 域中。稳定责任身份会保留不可变提议、对提议完整内容的用户确认、提示分发意图与路由结果、被动 Session 观察、附带来源事件序列的简短目标报告、验证证据和用户处置。每条新事实都会链接到前一条；服务不会根据 Session 活动推断完成状态。经过身份验证的用户决定会记录本地所有者身份；其他 Peer 元数据不会被持久化。该域本身不会授权 Session 访问或执行分发。
 
+目标 Session 的中间进展报告保存在独立、只追加的版本 1 `home_activity_responsibility_status_reports` 域中。每条有界报告都会标明 Activity、责任、目标 Session、已分发提示和目标日志中准确的 `tool/call` 事件序列。只有目标专用命令工具可为已准入或结果未确定的分配记录报告；报告不会修改责任事实，也不代表任务完成、已验证或已接受。严格的责任版本 1 读取器保持不变。
+
 用户提供的外部交接保存在独立的版本 1 `home_activity_handoffs` 域中。每条记录属于一个现有 Activity，并保存来源标签、可选的用户摘要或来源引用、用户提供的产物引用，以及记录时所在的 DSH Session。所有文本都会去除首尾空白并限制长度，且必须为单行；控制、格式、行分隔和段落分隔字符会被拒绝。其他 Session 打开 Activity 时，这些引用会显示为外部用户输入，而非导入的原生执行历史。此服务不会导入 transcript、同步外部 Session、确认工作执行者，也不会声称结果已验证或接受。
 
 | 文件 | 职责 |
@@ -97,6 +99,7 @@ Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associ
 | [`src/strategic-episodes.ts`](src/strategic-episodes.ts) | 追加式 Activity Strategic Brief 持久化服务 |
 | [`src/responsibility-types.ts`](src/responsibility-types.ts) | 责任身份与不可变事实类型 |
 | [`src/responsibility-spec.ts`](src/responsibility-spec.ts) | 带版本的只追加责任记录 schema 和域 |
+| [`src/responsibility-status-spec.ts`](src/responsibility-status-spec.ts) | 目标进展报告的独立版本化 schema 和域 |
 | [`src/responsibilities.ts`](src/responsibilities.ts) | 责任持久化服务 |
 | [`src/activity-types.ts`](src/activity-types.ts) | Client 安全使用的 Activity 身份与记录类型 |
 | [`src/coordination-types.ts`](src/coordination-types.ts) | Client 安全使用的跨 Session 请求与观察类型 |
@@ -142,6 +145,7 @@ Activity 范围仍是描述性内容；委派不会将其作为授权规则执�
 - 产物引用只是用户关联的指针；它不会复制或检查输出、证明生成者、验证内容，也不会触发跨 Workspace 写入、合并或发布。缺少来源修订版时仍显示为未知。
 - 审核证据及其报告结果由用户提供。DSH 会保留其来源信息，但不会检查来源、证据或结果；当前处置与提供方执行状态分开保存。
 - 责任确认是由可信 Host 调用方提供的持久事实；此服务不会认证调用方，也不会授予目标 Session 访问权。提示准入表示 Session 已接受输入，不代表已执行任务。报告仅保存有界摘要和来源事件引用，不复制 transcript。验证证据会记录命名来源及其报告结果，但不会检查来源；接受是独立的用户决定。
+- 中间进展是目标 Session 自行报告的状态，并以准确的 Session 调用事件保存。它不是最终结果，可能不准确或已过时；任何报告状态都不代表完成、验证或接受。
 - 战略记录是 agent 撰写的报告，不是独立验证或用户接受。评估要求两个 Sensemaking Skills 均可加载，并限制为恰好两个已注册 Workspace，因为现有协调工具支持两个仓库。记录器会将仓库 id、`HEAD` 修订、观察时间和工作树干净状态元数据绑定到来源 Session 中匹配的成功协调器结果，但不会独立验证来源内容、引用或发现。对于有未提交变更的来源，`HEAD` 只表示已提交的基准，简报不会保存暂存区或工作树文件内容。来源不可用、存在未提交变更、观察期间变化或稳定性未知时，简报必须标为不完整。`/activity open` 显示最新简报，`/activity brief` 可检索更早保存的版本；两者都不会检查当前仓库。
 
 备注写入错误无法确认修订是否已经持久化。JSON 后端可能在替换文件后才报错，因此请先关闭并重新打开后端和域，再检查 Activity 并决定是否重试；此备注服务不承诺持久回滚。详见 [StorageDomain](../../storage/storage-domain/README.zh.md) 和 [JSON 后端](../../storage/storage-json/README.zh.md)的失败约定。

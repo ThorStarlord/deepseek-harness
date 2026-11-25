@@ -1,0 +1,5 @@
+# Seed one admitted target assignment for the keyless SDK status-report scenario.
+
+- insert:
+    - id: activity-responsibility-status-seed
+      name: ./seed-status-report.mjs

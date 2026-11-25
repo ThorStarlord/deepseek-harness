@@ -13,6 +13,7 @@ import type {
   ActivityResponsibilityHistory as ResponsibilityHistory,
   ActivityResponsibilityProposal,
   ActivityResponsibilityProposedFact,
+  ActivityResponsibilityStatusReport,
 } from '@deepseek-ai/dsh-home-activity/responsibility-types'
 import type { ActivityCoordinationDispatchResult, ActivityCoordinationReconcileResult } from '@deepseek-ai/dsh-home-activity/coordination-types'
 import type { ActivityId } from '@deepseek-ai/dsh-home-activity/activity-types'
@@ -96,6 +97,7 @@ describe('ActivityResponsibilityHistory', () => {
     ]
     const value = state({
       histories,
+      statusReports: [statusReport(histories[0]!.id)],
       reconciling: [histories[0]!.id],
       historyShares: [
         { responsibilityId: histories[0]!.id, status: 'sending' },
@@ -131,6 +133,11 @@ describe('ActivityResponsibilityHistory', () => {
     expect(ui.getByText(/access-denied/)).toBeTruthy()
     expect(ui.getByText('Provider reported completion.')).toBeTruthy()
     expect(ui.getByText('Focused checks passed.')).toBeTruthy()
+    expect(ui.getByText(en['responsibility.progress.heading'])).toBeTruthy()
+    expect(ui.getByText(en['responsibility.progress.notice'])).toBeTruthy()
+    expect(ui.getByText(en['responsibility.progress.progress'])).toBeTruthy()
+    expect(ui.getByText('Reported by Session session-1 · source event 88')).toBeTruthy()
+    expect(ui.getByText('A bounded target self-report.')).toBeTruthy()
 
     const shareButtons = ui.getAllByRole('button', { name: /responsibility|historical/i })
     expect(shareButtons[0]?.textContent).toBe(en['responsibility.history.share.loading'])
@@ -355,7 +362,7 @@ function props(value: ActivityCoordinationState, overrides: Partial<ActivityCoor
 function state(overrides: Partial<ActivityCoordinationState> = {}): ActivityCoordinationState {
   return {
     open: true, mode: 'responsibility', phase: 'ready', activities: [], selectedActivityId: null, candidates: [],
-    selectedKeys: [], snapshots: [], histories: [], historyShares: [], historyLoading: false, sourceMessage: null,
+    selectedKeys: [], snapshots: [], histories: [], statusReports: [], historyShares: [], historyLoading: false, sourceMessage: null,
     responsibilityPhase: 'idle',
     responsibilityDraft: { targetKey: null, task: '', inScopeText: '', outOfScopeText: '', expectedOutcome: '', prerequisitesText: '', conflictingWorkText: '' },
     proposalRequestId: null, proposalFact: null, dispatchResult: null, reconcileResults: [], reconciling: [], failure: null,
@@ -393,6 +400,21 @@ function history(suffix: string, facts: readonly ActivityResponsibilityFact[]): 
 
 function proposed(eventSeq: number | null = 7): ActivityResponsibilityProposedFact {
   return { ...proposedFact, id: factId(`proposed-${eventSeq ?? 'none'}`), responsibilityId, activityId, source: { ...proposedFact.source, ...(eventSeq === null ? { eventSeq: undefined } : { eventSeq }) } }
+}
+
+function statusReport(selectedResponsibilityId: ResponsibilityHistory['id']): ActivityResponsibilityStatusReport {
+  return {
+    id: brandString<ActivityResponsibilityStatusReport['id']>('status-report-1'),
+    activityId,
+    responsibilityId: selectedResponsibilityId,
+    targetSessionId: sessionId,
+    promptRequestId: requestId('prompt-status'),
+    status: 'progress',
+    summary: 'A bounded target self-report.',
+    sourceEventSeq: 88,
+    recordedAt: '2026-11-24T12:08:00.000Z',
+    source: 'target-session-status-tool',
+  }
 }
 
 type ActivityResponsibilityFactDetails = ActivityResponsibilityFact extends infer Fact

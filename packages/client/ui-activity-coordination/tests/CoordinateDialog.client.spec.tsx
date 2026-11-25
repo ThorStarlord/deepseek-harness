@@ -333,6 +333,7 @@ function state(overrides: Partial<ActivityCoordinationState> = {}): ActivityCoor
     selectedKeys: [],
     snapshots: [],
     histories: [],
+    statusReports: [],
     historyShares: [],
     historyLoading: false,
     sourceMessage: null,

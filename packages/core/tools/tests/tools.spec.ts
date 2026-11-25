@@ -1814,7 +1814,11 @@ describe('ToolRuntime', () => {
       reject: () => new Error('executor refuses direct calls'),
     })
     const prepared = await pipeline.prepare({
-      callId: ToolCallId('cancelled-refusal'), name: 'echo', arguments: {}, signal: AbortSignal.abort(),
+      callId: ToolCallId('cancelled-refusal'),
+      name: 'echo',
+      schema: { name: 'echo', description: 'echo arguments back', parameters: {} },
+      arguments: {},
+      signal: AbortSignal.abort(),
     })
     expect(prepared.kind).toBe('final-result')
     if (prepared.kind === 'dispatch') throw new Error('cancelled call was dispatched')

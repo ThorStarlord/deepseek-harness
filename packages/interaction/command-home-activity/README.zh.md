@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-通过 Web 或 SDK `session.run()` 中的 `/activity` 管理已保存的 Activity，并显式请求基于来源的战略简报或有界委派。评估会加载现有 Sensemaking Skills，并且只有经过单独批准后才会读取所选仓库。打开已保存简报不会重新运行评估。委派会将提供方报告与验证和用户接受分开记录；Codex 与 Claude Code 保留原生身份验证和一次性执行行为。
+通过 Web 或 SDK `session.run()` 中的 `/activity` 管理已保存的 Activity，并显式请求基于来源的战略简报或有界委派。评估会加载现有 Sensemaking Skills，并且只有经过单独批准后才会读取所选仓库。打开已保存简报不会重新运行评估。已接收分配提示的目标 DSH Session 可以追加有界、带来源归属的进展报告；这些报告仍是自我报告，不代表任务完成。委派会将提供方报告与验证和用户接受分开记录；Codex 与 Claude Code 保留原生身份验证和一次性执行行为。
 
 ## 目录
 
@@ -87,6 +87,7 @@ Web 和 SDK profile 会通过命令注册表、工具注册表、持久化 Activ
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 命令注册、输入校验与用户可见结果 |
+| [`src/responsibility-status.ts`](src/responsibility-status.ts) | 仅供目标 Session 使用并绑定实时 Session 与日志调用事件的状态工具 |
 | [`src/delegation-command.ts`](src/delegation-command.ts) | 委派解析、生命周期与用户可见结果 |
 | [`src/next-actions.ts`](src/next-actions.ts) | 根据已保存结果和已注册提供方路由生成只读恢复提示 |
 | [`src/continuation-command.ts`](src/continuation-command.ts) | 解析明确的继续请求并复用现有提供方路径 |
@@ -115,11 +116,11 @@ Web 和 SDK profile 会通过命令注册表、工具注册表、持久化 Activ
 <a id="model-experience"></a>
 ## 模型体验
 
-模型体验通过显式的 `/activity assess`、`/activity delegate` 或 `/activity continue` 命令间接产生。评估会引导当前 Agent 并仅为对应请求开放记录工具；它使用现有 DSH Skill registry 加载 Sensemaking Skills，并在只读仓库协调工具另行获得批准后读取来源。委派会启动一次提供方执行，并分别记录请求、DSH 准入和提供方报告，不会暗示结果已验证或被用户接受。继续请求会根据已保存目标、选定的描述性范围语句和用户下一步创建新请求，不会恢复先前的提供方执行。
+模型输入会间接通过显式的 `/activity assess`、`/activity delegate` 和 `/activity continue` 命令，以及符合条件目标 Session 的状态工具产生。
 
 #### KV 缓存影响
 
-显式评估会把 Activity 目标、所选 Workspace 根目录和已加载的 Sensemaking Skill 正文加入当前 Session。现有协调器只有在针对确切任务和所选仓库另行获得一次性批准后，才会为每个仓库启动一个只读 DSH 子级 Session；这些 Session 可以检查仓库来源，但不能实现或修改任一仓库。评估本身不会启动实现、授予写入权限或更改活动 Agent 现有的工具和权限。实现委派仍是单独的 Activity 操作，并使用其自身的提供方授权。
+显式评估会把 Activity 目标、所选 Workspace 根目录和已加载的 Sensemaking Skill 正文加入当前 Session。现有协调器只有在针对确切任务和所选仓库另行获得一次性批准后，才会为每个仓库启动一个只读 DSH 子级 Session；这些 Session 可以检查仓库来源，但不能实现或修改任一仓库。评估本身不会启动实现、授予写入权限或更改活动 Agent 现有的工具和权限。实现委派仍是单独的 Activity 操作，并使用其自身的提供方授权。只有存在已准入或结果未确定的 Activity 责任分配时，实时根 DSH Session 才会看到目标状态工具。该工具会追加进展、等待、可供审查、受阻或失败等自我报告状态；它不能分派工作，也不能更改完成、验证或接受状态。
 
 ## 已知限制与后续工作
 <a id="known-limitations-and-deferred-work"></a>

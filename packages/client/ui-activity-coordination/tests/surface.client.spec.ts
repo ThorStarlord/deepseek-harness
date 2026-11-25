@@ -15,6 +15,8 @@ import type {
   ActivityResponsibilityId,
   ActivityResponsibilityProposedFact,
   ActivityResponsibilityRequestId,
+  ActivityResponsibilityStatusReportId,
+  ActivityResponsibilityStatusReport,
 } from '@deepseek-ai/dsh-home-activity/responsibility-types'
 import type { Activity, ActivityId } from '@deepseek-ai/dsh-home-activity/activity-types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -713,6 +715,37 @@ describe('Activity coordination discovery', () => {
     expect(harness.subject.state.getSnapshot().reconcileResults).toEqual([refreshed])
   })
 
+  it('recovers target status reports in target Session and event order', async () => {
+    const harness = surface()
+    harness.remote.responsibilities.mockResolvedValue({ ok: true, value: { items: [responsibilityHistory] } })
+    const reports: ActivityResponsibilityStatusReport[] = [
+      statusReport('report-session-b', sessionB, 11),
+      statusReport('report-session-a-later', sessionA, 12),
+      statusReport('report-session-a-earlier', sessionA, 10),
+    ]
+    harness.remote.reconcileResponsibility.mockResolvedValueOnce({
+      ok: true,
+      value: { ...reconcileResult, statusReports: reports },
+    })
+    await harness.subject.open()
+    harness.subject.selectActivity(activity.id)
+    await vi.waitFor(() => expect(harness.subject.state.getSnapshot().histories).toHaveLength(1))
+
+    await harness.subject.reconcileResponsibility(responsibilityId)
+
+    expect(harness.subject.state.getSnapshot().statusReports.map(report => report.id)).toEqual([
+      'report-session-a-earlier', 'report-session-a-later', 'report-session-b',
+    ])
+    harness.remote.reconcileResponsibility.mockResolvedValueOnce({
+      ok: true,
+      value: { ...reconcileResult, statusReports: [statusReport('report-session-a-later', sessionA, 12)] },
+    })
+    await harness.subject.reconcileResponsibility(responsibilityId)
+    expect(harness.subject.state.getSnapshot().statusReports.map(report => report.id)).toEqual([
+      'report-session-a-earlier', 'report-session-a-later', 'report-session-b',
+    ])
+  })
+
   it('replaces a reconciled history without dropping neighboring responsibilities', async () => {
     const neighbor: ActivityResponsibilityHistory = {
       ...responsibilityHistory,
@@ -1358,4 +1391,19 @@ const reconcileResult: ActivityCoordinationReconcileResult = {
   history: responsibilityHistory,
   observed: { cursor: 12, active: false, running: false, queueAvailable: true, pendingInput: [] },
   reportState: 'no-dispatch',
+}
+
+function statusReport(id: string, targetSessionId: SessionId, sourceEventSeq: number): ActivityResponsibilityStatusReport {
+  return {
+    id: brandString<ActivityResponsibilityStatusReportId>(id),
+    activityId: activity.id,
+    responsibilityId,
+    targetSessionId,
+    promptRequestId: brandString<ActivityResponsibilityRequestId>('prompt-request-1'),
+    status: 'progress',
+    summary: `Status event ${sourceEventSeq}`,
+    sourceEventSeq,
+    recordedAt: `2026-11-24T12:00:${String(sourceEventSeq).padStart(2, '0')}.000Z`,
+    source: 'target-session-status-tool',
+  }
 }

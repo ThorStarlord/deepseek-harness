@@ -2012,6 +2012,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['{ActivityResponsibilityError} when no matching dispatch or source Session exists.', '{ActivityResponsibilityStorageError} when persistence cannot be confirmed.'],
       },
       {
+        signature: 'recordTargetStatusReport(request: RecordActivityResponsibilityStatusReportRequest): Promise<ActivityResponsibilityStatusReport>',
+        description: 'Append a status report from the exact target Session of a confirmed responsibility.',
+        parameters: [{ name: 'request', description: 'Activity, responsibility, trusted caller Session and logged tool-call sequence.' }],
+        returns: 'The idempotent target-authored report; it does not mark work complete or verified.',
+        throws: ['{ActivityResponsibilityError} when the caller, dispatch, or report identity is unavailable.', '{ActivityResponsibilityStorageError} when persistence cannot be confirmed.'],
+      },
+      {
+        signature: 'hasReportableTargetSession(targetSessionId: SessionId): boolean',
+        description: 'Whether one Session has an unresolved or admitted responsibility that can accept a self-report.',
+        parameters: [{ name: 'targetSessionId', description: 'Session identity from a live ToolActivationContext Agent.' }],
+        returns: 'True only when an existing responsibility is dispatched to this Session and has no final report.',
+      },
+      {
+        signature: 'listTargetStatusReports( activityId: ActivityId, responsibilityId: ActivityResponsibilityId, ): readonly ActivityResponsibilityStatusReport[]',
+        description: 'Read immutable status reports without contacting or resuming the target Session.',
+        parameters: [{ name: 'activityId', description: 'Owning Activity identity.' }, { name: 'responsibilityId', description: 'Stable responsibility identity.' }],
+        returns: 'Target-authored reports in Session event order.',
+      },
+      {
         signature: 'recordVerification(request: RecordActivityResponsibilityVerificationRequest): Promise<ActivityResponsibilityVerificationFact>',
         description: 'Record separately attributed evidence about one saved target report.',
         parameters: [{ name: 'request', description: 'Report identity, recorder, and named verification evidence.' }],
@@ -5917,11 +5936,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ActivityCoordinationReconcileResult',
-    declaration: 'export interface ActivityCoordinationReconcileResult {\n    readonly history: ActivityResponsibilityHistory;\n    readonly observed: {\n        readonly cursor: number;\n        readonly active: boolean;\n        readonly running: boolean;\n        readonly queueAvailable: boolean;\n        readonly pendingInput: readonly (\'approval\' | \'question\' | \'other\')[];\n    };\n    readonly reportState: \'no-dispatch\' | \'awaiting-target-input\' | \'awaiting-turn-end\' | \'no-completed-response\' | \'reported\';\n    readonly report?: ActivityResponsibilityReportedFact;\n}',
+    declaration: 'export interface ActivityCoordinationReconcileResult {\n    readonly history: ActivityResponsibilityHistory;\n    readonly statusReports?: readonly ActivityResponsibilityStatusReport[];\n    readonly observed: {\n        readonly cursor: number;\n        readonly active: boolean;\n        readonly running: boolean;\n        readonly queueAvailable: boolean;\n        readonly pendingInput: readonly (\'approval\' | \'question\' | \'other\')[];\n    };\n    readonly reportState: \'no-dispatch\' | \'awaiting-target-input\' | \'awaiting-turn-end\' | \'no-completed-response\' | \'reported\';\n    readonly report?: ActivityResponsibilityReportedFact;\n}',
   },
   {
     name: 'ActivityCoordinationResponsibilityList',
-    declaration: 'export interface ActivityCoordinationResponsibilityList {\n    readonly items: readonly ActivityResponsibilityHistory[];\n}',
+    declaration: 'export interface ActivityCoordinationResponsibilityList {\n    readonly items: readonly ActivityResponsibilityHistory[];\n    readonly statusReports?: readonly ActivityResponsibilityStatusReport[];\n}',
   },
   {
     name: 'ActivityCoordinationSessionSnapshot',
@@ -6046,6 +6065,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ActivityResponsibilitySessionActor',
     declaration: 'export interface ActivityResponsibilitySessionActor {\n    readonly kind: \'dsh-session\';\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'ActivityResponsibilityStatus',
+    declaration: 'export type ActivityResponsibilityStatus = \'progress\' | \'waiting\' | \'ready\' | \'blocked\' | \'failed\';',
+  },
+  {
+    name: 'ActivityResponsibilityStatusReport',
+    declaration: 'export interface ActivityResponsibilityStatusReport {\n    readonly id: ActivityResponsibilityStatusReportId;\n    readonly activityId: ActivityId;\n    readonly responsibilityId: ActivityResponsibilityId;\n    readonly targetSessionId: SessionId;\n    readonly promptRequestId: ActivityResponsibilityRequestId;\n    readonly status: ActivityResponsibilityStatus;\n    readonly summary: string;\n    readonly sourceEventSeq: number;\n    readonly recordedAt: string;\n    readonly source: \'target-session-status-tool\';\n}',
+  },
+  {
+    name: 'ActivityResponsibilityStatusReportId',
+    declaration: 'export type ActivityResponsibilityStatusReportId = Branded<\'ActivityResponsibilityStatusReportId\'>;',
   },
   {
     name: 'ActivityResponsibilityTarget',
@@ -8544,6 +8575,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RecordActivityResponsibilityReportRequest {\n    readonly activityId: ActivityId;\n    readonly responsibilityId: ActivityResponsibilityId;\n    readonly requestId: ActivityResponsibilityRequestId;\n    readonly promptRequestId: ActivityResponsibilityRequestId;\n    readonly sourceEventSeqs: readonly number[];\n    readonly summary: string;\n    readonly reportedAt: string;\n}',
   },
   {
+    name: 'RecordActivityResponsibilityStatusReportRequest',
+    declaration: 'export interface RecordActivityResponsibilityStatusReportRequest {\n    readonly activityId: ActivityId;\n    readonly responsibilityId: ActivityResponsibilityId;\n    readonly callerSessionId: SessionId;\n    readonly sourceEventSeq: number;\n    readonly status: ActivityResponsibilityStatus;\n    readonly summary: string;\n}',
+  },
+  {
     name: 'RecordActivityResponsibilityVerificationRequest',
     declaration: 'export interface RecordActivityResponsibilityVerificationRequest {\n    readonly activityId: ActivityId;\n    readonly responsibilityId: ActivityResponsibilityId;\n    readonly requestId: ActivityResponsibilityRequestId;\n    readonly reportFactId: ActivityResponsibilityFactId;\n    readonly actor: ActivityResponsibilityActor;\n    readonly evidence: ActivityResponsibilityVerificationFact[\'evidence\'];\n}',
   },
@@ -10333,7 +10368,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolExecutionInput',
-    declaration: 'export interface ToolExecutionInput {\n    readonly callId: ToolCallId;\n    readonly rootCallId?: ToolCallId;\n    readonly name: string;\n    readonly schema?: ToolSchema;\n    readonly arguments: unknown;\n    readonly agent?: Agent;\n    readonly toolSet?: ResolvedToolSet;\n    readonly parent?: ToolExecutionToken;\n    readonly signal: AbortSignal;\n}',
+    declaration: 'export interface ToolExecutionInput {\n    readonly callId: ToolCallId;\n    readonly sourceEventSeq?: SessionSeq;\n    readonly rootCallId?: ToolCallId;\n    readonly name: string;\n    readonly schema?: ToolSchema;\n    readonly arguments: unknown;\n    readonly agent?: Agent;\n    readonly toolSet?: ResolvedToolSet;\n    readonly parent?: ToolExecutionToken;\n    readonly signal: AbortSignal;\n}',
   },
   {
     name: 'ToolExecutionResult',

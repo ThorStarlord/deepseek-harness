@@ -226,6 +226,13 @@ const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
     expectedFinalResponse: 'CODE_ONE+CODE_TWO',
     expectedTools: { run_code: ['code', 'description'] },
   },
+  'activity-responsibility-status': {
+    expectedFinalResponse: 'STATUS_REPORT_RECORDED',
+    patches: [fileURLToPath(new URL('./activity-responsibility-status/runtime.cordis.yml', import.meta.url))],
+    expectedTools: {
+      report_activity_responsibility_status: ['activityId', 'responsibilityId', 'status', 'summary'],
+    },
+  },
   'subagent-spawn-in-process': {
     patches: [fileURLToPath(new URL('./subagent-spawn-in-process/runtime.cordis.yml', import.meta.url))],
   },

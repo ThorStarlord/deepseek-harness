@@ -68,6 +68,14 @@ Stage 2B's strategic reentry implementation remains a separate unmerged responsi
 
 This recommendation does not authorize automatic dispatch, permission changes, repository mutation, integration, or acceptance. The user must approve each task sent to another Session. Provider reports remain distinct from verification and user acceptance. User-visible implementation remains subject to the operative product/design review policy.
 
+### Superagent Prototype reuse assessment
+
+The [DSH Superagent Prototype](https://github.com/ThorStarlord/dsh-superagent-prototype/tree/6337fc823ce20251c8de8085948165c81aaa701e) already implements a central Session, durable Tickets and Assignments, worker status reports, restart recovery, event intake, notices, and a management panel. Its bundle targets one configured GitHub repository, declares DSH `^0.2.1-alpha.2` and Cordis `4.0.5-alpha.1`, creates its own worker Sessions, and includes shell access in its worker preset. Its `ready` report can end a prototype Ticket. Those lifecycles and permissions cannot be substituted for the selected DSH Activity, arbitrary existing root Sessions, authenticated Client dispatch, or the target Session's own authorization.
+
+Reuse the worker-report concept at the DSH ownership layer. The Activity responsibility ledger remains the sole assignment identity and final outcome record. A target root Session may append a bounded progress, waiting, review-ready, blocked, or failed self-report only for its exact admitted or unresolved assignment. The report cites its target `tool/call` event and lives in a separate versioned sidecar, so strict responsibility version 1 facts do not change. DSH does not infer completion, verification, acceptance, scheduling, or a notification from that report. No prototype code or package dependency is copied; the prototype is MIT-licensed and the inspected source revision is retained in this record with its source and revision.
+
+This adaptation supplies only target-reported interim progress. Prototype-wide intake, Ticket admission, worker creation, concurrency scheduling, background-job monitoring, attention routing, recovery controller, and management panel remain unintegrated. The full bundle's compatibility and safety are not qualified by this targeted use. The exact DSH behavior change is a follow-up stacked on the cross-Session coordination PR; integration still requires that PR's own gates and the operative human product/design review.
+
 ## Alternatives considered
 
 **Session-centric coordination alone** would reuse Session identity and continuation controls, but it would leave user intent and cross-project context scattered across conversations. Sessions should remain execution owners, not replace the Activity's durable purpose.
