@@ -1,0 +1,26 @@
+{
+  "extends": "../../../tsconfig.base.client.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
+  "include": ["src"],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../store" },
+    { "path": "../../api/remotes/tsconfig.client.json" },
+    { "path": "../../api/session-controller/tsconfig.client.json" },
+    { "path": "../../api/workspace-controller/tsconfig.client.json" },
+    { "path": "../locale/tsconfig.client.json" },
+    { "path": "../ui-commands" },
+    { "path": "../ui-conversation/tsconfig.client.json" },
+    { "path": "../ui-chat/tsconfig.client.json" },
+    { "path": "../ui-renderer" },
+    { "path": "../ui-session" },
+    { "path": "../ui-primitives" },
+    { "path": "../ui-slots" },
+    { "path": "../../home/activity" },
+    { "path": "../../llm/llm" },
+    { "path": "../../core/session" },
+    { "path": "../../typert/protocol" },
+    { "path": "../../util/crypto" },
+    { "path": "../../workspace/workspace" }
+  ]
+}

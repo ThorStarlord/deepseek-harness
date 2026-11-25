@@ -91,6 +91,9 @@
     - id: home-activity
       name: '@deepseek-ai/dsh-home-activity'
 
+    - id: home-activity-responsibilities
+      name: '@deepseek-ai/dsh-home-activity/responsibilities'
+
     - id: home-activity-delegations
       name: '@deepseek-ai/dsh-home-activity/delegations'
 
@@ -150,6 +153,10 @@
     # Session commands, cold reads, and live control over Typert Remote.
     - id: session-controller
       name: '@deepseek-ai/dsh-api-session-controller'
+
+    # Authenticated Activity-scoped discovery, confirmed delivery, and reconciliation.
+    - id: home-activity-coordination
+      name: '@deepseek-ai/dsh-home-activity/coordination'
 
     # One background job's observation record streamed over Typert Remote;
     # the roster rides the session control stream above.
@@ -457,6 +464,10 @@
     # acknowledgement toast, over the messageFeedback and sessionFeedback Remotes.
     - id: ui-message-feedback
       name: '@deepseek-ai/dsh-client-ui-message-feedback'
+
+    # Activity-scoped read-only Session discovery and deliberate context sharing.
+    - id: ui-activity-coordination
+      name: '@deepseek-ai/dsh-client-ui-activity-coordination'
 
     # Model selection: the /model popupSelect + composer seat over session.models.
     - id: ui-model-selection

@@ -104,6 +104,14 @@ export const VIEWER_ENDPOINT_CLASSES = {
   'session/selectModel': 'owner-only', // owner selects a Session model
   'session/updateQueue': 'owner-only', // owner edits queued input
   'session/workspacePathApplications': 'owner-only', // owner applies a Workspace path
+  'homeActivityCoordination/activities': 'owner-only', // Activity coordination is owner-only
+  'homeActivityCoordination/discover': 'owner-only', // cross-Session discovery is owner-only
+  'homeActivityCoordination/responsibilities': 'owner-only', // responsibility history is owner-only
+  'homeActivityCoordination/responsibility': 'owner-only', // responsibility history is owner-only
+  'homeActivityCoordination/propose': 'owner-only', // recommendations are owner-scoped
+  'homeActivityCoordination/dispatchConfirmed': 'owner-only', // confirmed assignment is owner-only
+  'homeActivityCoordination/observeResponsibility': 'owner-only', // responsibility observation is owner-only
+  'homeActivityCoordination/reconcileResponsibility': 'owner-only', // responsibility reconciliation is owner-only
   'credentials/describe': 'owner-only', // owner credentials; secrets never reach a reader
   'credentials/set': 'owner-only', // owner credentials; secrets never reach a reader
   'credentials/unset': 'owner-only', // owner credentials; secrets never reach a reader

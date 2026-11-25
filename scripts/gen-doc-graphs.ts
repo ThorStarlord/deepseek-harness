@@ -587,6 +587,22 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Stores named objectives and descriptive boundaries independently of Sessions; the human command creates, lists, and opens records without executing them.',
   },
   {
+    key: 'homeActivityCoordination',
+    pkg: 'home-activity',
+    title: 'Authenticated Activity coordination Remote',
+    mode: 'service',
+    consumers: ['api-remotes', 'client-ui-activity-coordination'],
+    note: 'Returns bounded observations of explicitly selected, authorized Sessions and sends an exact responsibility only after authenticated confirmation through the Gateway.',
+  },
+  {
+    key: 'homeActivityResponsibilities',
+    pkg: 'home-activity',
+    title: 'Append-only Activity responsibility facts',
+    mode: 'service',
+    consumers: ['home-activity'],
+    note: 'Stores recommendations, confirmations, dispatch, observations, reports, verification, and acceptance as separate durable facts for authenticated coordination and later recovery.',
+  },
+  {
     key: 'homeActivityDelegations',
     pkg: 'home-activity',
     title: 'Recorded Home Activity delegations',

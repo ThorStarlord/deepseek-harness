@@ -46,9 +46,41 @@
       "types": "./lib/types/strategic-episodes.d.ts",
       "default": "./lib/types/strategic-episodes.js"
     },
+    "./responsibilities": {
+      "types": "./lib/types/responsibilities.d.ts",
+      "default": "./lib/types/responsibilities.js"
+    },
+    "./coordination": {
+      "types": "./lib/types/coordination.d.ts",
+      "default": "./lib/types/coordination.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
+    },
+    "./activity-types": {
+      "types": "./lib/types/activity-types.d.ts",
+      "default": "./lib/types/activity-types.js"
+    },
+    "./association-types": {
+      "types": "./lib/types/association-types.d.ts",
+      "default": "./lib/types/association-types.js"
+    },
+    "./responsibility-types": {
+      "types": "./lib/types/responsibility-types.d.ts",
+      "default": "./lib/types/responsibility-types.js"
+    },
+    "./coordination-types": {
+      "types": "./lib/types/coordination-types.d.ts",
+      "default": "./lib/types/coordination-types.js"
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json",
@@ -58,15 +90,24 @@
     "locale/*.json",
     "lib/index.js",
     "lib/types/**/*.js",
-    "lib/types/**/*.d.ts"
+    "lib/types/**/*.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.host.d.ts",
+    "lib/typert.remote-client.js",
+    "lib/typert.remote-client.d.ts"
   ],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-storage-domain": "workspace:*",
+    "@deepseek-ai/dsh-api-gateway": "workspace:*",
+    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-subagent": "workspace:*",
     "@deepseek-ai/dsh-session-persistence": "workspace:*",
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-session-query": "workspace:*",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@deepseek-ai/dsh-workspace": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"
   },
@@ -78,9 +119,14 @@
     "@deepseek-ai/dsh-storage": "workspace:*",
     "@deepseek-ai/dsh-storage-domain": "workspace:*",
     "@deepseek-ai/dsh-storage-json": "workspace:*",
+    "@deepseek-ai/dsh-api-gateway": "workspace:*",
+    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-subagent": "workspace:*",
     "@deepseek-ai/dsh-session-persistence": "workspace:*",
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-session-query": "workspace:*",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@deepseek-ai/dsh-workspace": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/cordis-plugin-loader": "workspace:~"

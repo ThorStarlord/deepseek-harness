@@ -1840,6 +1840,61 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'homeActivityCoordination',
+    summary: 'Authenticated Client API for Activity-scoped, passive Session discovery.',
+    description: 'Authenticated Client API for Activity-scoped, passive Session discovery.',
+    methods: [
+      {
+        signature: '@Remote(\'activities\') activities(): readonly ActivityCoordinationCatalogItem[]',
+        description: 'List saved Activities visible to the authenticated caller, with their separately selected references.',
+        parameters: [],
+        returns: 'newest-first Activities and descriptive Workspace and Session links.',
+      },
+      {
+        signature: '@Remote({ resources: { activity: request => request.activityId, workspace: request => request.targets.map(target => target.workspaceId), session: request => request.targets.map(target => target.sessionId), } }) async discover( request: { readonly activityId: ActivityId; readonly targets: readonly ActivityCoordinationTarget[] }, signal: AbortSignal, ): Promise<readonly ActivityCoordinationSessionSnapshot[]>',
+        description: 'Read bounded recent text from explicitly selected associated root Sessions without activating them. Every request is checked for the Activity, each Workspace, and each Session at the Gateway, then the Host verifies the saved links, current Workspace membership, root identity, and Session cwd.',
+        parameters: [{ name: 'request', description: 'Activity and one to sixteen distinct Workspace/Session pairs.' }, { name: 'signal', description: 'cancellation for all cold Session observations.' }],
+        returns: 'exact observations ordered as requested, at their own Session-log cursors.',
+      },
+      {
+        signature: '@Remote({ resources: { activity: request => request.activityId } }) responsibilities(request: { readonly activityId: ActivityId }): ActivityCoordinationResponsibilityList',
+        description: 'Recover responsibility histories whose Activity, Workspace, and target Session are still readable.',
+        parameters: [{ name: 'request', description: 'saved Activity identity.' }],
+        returns: 'histories in append order without exposing references the caller cannot read.',
+      },
+      {
+        signature: '@Remote({ resources: { activity: request => request.activityId, workspace: request => request.target.workspaceId, session: request => [request.coordinatingSessionId, request.target.sessionId], } }) async propose( request: ActivityCoordinationProposalRequest, signal: AbortSignal, ): Promise<ActivityResponsibilityProposedFact>',
+        description: 'Save an agent recommendation only when its source is an attributed assistant message in the coordinating Session. This operation records advisory intent; it does not confirm or send the task.',
+        parameters: [{ name: 'request', description: 'bounded proposal, selected target, and exact source message identity.' }, { name: 'signal', description: 'cancellation for passive source and target reads.' }],
+        returns: 'the append-only proposal fact and stable responsibility identity.',
+      },
+      {
+        signature: '@Remote({ resources: { activity: request => request.activityId } }) responsibility(request: { readonly activityId: ActivityId; readonly responsibilityId: ActivityResponsibilityId }): ActivityResponsibilityHistory',
+        description: 'Recover append-only histories for an Activity without waking target Sessions.',
+        parameters: [{ name: 'request', description: 'Activity identity and responsibility identity.' }],
+        returns: 'the history when the caller can read both its Workspace and target Session.',
+      },
+      {
+        signature: '@Remote({ resources: { activity: request => request.activityId, workspace: request => request.proposal.target.workspaceId, session: request => request.proposal.target.sessionId, } }) async dispatchConfirmed( request: ActivityCoordinationDispatchRequest, signal: AbortSignal, ): Promise<ActivityCoordinationDispatchResult>',
+        description: 'Bind the displayed immutable proposal to an authenticated user confirmation, then send it through the native Session prompt route. The nested Gateway call rechecks the caller\'s actual `session/prompt` grant for the exact target.',
+        parameters: [{ name: 'request', description: 'proposal echo, authenticated confirmation id, and native prompt request id.' }, { name: 'signal', description: 'cancellation for target validation and prompt admission.' }],
+        returns: 'confirmed admission, known non-admission, or an explicitly uncertain result with recovered history.',
+      },
+      {
+        signature: '@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async observeResponsibility( request: { readonly activityId: ActivityId; readonly responsibilityId: ActivityResponsibilityId; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityResponsibilityHistory>',
+        description: 'Read current target state and append a source-attributed observation; it does not resume the target.',
+        parameters: [{ name: 'request', description: 'Activity responsibility and exact Workspace/Session target.' }, { name: 'signal', description: 'cancellation for passive reads.' }],
+        returns: 'the new observation and complete responsibility history.',
+      },
+      {
+        signature: '@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async reconcileResponsibility( request: { readonly activityId: ActivityId; readonly responsibilityId: ActivityResponsibilityId; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityCoordinationReconcileResult>',
+        description: 'Reconcile one responsibility against its exact target request id using only passive Session reads.',
+        parameters: [{ name: 'request', description: 'Activity, responsibility, and exact Workspace/Session identity.' }, { name: 'signal', description: 'cancellation of the state and history reads.' }],
+        returns: 'current execution state plus a report only when its matching target turn completed.',
+      },
+    ],
+  },
+  {
     key: 'homeActivityDelegations',
     summary: 'Durable request, DSH admission, and provider-report records mounted as `ctx.homeActivityDelegations`.',
     description: 'Durable request, DSH admission, and provider-report records mounted as `ctx.homeActivityDelegations`.',
@@ -1906,6 +1961,83 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
         returns: 'Detached handoff records.',
         throws: ['{ActivityHandoffError} when the Activity does not exist.', '{ActivityHandoffStorageError} when handoff storage cannot be read.'],
+      },
+    ],
+  },
+  {
+    key: 'homeActivityResponsibilities',
+    summary: 'Immutable Activity responsibility facts mounted as `ctx.homeActivityResponsibilities`.',
+    description: 'Immutable Activity responsibility facts mounted as `ctx.homeActivityResponsibilities`.',
+    methods: [
+      {
+        signature: 'createProposal(request: CreateActivityResponsibilityRequest): Promise<ActivityResponsibilityProposedFact>',
+        description: 'Save an immutable recommendation without authorizing or dispatching it.',
+        parameters: [{ name: 'request', description: 'Activity, coordinator source, selected target, and exact bounded task.' }],
+        returns: 'The saved proposal and its stable responsibility identity.',
+        throws: ['{ActivityResponsibilityError} when the Activity or request is invalid, or the idempotency key conflicts.', '{ActivityResponsibilityStorageError} when persistence cannot be confirmed.'],
+      },
+      {
+        signature: 'confirm(request: ConfirmActivityResponsibilityRequest): Promise<ActivityResponsibilityConfirmedFact>',
+        description: 'Record a Client-authenticated confirmation of the complete immutable proposal.',
+        parameters: [{ name: 'request', description: 'Exact proposal echo, idempotency key, and principal read by the trusted Client route.' }],
+        returns: 'The confirmed fact; this record does not itself dispatch work.',
+        throws: ['{ActivityResponsibilityError} when the proposal is unavailable, differs, or was confirmed already.', '{ActivityResponsibilityStorageError} when persistence cannot be confirmed.'],
+      },
+      {
+        signature: 'beginDispatch(request: BeginActivityResponsibilityDispatchRequest): Promise<ActivityResponsibilityDispatchAttemptedFact>',
+        description: 'Persist dispatch intent before the authenticated Client prompts the target Session.',
+        parameters: [{ name: 'request', description: 'Activity responsibility and the exact Session prompt request id.' }],
+        returns: 'The durable dispatch intent.',
+        throws: ['{ActivityResponsibilityError} when confirmation is missing or an attempt already exists.', '{ActivityResponsibilityStorageError} when persistence cannot be confirmed.'],
+      },
+      {
+        signature: 'settleDispatch(request: SettleActivityResponsibilityDispatchRequest): Promise<ActivityResponsibilityDispatchSettledFact>',
+        description: 'Append the prompt route\'s confirmed, rejected, or uncertain admission result.',
+        parameters: [{ name: 'request', description: 'Exact prompt request identity and route outcome.' }],
+        returns: 'The persisted dispatch result, without claiming target execution.',
+        throws: ['{ActivityResponsibilityError} when no matching attempt exists or its result conflicts.', '{ActivityResponsibilityStorageError} when persistence cannot be confirmed.'],
+      },
+      {
+        signature: 'recordObservation(request: RecordActivityResponsibilityObservationRequest): Promise<ActivityResponsibilityObservedFact>',
+        description: 'Record a passive target Session state observation without treating it as task completion.',
+        parameters: [{ name: 'request', description: 'Activity, responsibility, source time, and Session Controller state.' }],
+        returns: 'The append-only observation fact.',
+        throws: ['{ActivityResponsibilityError} when the Activity or responsibility is unavailable or the request conflicts.', '{ActivityResponsibilityStorageError} when persistence cannot be confirmed.'],
+      },
+      {
+        signature: 'recordReport(request: RecordActivityResponsibilityReportRequest): Promise<ActivityResponsibilityReportedFact>',
+        description: 'Record a bounded target-authored summary linked to the target\'s original Session events.',
+        parameters: [{ name: 'request', description: 'Summary, target prompt identity, and non-empty source event sequences.' }],
+        returns: 'The provider-reported fact; it is not independently verified or accepted.',
+        throws: ['{ActivityResponsibilityError} when no matching dispatch or source Session exists.', '{ActivityResponsibilityStorageError} when persistence cannot be confirmed.'],
+      },
+      {
+        signature: 'recordVerification(request: RecordActivityResponsibilityVerificationRequest): Promise<ActivityResponsibilityVerificationFact>',
+        description: 'Record separately attributed evidence about one saved target report.',
+        parameters: [{ name: 'request', description: 'Report identity, recorder, and named verification evidence.' }],
+        returns: 'The evidence fact; DSH does not independently inspect its source.',
+        throws: ['{ActivityResponsibilityError} when the referenced report is unavailable or the request conflicts.', '{ActivityResponsibilityStorageError} when persistence cannot be confirmed.'],
+      },
+      {
+        signature: 'recordAcceptance(request: RecordActivityResponsibilityAcceptanceRequest): Promise<ActivityResponsibilityAcceptanceFact>',
+        description: 'Record a user disposition of one saved report, separately from verification evidence.',
+        parameters: [{ name: 'request', description: 'Report identity, explicit user disposition, and authenticated principal.' }],
+        returns: 'The append-only acceptance fact.',
+        throws: ['{ActivityResponsibilityError} when the report is unavailable or the request conflicts.', '{ActivityResponsibilityStorageError} when persistence cannot be confirmed.'],
+      },
+      {
+        signature: 'get(activityId: ActivityId, responsibilityId: ActivityResponsibilityId): ActivityResponsibilityHistory | undefined',
+        description: 'Read one complete responsibility history without contacting or resuming its target Session.',
+        parameters: [{ name: 'activityId', description: 'Owning Activity identity.' }, { name: 'responsibilityId', description: 'Stable responsibility identity.' }],
+        returns: 'Its facts oldest first, or `undefined` when the identity is not in this Activity.',
+        throws: ['{ActivityResponsibilityError} when the Activity or history is invalid.', '{ActivityResponsibilityStorageError} when stored facts cannot be read.'],
+      },
+      {
+        signature: 'list(activityId: ActivityId): readonly ActivityResponsibilityHistory[]',
+        description: 'List saved responsibilities for one Activity without contacting their target Sessions.',
+        parameters: [{ name: 'activityId', description: 'Stable Activity identity.' }],
+        returns: 'Immutable histories, newest proposal first and facts oldest first.',
+        throws: ['{ActivityResponsibilityError} when the Activity or a stored history is invalid.', '{ActivityResponsibilityStorageError} when responsibility storage cannot be read.'],
       },
     ],
   },
@@ -5764,6 +5896,42 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ActivityConfigurationClassification = \'stable\' | \'experimental\' | \'unavailable\';',
   },
   {
+    name: 'ActivityCoordinationCatalogItem',
+    declaration: 'export interface ActivityCoordinationCatalogItem {\n    readonly activity: Activity;\n    readonly associations: HomeActivityAssociations;\n}',
+  },
+  {
+    name: 'ActivityCoordinationDispatchRequest',
+    declaration: 'export interface ActivityCoordinationDispatchRequest {\n    readonly activityId: ActivityId;\n    readonly responsibilityId: ActivityResponsibilityId;\n    readonly proposalFactId: ActivityResponsibilityFactId;\n    readonly proposal: ActivityResponsibilityProposal;\n    readonly confirmationRequestId: ActivityResponsibilityRequestId;\n    readonly promptRequestId: SessionRequestId;\n}',
+  },
+  {
+    name: 'ActivityCoordinationDispatchResult',
+    declaration: 'export interface ActivityCoordinationDispatchResult {\n    readonly outcome: \'accepted\' | \'not-admitted\' | \'uncertain\';\n    readonly promptRequestId: string;\n    readonly recorded: boolean;\n    readonly diagnostic?: \'access-denied\' | \'target-unavailable\' | \'target-busy\' | \'delivery-uncertain\' | \'history-unconfirmed\';\n    readonly history: ActivityResponsibilityHistory;\n}',
+  },
+  {
+    name: 'ActivityCoordinationMessage',
+    declaration: 'export interface ActivityCoordinationMessage {\n    readonly role: \'user\' | \'assistant\';\n    readonly sourceKind: string;\n    readonly eventSeq: number;\n    readonly time: number;\n    readonly text: string;\n    readonly truncated: boolean;\n    readonly provider?: string;\n    readonly model?: string;\n    readonly requestId?: string;\n}',
+  },
+  {
+    name: 'ActivityCoordinationProposalRequest',
+    declaration: 'export interface ActivityCoordinationProposalRequest extends ActivityResponsibilityProposal {\n    readonly activityId: ActivityId;\n    readonly requestId: ActivityResponsibilityRequestId;\n    readonly coordinatingSessionId: SessionId;\n    readonly sourceEventSeq: number;\n}',
+  },
+  {
+    name: 'ActivityCoordinationReconcileResult',
+    declaration: 'export interface ActivityCoordinationReconcileResult {\n    readonly history: ActivityResponsibilityHistory;\n    readonly observed: {\n        readonly cursor: number;\n        readonly active: boolean;\n        readonly running: boolean;\n        readonly queueAvailable: boolean;\n        readonly pendingInput: readonly (\'approval\' | \'question\' | \'other\')[];\n    };\n    readonly reportState: \'no-dispatch\' | \'awaiting-target-input\' | \'awaiting-turn-end\' | \'no-completed-response\' | \'reported\';\n    readonly report?: ActivityResponsibilityReportedFact;\n}',
+  },
+  {
+    name: 'ActivityCoordinationResponsibilityList',
+    declaration: 'export interface ActivityCoordinationResponsibilityList {\n    readonly items: readonly ActivityResponsibilityHistory[];\n}',
+  },
+  {
+    name: 'ActivityCoordinationSessionSnapshot',
+    declaration: 'export interface ActivityCoordinationSessionSnapshot {\n    readonly activityId: ActivityId;\n    readonly workspaceId: WorkspaceId;\n    readonly workspaceTitle: string;\n    readonly workspacePath: string;\n    readonly sessionId: SessionId;\n    readonly sessionCwd: string;\n    readonly sessionCreatedAt: number;\n    readonly observedAt: number;\n    readonly source: \'live\' | \'prepared\';\n    readonly cursor: SessionSeqCursor;\n    readonly runtime: \'running\' | \'loaded\' | \'not-loaded\';\n    readonly recentMessages: readonly ActivityCoordinationMessage[];\n}',
+  },
+  {
+    name: 'ActivityCoordinationTarget',
+    declaration: 'export interface ActivityCoordinationTarget {\n    readonly workspaceId: WorkspaceId;\n    readonly sessionId: SessionId;\n}',
+  },
+  {
     name: 'ActivityDelegation',
     declaration: 'export interface ActivityDelegation {\n    readonly id: ActivityDelegationId;\n    readonly activityId: ActivityId;\n    readonly request: ActivityDelegationRequest;\n    readonly status: ActivityDelegationStatus;\n    readonly admission?: ActivityDelegationAdmission | undefined;\n    readonly report?: ActivityDelegationReport | undefined;\n    readonly failure?: ActivityDelegationFailure | undefined;\n    readonly uncertainty?: ActivityDelegationUncertainty | undefined;\n}',
   },
@@ -5814,6 +5982,82 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ActivityHandoffId',
     declaration: 'export type ActivityHandoffId = Branded<\'ActivityHandoffId\'>;',
+  },
+  {
+    name: 'ActivityResponsibilityAcceptanceFact',
+    declaration: 'export interface ActivityResponsibilityAcceptanceFact extends ActivityResponsibilityFactBase {\n    readonly kind: \'acceptance-recorded\';\n    readonly reportFactId: ActivityResponsibilityFactId;\n    readonly disposition: \'accepted\' | \'declined\' | \'requires-follow-up\';\n    readonly actor: ActivityResponsibilityUserActor;\n    readonly supersedes?: ActivityResponsibilityFactId | undefined;\n}',
+  },
+  {
+    name: 'ActivityResponsibilityActor',
+    declaration: 'export type ActivityResponsibilityActor = ActivityResponsibilityUserActor | ActivityResponsibilitySessionActor;',
+  },
+  {
+    name: 'ActivityResponsibilityConfirmedFact',
+    declaration: 'export interface ActivityResponsibilityConfirmedFact extends ActivityResponsibilityFactBase {\n    readonly kind: \'confirmed\';\n    readonly proposalFactId: ActivityResponsibilityFactId;\n    readonly proposal: ActivityResponsibilityProposal;\n    readonly actor: ActivityResponsibilityUserActor;\n}',
+  },
+  {
+    name: 'ActivityResponsibilityDispatchAttemptedFact',
+    declaration: 'export interface ActivityResponsibilityDispatchAttemptedFact extends ActivityResponsibilityFactBase {\n    readonly kind: \'dispatch-attempted\';\n    readonly promptRequestId: ActivityResponsibilityRequestId;\n    readonly targetSessionId: SessionId;\n    readonly source: \'session-controller.prompt\';\n}',
+  },
+  {
+    name: 'ActivityResponsibilityDispatchSettledFact',
+    declaration: 'export interface ActivityResponsibilityDispatchSettledFact extends ActivityResponsibilityFactBase {\n    readonly kind: \'dispatch-settled\';\n    readonly promptRequestId: ActivityResponsibilityRequestId;\n    readonly targetSessionId: SessionId;\n    readonly outcome: \'accepted\' | \'not-admitted\' | \'uncertain\';\n    readonly diagnostic?: string | undefined;\n    readonly source: \'session-controller.prompt\';\n}',
+  },
+  {
+    name: 'ActivityResponsibilityFact',
+    declaration: 'export type ActivityResponsibilityFact = ActivityResponsibilityProposedFact | ActivityResponsibilityConfirmedFact | ActivityResponsibilityDispatchAttemptedFact | ActivityResponsibilityDispatchSettledFact | ActivityResponsibilityObservedFact | ActivityResponsibilityReportedFact | ActivityResponsibilityVerificationFact | ActivityResponsibilityAcceptanceFact;',
+  },
+  {
+    name: 'ActivityResponsibilityFactId',
+    declaration: 'export type ActivityResponsibilityFactId = Branded<\'ActivityResponsibilityFactId\'>;',
+  },
+  {
+    name: 'ActivityResponsibilityHistory',
+    declaration: 'export interface ActivityResponsibilityHistory {\n    readonly id: ActivityResponsibilityId;\n    readonly activityId: ActivityId;\n    readonly proposal: ActivityResponsibilityProposedFact;\n    readonly facts: readonly ActivityResponsibilityFact[];\n}',
+  },
+  {
+    name: 'ActivityResponsibilityId',
+    declaration: 'export type ActivityResponsibilityId = Branded<\'ActivityResponsibilityId\'>;',
+  },
+  {
+    name: 'ActivityResponsibilityObservedFact',
+    declaration: 'export interface ActivityResponsibilityObservedFact extends ActivityResponsibilityFactBase {\n    readonly kind: \'observed\';\n    readonly targetSessionId: SessionId;\n    readonly observedAt: string;\n    readonly observation: {\n        readonly status: \'available\';\n        readonly cursor: number;\n        readonly agentAvailable: boolean;\n        readonly active: boolean;\n        readonly running: boolean;\n        readonly queueAvailable: boolean;\n        readonly pendingInput: readonly (\'approval\' | \'question\' | \'other\')[];\n    } | {\n        readonly status: \'unavailable\';\n        readonly reason: \'not-found\' | \'access-denied\' | \'disconnected\' | \'unknown\';\n    };\n    readonly source: \'session-controller.state\';\n}',
+  },
+  {
+    name: 'ActivityResponsibilityPrincipal',
+    declaration: 'export interface ActivityResponsibilityPrincipal {\n    readonly kind: \'owner\';\n}',
+  },
+  {
+    name: 'ActivityResponsibilityProposal',
+    declaration: 'export interface ActivityResponsibilityProposal {\n    readonly target: ActivityResponsibilityTarget;\n    readonly task: string;\n    readonly inScope: readonly string[];\n    readonly outOfScope: readonly string[];\n    readonly expectedOutcome: string;\n    readonly prerequisites: readonly string[];\n    readonly conflictingWork: readonly string[];\n}',
+  },
+  {
+    name: 'ActivityResponsibilityProposedFact',
+    declaration: 'export interface ActivityResponsibilityProposedFact extends ActivityResponsibilityFactBase {\n    readonly kind: \'proposed\';\n    readonly proposal: ActivityResponsibilityProposal;\n    readonly source: {\n        readonly kind: \'coordinating-session\';\n        readonly sessionId: SessionId;\n        readonly eventSeq?: number | undefined;\n    };\n}',
+  },
+  {
+    name: 'ActivityResponsibilityReportedFact',
+    declaration: 'export interface ActivityResponsibilityReportedFact extends ActivityResponsibilityFactBase {\n    readonly kind: \'reported\';\n    readonly targetSessionId: SessionId;\n    readonly promptRequestId: ActivityResponsibilityRequestId;\n    readonly sourceEventSeqs: readonly number[];\n    readonly summary: string;\n    readonly reportedAt: string;\n    readonly source: \'target-session-assistant-message\';\n}',
+  },
+  {
+    name: 'ActivityResponsibilityRequestId',
+    declaration: 'export type ActivityResponsibilityRequestId = Branded<\'ActivityResponsibilityRequestId\'>;',
+  },
+  {
+    name: 'ActivityResponsibilitySessionActor',
+    declaration: 'export interface ActivityResponsibilitySessionActor {\n    readonly kind: \'dsh-session\';\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'ActivityResponsibilityTarget',
+    declaration: 'export interface ActivityResponsibilityTarget {\n    readonly workspaceId: WorkspaceId;\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'ActivityResponsibilityUserActor',
+    declaration: 'export interface ActivityResponsibilityUserActor {\n    readonly kind: \'authenticated-user\';\n    readonly principal: ActivityResponsibilityPrincipal;\n}',
+  },
+  {
+    name: 'ActivityResponsibilityVerificationFact',
+    declaration: 'export interface ActivityResponsibilityVerificationFact extends ActivityResponsibilityFactBase {\n    readonly kind: \'verification-recorded\';\n    readonly reportFactId: ActivityResponsibilityFactId;\n    readonly actor: ActivityResponsibilityActor;\n    readonly evidence: {\n        readonly source: string;\n        readonly reference?: string | undefined;\n        readonly result: \'passed\' | \'failed\' | \'inconclusive\' | \'unavailable\';\n        readonly summary: string;\n        readonly observedAt?: string | undefined;\n    };\n}',
   },
   {
     name: 'ActivityReview',
@@ -6140,6 +6384,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
   },
   {
+    name: 'BeginActivityResponsibilityDispatchRequest',
+    declaration: 'export interface BeginActivityResponsibilityDispatchRequest {\n    readonly activityId: ActivityId;\n    readonly responsibilityId: ActivityResponsibilityId;\n    readonly promptRequestId: ActivityResponsibilityRequestId;\n}',
+  },
+  {
     name: 'BindingOrigin',
     declaration: 'export type BindingOrigin = \'created\' | \'referenced\' | \'discovered\' | \'tracked\';',
   },
@@ -6336,6 +6584,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ConfinedSandboxMode = Exclude<SandboxMode, \'danger-full-access\'>;',
   },
   {
+    name: 'ConfirmActivityResponsibilityRequest',
+    declaration: 'export interface ConfirmActivityResponsibilityRequest {\n    readonly activityId: ActivityId;\n    readonly responsibilityId: ActivityResponsibilityId;\n    readonly requestId: ActivityResponsibilityRequestId;\n    readonly proposalFactId: ActivityResponsibilityFactId;\n    readonly proposal: ActivityResponsibilityProposal;\n    readonly principal: ActivityResponsibilityPrincipal;\n}',
+  },
+  {
     name: 'ConnectionAdmission',
     declaration: 'export type ConnectionAdmission = {\n    readonly peer: PeerScope;\n    readonly release: () => Promise<void>;\n} | {\n    readonly rejection: 401 | 403 | 409;\n};',
   },
@@ -6510,6 +6762,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CreateActivityRequest',
     declaration: 'export type CreateActivityRequest = Pick<Activity, \'name\' | \'objective\' | \'boundaries\'>;',
+  },
+  {
+    name: 'CreateActivityResponsibilityRequest',
+    declaration: 'export interface CreateActivityResponsibilityRequest extends ActivityResponsibilityProposal {\n    readonly activityId: ActivityId;\n    readonly requestId: ActivityResponsibilityRequestId;\n    readonly coordinatingSessionId: SessionId;\n    readonly sourceEventSeq?: number | undefined;\n}',
   },
   {
     name: 'CreateAgentOptions',
@@ -8276,6 +8532,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type RecommendationDetails = {\n    readonly status: \'available\';\n    readonly title: LocalizedText;\n    readonly description: LocalizedText;\n    readonly enabled: boolean;\n} | {\n    readonly status: \'refused\';\n    readonly reason: \'unknown\' | \'unavailable\' | \'not-live-root\' | \'closing\';\n};',
   },
   {
+    name: 'RecordActivityResponsibilityAcceptanceRequest',
+    declaration: 'export interface RecordActivityResponsibilityAcceptanceRequest {\n    readonly activityId: ActivityId;\n    readonly responsibilityId: ActivityResponsibilityId;\n    readonly requestId: ActivityResponsibilityRequestId;\n    readonly reportFactId: ActivityResponsibilityFactId;\n    readonly disposition: ActivityResponsibilityAcceptanceFact[\'disposition\'];\n    readonly principal: ActivityResponsibilityPrincipal;\n}',
+  },
+  {
+    name: 'RecordActivityResponsibilityObservationRequest',
+    declaration: 'export interface RecordActivityResponsibilityObservationRequest {\n    readonly activityId: ActivityId;\n    readonly responsibilityId: ActivityResponsibilityId;\n    readonly requestId: ActivityResponsibilityRequestId;\n    readonly observedAt: string;\n    readonly observation: ActivityResponsibilityObservedFact[\'observation\'];\n}',
+  },
+  {
+    name: 'RecordActivityResponsibilityReportRequest',
+    declaration: 'export interface RecordActivityResponsibilityReportRequest {\n    readonly activityId: ActivityId;\n    readonly responsibilityId: ActivityResponsibilityId;\n    readonly requestId: ActivityResponsibilityRequestId;\n    readonly promptRequestId: ActivityResponsibilityRequestId;\n    readonly sourceEventSeqs: readonly number[];\n    readonly summary: string;\n    readonly reportedAt: string;\n}',
+  },
+  {
+    name: 'RecordActivityResponsibilityVerificationRequest',
+    declaration: 'export interface RecordActivityResponsibilityVerificationRequest {\n    readonly activityId: ActivityId;\n    readonly responsibilityId: ActivityResponsibilityId;\n    readonly requestId: ActivityResponsibilityRequestId;\n    readonly reportFactId: ActivityResponsibilityFactId;\n    readonly actor: ActivityResponsibilityActor;\n    readonly evidence: ActivityResponsibilityVerificationFact[\'evidence\'];\n}',
+  },
+  {
     name: 'RecordActivityReviewRequest',
     declaration: 'export interface RecordActivityReviewRequest {\n    readonly activityId: ActivityId;\n    readonly delegationId: ActivityDelegationId;\n    readonly disposition: ActivityReviewDisposition;\n    readonly evidence?: Omit<ActivityReviewEvidence, \'id\' | \'recordedAt\' | \'origin\'> | undefined;\n}',
   },
@@ -9366,6 +9638,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SettingsSecretView',
     declaration: 'export interface SettingsSecretView {\n    path: string[];\n    set: boolean;\n}',
+  },
+  {
+    name: 'SettleActivityResponsibilityDispatchRequest',
+    declaration: 'export interface SettleActivityResponsibilityDispatchRequest extends BeginActivityResponsibilityDispatchRequest {\n    readonly outcome: ActivityResponsibilityDispatchSettledFact[\'outcome\'];\n    readonly diagnostic?: string | undefined;\n}',
   },
   {
     name: 'ShareAccess',

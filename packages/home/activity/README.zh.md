@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-保存命名 Activity、目标和描述性范围，使其可跨 Session 使用。Web 与 SDK 的 `/activity` 命令可在不同 Session 中重新打开 Activity，并记录所选 Workspace、Session、备注、委派、报告、交接和审核。显式运行 `/activity assess` 可保存建议性战略简报，以供后续 Session 查看。创建或打开 Activity 不会开始工作、激活 Goal 或授予权限；外部交接不会变成 DSH 原生执行记录。
+保存命名 Activity、目标和描述性范围，使其可跨 Session 使用。Web 与 SDK 的 `/activity` 命令可在不同 Session 中重新打开 Activity，并记录所选 Workspace、Session、备注、委派、报告、交接、审核和只追加的责任事实。显式运行 `/activity assess` 可保存建议性战略简报，以供后续 Session 查看。创建或打开 Activity 不会开始工作、激活 Goal 或授予权限；外部交接不会变成 DSH 原生执行记录。
 
 
 ## 目录
@@ -26,7 +26,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-Web 和 SDK 配置会将此服务、关联与备注服务、JSON StorageDomain 提供方及人工调用的 `/activity` 命令一同加载。
+Web 和 SDK 配置会将此服务、关联与备注服务、JSON StorageDomain 提供方及人工调用的 `/activity` 命令一同加载。需要保存责任历史的组合还需挂载 `@deepseek-ai/dsh-home-activity/responsibilities`。经过身份验证的协调路由是单独的消费者，并在确认记录中保存本地所有者身份，不会持久化无关的 Peer 元数据。
 
 ### 何时选择
 
@@ -49,9 +49,12 @@ Web 和 SDK 配置会将此服务、关联与备注服务、JSON StorageDomain �
 - name: '@deepseek-ai/dsh-home-activity/annotations'
 - name: '@deepseek-ai/dsh-home-activity/strategic-episodes'
 - name: '@deepseek-ai/dsh-home-activity/handoffs'
+- name: '@deepseek-ai/dsh-home-activity/responsibilities'
 ```
 
 存储提供方拥有各自的设置；请参阅 [JSON 后端](../../storage/storage-json/README.zh.md)和 [StorageDomain](../../storage/storage-domain/README.zh.md)参考。
+
+可选的 Host `@deepseek-ai/dsh-home-activity/coordination` 服务提供经过身份验证的 Client 路由，用于有界发现和责任监督。每次读取或分发时，服务都会重新检查 Activity 关联、Workspace 成员关系、根 Session 身份、匹配的仓库路径及当前访问权限。发现过程是被动的。责任记录本身不会授权访问；只有经过身份验证的所有者确认，才能通过目标 Session 原生 prompt 路由分发已保存的提议。用户交互及其证据限制请参阅[协调 UI](../../client/ui-activity-coordination/README.zh.md)。
 
 启用委派的组合还需挂载 `@deepseek-ai/dsh-home-activity/delegations`、`@deepseek-ai/dsh-subagent` 和命令支持的提供方。Web 配置包含 `spawn`；启用可选的原生 Codex 或 Claude Code 提供方后，也可选择 `codex` 或 `claude-code`。
 
@@ -70,6 +73,8 @@ Activity 记录使用版本 1 的 home_activities StorageDomain，并保持独�
 战略简报保存在独立、只追加的版本 1 `home_activity_strategic_episodes` 域中。记录保留 Activity 目标、来源 DSH Session、明确选择的 Workspace id、agent 撰写的发现与替代方案、仓库相对来源引用、协调器报告的 Git 修订和观察时间、已跟踪及未忽略工作文件是否包含暂存、未暂存或未跟踪变更、已加载 Sensemaking Skill 内容摘要、不确定性以及建议或明确的不选择。记录器会将仓库身份和来源元数据绑定到来源 Session 中匹配的成功协调器工具结果；但不会独立验证仓库内容或发现。若选定的 Workspace 不可用、存在未提交来源变更、观察期间发生变化或来源稳定性未知，简报必须标为不完整。同一请求 id 的重复记录调用会返回已有记录；后续评估会追加新的后继记录并保留旧来源历史。打开 Activity 显示最新简报；`/activity brief <activity-id> <revision>` 可打开更早的版本，且不会检查当前仓库或重复执行评估。
 
 Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associations` 域中。显示时会通过各自的注册表解析引用；过期引用会明确显示为不可用，直到用户解除关联。关联不会修改 Workspace 记录、Session 日志或 Activity 记录。
+
+跨 Session 责任事实保存在独立、只追加的版本 1 `home_activity_responsibilities` 域中。稳定责任身份会保留不可变提议、对提议完整内容的用户确认、提示分发意图与路由结果、被动 Session 观察、附带来源事件序列的简短目标报告、验证证据和用户处置。每条新事实都会链接到前一条；服务不会根据 Session 活动推断完成状态。经过身份验证的用户决定会记录本地所有者身份；其他 Peer 元数据不会被持久化。该域本身不会授权 Session 访问或执行分发。
 
 用户提供的外部交接保存在独立的版本 1 `home_activity_handoffs` 域中。每条记录属于一个现有 Activity，并保存来源标签、可选的用户摘要或来源引用、用户提供的产物引用，以及记录时所在的 DSH Session。所有文本都会去除首尾空白并限制长度，且必须为单行；控制、格式、行分隔和段落分隔字符会被拒绝。其他 Session 打开 Activity 时，这些引用会显示为外部用户输入，而非导入的原生执行历史。此服务不会导入 transcript、同步外部 Session、确认工作执行者，也不会声称结果已验证或接受。
 
@@ -90,6 +95,12 @@ Workspace 和 DSH Session 引用保存在独立的版本 1 `home_activity_associ
 | [`src/strategic-episode-types.ts`](src/strategic-episode-types.ts) | 战略记录与证据引用类型 |
 | [`src/strategic-episode-spec.ts`](src/strategic-episode-spec.ts) | 带版本的战略记录 schema 与域 |
 | [`src/strategic-episodes.ts`](src/strategic-episodes.ts) | 追加式 Activity Strategic Brief 持久化服务 |
+| [`src/responsibility-types.ts`](src/responsibility-types.ts) | 责任身份与不可变事实类型 |
+| [`src/responsibility-spec.ts`](src/responsibility-spec.ts) | 带版本的只追加责任记录 schema 和域 |
+| [`src/responsibilities.ts`](src/responsibilities.ts) | 责任持久化服务 |
+| [`src/activity-types.ts`](src/activity-types.ts) | Client 安全使用的 Activity 身份与记录类型 |
+| [`src/coordination-types.ts`](src/coordination-types.ts) | Client 安全使用的跨 Session 请求与观察类型 |
+| [`src/coordination.ts`](src/coordination.ts) | 经过身份验证的发现、提议、分发与观察路由 |
 | [`src/handoff-types.ts`](src/handoff-types.ts) | 外部交接记录类型 |
 | [`src/handoff-spec.ts`](src/handoff-spec.ts) | 带版本的外部交接 schema |
 | [`src/handoffs.ts`](src/handoffs.ts) | 独立外部交接 StorageDomain 服务 |
@@ -130,6 +141,7 @@ Activity 范围仍是描述性内容；委派不会将其作为授权规则执�
 - Activity 视图仅分类已知的提供方停止原因；未知值仍显示为未知。可用时，视图会显示已保存报告的来源和时间，以及不确定状态的来源类别和观察时间。DSH 不会检查已保存报告的新鲜度，因此报告可能已过时；打开 Activity 不会查询提供方后续状态，也不会重试工作。
 - 产物引用只是用户关联的指针；它不会复制或检查输出、证明生成者、验证内容，也不会触发跨 Workspace 写入、合并或发布。缺少来源修订版时仍显示为未知。
 - 审核证据及其报告结果由用户提供。DSH 会保留其来源信息，但不会检查来源、证据或结果；当前处置与提供方执行状态分开保存。
+- 责任确认是由可信 Host 调用方提供的持久事实；此服务不会认证调用方，也不会授予目标 Session 访问权。提示准入表示 Session 已接受输入，不代表已执行任务。报告仅保存有界摘要和来源事件引用，不复制 transcript。验证证据会记录命名来源及其报告结果，但不会检查来源；接受是独立的用户决定。
 - 战略记录是 agent 撰写的报告，不是独立验证或用户接受。评估要求两个 Sensemaking Skills 均可加载，并限制为恰好两个已注册 Workspace，因为现有协调工具支持两个仓库。记录器会将仓库 id、`HEAD` 修订、观察时间和工作树干净状态元数据绑定到来源 Session 中匹配的成功协调器结果，但不会独立验证来源内容、引用或发现。对于有未提交变更的来源，`HEAD` 只表示已提交的基准，简报不会保存暂存区或工作树文件内容。来源不可用、存在未提交变更、观察期间变化或稳定性未知时，简报必须标为不完整。`/activity open` 显示最新简报，`/activity brief` 可检索更早保存的版本；两者都不会检查当前仓库。
 
 备注写入错误无法确认修订是否已经持久化。JSON 后端可能在替换文件后才报错，因此请先关闭并重新打开后端和域，再检查 Activity 并决定是否重试；此备注服务不承诺持久回滚。详见 [StorageDomain](../../storage/storage-domain/README.zh.md) 和 [JSON 后端](../../storage/storage-json/README.zh.md)的失败约定。

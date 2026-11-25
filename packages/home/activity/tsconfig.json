@@ -8,9 +8,14 @@
     { "path": "../../util/brand" },
     { "path": "../../storage/storage" },
     { "path": "../../storage/storage-domain" },
+    { "path": "../../api/gateway/tsconfig.host.json" },
+    { "path": "../../api/session-controller/tsconfig.host.json" },
     { "path": "../../core/session" },
+    { "path": "../../core/agent" },
     { "path": "../../subagent/subagent" },
+    { "path": "../../session-query/session-query" },
     { "path": "../../session/session-persistence" },
-    { "path": "../../workspace/workspace" }
+    { "path": "../../workspace/workspace" },
+    { "path": "../../typert/protocol" }
   ]
 }

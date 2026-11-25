@@ -33,6 +33,8 @@ Start the GUI, open your browser, and start talking to the agent. The flags fine
 
 [Agent Teams UI](../../client/ui-agent-team/README.md) loads with this bundle. Enable it per Session in the model and reasoning menu; shared tasks open below the member tree from the Subagent control.
 
+Use [`/coordinate`](../../client/ui-activity-coordination/README.md) in a root Session to inspect Sessions linked to a saved Activity, add reviewed snapshots to the coordinating conversation, and recover its saved responsibility history. A finalized coordinator message can start an advisory responsibility proposal; only a separate confirmation action sends the exact saved task to its selected target Session. Accepted means prompt admission only, and recovery never resumes work or retries uncertain delivery.
+
 ### Starting the Web GUI
 
 ```sh
