@@ -521,7 +521,10 @@ it('requires an explicit assessment command and steers the active Agent with loa
   const saved = await saveRequest
   expect(saved).toMatchObject({ saved: true, revision: 1 })
   expect(guardDenial(test, 'shell', 'guard-shell-after-save')).toContain('is saved')
-  expect(await run(test, ' assess cancel')).toMatchObject({ kind: 'success', text: 'This Activity Strategic Brief is already saved.' })
+  expect(await run(test, ' assess cancel')).toMatchObject({
+    kind: 'success',
+    text: 'This Activity Strategic Brief is already saved and cannot be canceled.',
+  })
   test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   expect(guardDenial(test, 'shell', 'guard-shell-after-turn-end')).toBeUndefined()
   const episode = test.ctx.homeActivityStrategicEpisodes.list(activity.id)[0]

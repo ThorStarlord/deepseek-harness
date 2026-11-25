@@ -236,6 +236,7 @@ function activityStrategicToolGuard(
         request.removeMessage()
         pending.delete(sessionId)
         onSettled()
+        return 'This Activity Strategic Brief request expired before a model turn claimed it; its queued instruction was removed. Start a new assessment when ready.'
       }
       return 'This Activity Strategic Brief request expired; no model tool calls can continue in this turn. Start a new assessment after this turn ends.'
     }
@@ -412,7 +413,7 @@ export async function executeActivityStrategicAssessment(
   }
   return {
     kind: 'success',
-    text: `Advisory assessment queued for Activity ${activity.id}. Before reading, DSH asks for separate one-shot approval of the exact task and two selected Workspaces. After approval, the existing coordinator starts one read-only DSH child Session per Workspace; these Sessions cannot implement or mutate either repository. While the brief is pending, a runtime guard blocks every other model tool call; this does not change configured permissions. Use /activity assess cancel to prevent saving; approved reads already running continue. Other model tools remain blocked until the current turn ends and any approved coordinator call returns. Normal tool use resumes after the brief is saved or canceled, the turn ends, and any approved coordinator call returns. Open the Activity later to inspect the saved brief.`,
+    text: `Advisory assessment queued for Activity ${activity.id}. Before reading, DSH asks for separate one-shot approval of the exact task and two selected Workspaces. After approval, the existing coordinator starts one read-only DSH child Session per Workspace; these Sessions cannot implement or mutate either repository. While the brief is pending, a runtime guard blocks every other model tool call; this does not change configured permissions. Use /activity assess cancel to discard an unclaimed request; an approved read already running continues. Until a model turn claims the queued instruction, normal tool use remains blocked until you cancel or the request expires. After it is claimed, normal tool use resumes only after the brief is saved or canceled, that claiming turn ends, any approved coordinator call returns, and any started save settles. Open the Activity later to inspect the saved brief.`,
   }
 }
 
@@ -431,7 +432,7 @@ export function cancelActivityStrategicAssessment(ctx: Context, invocation: Comm
   const request = pending.get(sessionId)
   if (request !== undefined && request.agentId === String(agent.id)) {
     if (request.saved) {
-      return { kind: 'success', text: 'This Activity Strategic Brief is already saved.' }
+      return { kind: 'success', text: 'This Activity Strategic Brief is already saved and cannot be canceled.' }
     }
     if (request.saveStarted) {
       return { kind: 'error', text: 'The Activity Strategic Brief save has already started and cannot be canceled safely. Open the Activity to inspect whether it was recorded before retrying.' }
