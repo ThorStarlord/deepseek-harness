@@ -88,8 +88,8 @@ type ActivityStrategicPendingRequests = Map<string, PendingAssessment>
 export function registerActivityStrategicBriefTool(ctx: Context): () => void {
   const pending: ActivityStrategicPendingRequests = new Map()
   const preparing = getPreparingAssessments(ctx)
-  const tool = createRecordTool(ctx, pending, () => disposeDrainedRegistration())
-  const disposeGuard = ctx.tools.guard(activityStrategicToolGuard(ctx, pending, () => disposeDrainedRegistration()))
+  const tool = createRecordTool(ctx, pending, () => { disposeDrainedRegistration() })
+  const disposeGuard = ctx.tools.guard(activityStrategicToolGuard(ctx, pending, () => { disposeDrainedRegistration() }))
   const disposeTool = ctx.tools.register(tool, {
     when: ({ agent }) => {
       const request = pending.get(String(agent.session.id))

@@ -1206,8 +1206,9 @@ it('ignores tool executions without an Agent identity and requires a live Agent 
     } as never)).toBeUndefined()
   }
   const detached = { ...test.agent, id: SessionId('detached-agent') } as Agent
-  expect(cancelActivityStrategicAssessment(test.ctx, { agent: detached } as never))
-    .toMatchObject({ kind: 'error', text: expect.stringContaining('live requesting Agent') })
+  const detachedResult = cancelActivityStrategicAssessment(test.ctx, { agent: detached } as never)
+  expect(detachedResult.kind).toBe('error')
+  expect(detachedResult.text).toContain('live requesting Agent')
   await test.commandFiber.dispose()
   expect(() => cancelActivityStrategicAssessment(test.ctx, { agent: test.agent } as never))
     .toThrow('recorder is not registered')
@@ -1230,7 +1231,7 @@ it('rejects an unknown Activity, failed Skill loading, missing Skills, and overs
   expect((await run(test, line)).text).toContain('Sensemaking Skills could not be loaded')
   loadFailure.mockRestore()
 
-  const missing = vi.spyOn(test.skills, 'get').mockResolvedValue(undefined as never)
+  const missing = vi.spyOn(test.skills, 'get').mockResolvedValue(undefined)
   expect((await run(test, line)).text).toContain('Required Sensemaking Skills are unavailable')
   missing.mockRestore()
 
@@ -1552,18 +1553,17 @@ it('reports an already-canceled claimed assessment on a repeated cancel', async 
 it('renders a generic result when the recorder output is malformed', async () => {
   const test = await harness()
   const recorder = test.registeredTools.get('record_activity_strategic_brief')?.definition
-  const render = recorder?.output.render
-  if (render === undefined) throw new Error('The recorder has no output renderer')
-  expect(render(undefined as never, {} as never)[0]).toMatchObject({
+  if (recorder?.output.render === undefined) throw new Error('The recorder has no output renderer')
+  const render = recorder.output.render.bind(recorder.output)
+  expect(render(undefined, {})[0]).toMatchObject({
     type: 'text',
     text: 'Saved advisory Activity Strategic Brief. It has not been independently verified or accepted.',
   })
-  expect(render(undefined as never, {
+  const rendered = render(undefined, {
     saved: true, episodeId: 'episode-9', revision: 9, recordedAt: '2026-11-24T10:00:00.000Z',
-  } as never)[0]).toMatchObject({
-    type: 'text',
-    text: expect.stringContaining('revision 9'),
   })
+  expect(rendered[0]).toMatchObject({ type: 'text' })
+  expect(rendered[0]?.type === 'text' ? rendered[0].text : '').toContain('revision 9')
   await expect(recorder?.execute?.(
     { requestId: 'anonymous', briefJson: '{}' },
     { agent: undefined, callId: ToolCallId('anonymous-recorder'), signal: new AbortController().signal } as never,
