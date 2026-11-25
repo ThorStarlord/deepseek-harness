@@ -48,7 +48,7 @@ The separate version-1 `home_activity_strategic_episodes` domain appends agent-a
 
 The separate version-1 `home_activity_responsibilities` domain appends facts for a bounded responsibility proposed for a selected Workspace and existing DSH root Session. A proposal, authenticated user confirmation, prompt dispatch intent and outcome, passive Session observation, target report, verification evidence, and user acceptance remain distinct records. Each fact carries stable Activity and responsibility identities, a revision and predecessor, an idempotency request identity, and source attribution. The confirmation stores the exact proposal content and the local owner identity supplied by the trusted Host route; unrelated Peer metadata is not persisted. The persistence service does not authenticate the caller or authorize target access. A prompt accepted by Session Controller means only that the target accepted input. Target reports retain a bounded summary and source event sequences instead of copying the Session transcript. Verification evidence records its named source and reported result; acceptance remains a separate user decision. Listing responsibility history does not query, resume, or prompt a target Session.
 
-The optional `ctx.homeActivityCoordination` Host service exposes Client-mediated routes for owner-authorized, bounded Session discovery, proposal recording, confirmed prompt dispatch, and passive reconciliation. Each discovery rechecks Activity links, Workspace membership, root Session identity, matching repository paths, and current resource access. Proposals cite a model-authored event from an associated coordinating root Session in an associated Workspace. Dispatch accepts only the exact saved proposal after authenticated owner confirmation and rechecks target identity and access; the target Session retains its runtime, permissions, and writer ownership. Opening coordination history does not prompt or resume any target. See the [coordination UI package](../../packages/client/ui-activity-coordination/README.md) for the client workflow.
+The optional `ctx.homeActivityCoordination` Host service exposes Client-mediated routes for owner-authorized, bounded Session discovery, proposal recording, confirmed prompt dispatch, and passive reconciliation. Each discovery rechecks Activity links, Workspace membership, root Session identity, matching repository paths, and current resource access. Responsibility histories are returned only when the caller can read the source coordinator Session, target Session, and Workspace; Activity links alone grant no access. Proposals cite a model-authored event from an associated coordinating root Session in an associated Workspace. Dispatch accepts only the exact saved proposal after authenticated owner confirmation and rechecks target identity and access; the target Session retains its runtime, permissions, and writer ownership. Opening coordination history does not prompt or resume any target. See the [coordination UI package](../../packages/client/ui-activity-coordination/README.md) for the client workflow.
 
 ## Cordis API
 
@@ -228,7 +228,7 @@ Authenticated Client API for Activity-scoped, passive Session discovery.
 @Remote({ resources: { activity: request => request.activityId, workspace: request => request.targets.map(target => target.workspaceId), session: request => request.targets.map(target => target.sessionId), } }) async discover( request: { readonly activityId: ActivityId; readonly targets: readonly ActivityCoordinationTarget[] }, signal: AbortSignal, ): Promise<readonly ActivityCoordinationSessionSnapshot[]>
 
 /**
- * Recover responsibility histories whose Activity, Workspace, and target Session are still readable.
+ * Recover responsibility histories whose Activity, source Session, Workspace, and target Session are readable.
  * @param request - saved Activity identity.
  * @returns histories in append order without exposing references the caller cannot read.
  */
@@ -246,14 +246,15 @@ Authenticated Client API for Activity-scoped, passive Session discovery.
 /**
  * Recover append-only histories for an Activity without waking target Sessions.
  * @param request - Activity identity and responsibility identity.
- * @returns the history when the caller can read both its Workspace and target Session.
+ * @returns the history when the caller can read its source and target Sessions and Workspace.
  */
-@Remote({ resources: { activity: request => request.activityId } }) responsibility(request: { readonly activityId: ActivityId; readonly responsibilityId: ActivityResponsibilityId }): ActivityResponsibilityHistory
+@Remote({ resources: { activity: request => request.activityId } }) responsibility(request: { readonly activityId: ActivityId readonly responsibilityId: ActivityResponsibilityId }): ActivityResponsibilityHistory
 
 /**
- * Bind the displayed immutable proposal to an authenticated user confirmation, then send it through the native Session prompt route.
+ * Bind the displayed proposal to an authenticated user confirmation, then send it through the native `session/prompt` route.
+ * Persist a Host-generated request identity before delivery for safe retry handling and later report correlation.
  * The nested Gateway call rechecks the caller's actual `session/prompt` grant for the exact target.
- * @param request - proposal echo, authenticated confirmation id, and native prompt request id.
+ * @param request - exact proposal echo and authenticated confirmation id.
  * @param signal - cancellation for target validation and prompt admission.
  * @returns confirmed admission, known non-admission, or an explicitly uncertain result with recovered history.
  */
@@ -265,7 +266,7 @@ Authenticated Client API for Activity-scoped, passive Session discovery.
  * @param signal - cancellation for passive reads.
  * @returns the new observation and complete responsibility history.
  */
-@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async observeResponsibility( request: { readonly activityId: ActivityId; readonly responsibilityId: ActivityResponsibilityId; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityResponsibilityHistory>
+@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async observeResponsibility( request: { readonly activityId: ActivityId readonly responsibilityId: ActivityResponsibilityId readonly workspaceId: WorkspaceId readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityResponsibilityHistory>
 
 /**
  * Reconcile one responsibility against its exact target request id using only passive Session reads.
@@ -273,7 +274,7 @@ Authenticated Client API for Activity-scoped, passive Session discovery.
  * @param signal - cancellation of the state and history reads.
  * @returns current execution state plus a report only when its matching target turn completed.
  */
-@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async reconcileResponsibility( request: { readonly activityId: ActivityId; readonly responsibilityId: ActivityResponsibilityId; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityCoordinationReconcileResult>
+@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async reconcileResponsibility( request: { readonly activityId: ActivityId readonly responsibilityId: ActivityResponsibilityId readonly workspaceId: WorkspaceId readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityCoordinationReconcileResult>
 ```
 
 Types: [SessionId](core.md) · [WorkspaceId](workspace.md)

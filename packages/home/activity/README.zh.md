@@ -54,7 +54,7 @@ Web 和 SDK 配置会将此服务、关联与备注服务、JSON StorageDomain �
 
 存储提供方拥有各自的设置；请参阅 [JSON 后端](../../storage/storage-json/README.zh.md)和 [StorageDomain](../../storage/storage-domain/README.zh.md)参考。
 
-可选的 Host `@deepseek-ai/dsh-home-activity/coordination` 服务提供经过身份验证的 Client 路由，用于有界发现和责任监督。每次读取或分发时，服务都会重新检查 Activity 关联、Workspace 成员关系、根 Session 身份、匹配的仓库路径及当前访问权限。发现过程是被动的。责任记录本身不会授权访问；只有经过身份验证的所有者确认，才能通过目标 Session 原生 prompt 路由分发已保存的提议。用户交互及其证据限制请参阅[协调 UI](../../client/ui-activity-coordination/README.zh.md)。
+可选的 Host `@deepseek-ai/dsh-home-activity/coordination` 服务提供经过身份验证的 Client 路由，用于有界发现和责任监督。每次读取或分发时，服务都会重新检查 Activity 关联、Workspace 成员关系、根 Session 身份、匹配的仓库路径及当前访问权限。只有调用者有权读取来源协调 Session、目标 Session 和 Workspace 时，服务才会返回责任历史；Activity 关联本身不会授予访问权。发现过程是被动的。责任记录本身不会授权访问；只有经过身份验证的所有者确认，才能通过目标 Session 原生 prompt 路由分发已保存的提议。用户交互及其证据限制请参阅[协调 UI](../../client/ui-activity-coordination/README.zh.md)。
 
 启用委派的组合还需挂载 `@deepseek-ai/dsh-home-activity/delegations`、`@deepseek-ai/dsh-subagent` 和命令支持的提供方。Web 配置包含 `spawn`；启用可选的原生 Codex 或 Claude Code 提供方后，也可选择 `codex` 或 `claude-code`。
 

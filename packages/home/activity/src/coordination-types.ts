@@ -1,6 +1,5 @@
 /** Client-safe wire values for Activity-scoped cross-Session coordination. @module @deepseek-ai/dsh-home-activity/coordination-types */
 
-import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId, SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { Activity, ActivityId } from './activity-types.ts'
@@ -69,20 +68,19 @@ export interface ActivityCoordinationProposalRequest extends ActivityResponsibil
   readonly sourceEventSeq: number
 }
 
-/** The authenticated user's exact confirmation and target prompt identity. */
+/** The authenticated user's exact confirmation; the Host creates the target prompt identity. */
 export interface ActivityCoordinationDispatchRequest {
   readonly activityId: ActivityId
   readonly responsibilityId: ActivityResponsibilityId
   readonly proposalFactId: ActivityResponsibilityFactId
   readonly proposal: ActivityResponsibilityProposal
   readonly confirmationRequestId: ActivityResponsibilityRequestId
-  /** Same UUID used as the native `session/prompt` request id. */
-  readonly promptRequestId: SessionRequestId
 }
 
 /** Result of one confirmed Client-mediated prompt delivery. */
 export interface ActivityCoordinationDispatchResult {
   readonly outcome: 'accepted' | 'not-admitted' | 'uncertain'
+  /** Host-generated native Session request identity used to correlate admission and any later report. */
   readonly promptRequestId: string
   readonly recorded: boolean
   readonly diagnostic?: 'access-denied' | 'target-unavailable' | 'target-busy' | 'delivery-uncertain' | 'history-unconfirmed'

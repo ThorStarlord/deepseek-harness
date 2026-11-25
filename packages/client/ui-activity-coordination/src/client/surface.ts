@@ -2,7 +2,6 @@
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SessionFace } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {
   ActivityCoordinationCatalogItem,
@@ -401,7 +400,6 @@ export class ActivityCoordinationSurface {
       proposalFactId: fact.id,
       proposal: fact.proposal,
       confirmationRequestId: brandString<ActivityResponsibilityRequestId>(randomUUID()),
-      promptRequestId: brandString<SessionRequestId>(randomUUID()),
     }
     this.state.set({ ...current, responsibilityPhase: 'dispatching', failure: null })
     const panelGeneration = this.panelGeneration

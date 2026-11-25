@@ -31,7 +31,7 @@ import type { ActivityCoordinationProposalRequest } from '../src/coordination-ty
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface PrincipalMap {
-    /** Non-owner principal used to verify per-resource Activity filtering. */
+    /** Non-owner principal used to verify per-resource Activity and Session filtering. */
     'coord-test': { readonly kind: 'coord-test'; readonly id: string }
   }
 }
@@ -138,25 +138,47 @@ it('filters Activity catalogs and recovered responsibilities by authenticated re
   const principal: PrincipalMap['coord-test'] = { kind: 'coord-test', id: 'limited' }
   const activityRole: RemoteAccessRole<'activity'> = {
     name: 'test:visible-activity', resource: 'activity',
-    actions: ['homeActivityCoordination/activities', 'homeActivityCoordination/responsibilities', 'homeActivityCoordination/responsibility'],
+    actions: [
+      'homeActivityCoordination/activities',
+      'homeActivityCoordination/responsibilities',
+      'homeActivityCoordination/responsibility',
+      'homeActivityCoordination/dispatchConfirmed',
+      'homeActivityCoordination/observeResponsibility',
+      'homeActivityCoordination/reconcileResponsibility',
+    ],
   }
   const workspaceRole: RemoteAccessRole<'workspace'> = {
     name: 'test:visible-workspace', resource: 'workspace',
-    actions: ['homeActivityCoordination/activities', 'homeActivityCoordination/responsibilities', 'homeActivityCoordination/responsibility'],
+    actions: [
+      'homeActivityCoordination/activities',
+      'homeActivityCoordination/responsibilities',
+      'homeActivityCoordination/responsibility',
+      'homeActivityCoordination/dispatchConfirmed',
+      'homeActivityCoordination/observeResponsibility',
+      'homeActivityCoordination/reconcileResponsibility',
+    ],
   }
   const sessionRole: RemoteAccessRole<'session'> = {
     name: 'test:visible-session', resource: 'session',
-    actions: ['homeActivityCoordination/activities', 'homeActivityCoordination/responsibilities', 'homeActivityCoordination/responsibility'],
+    actions: [
+      'homeActivityCoordination/activities',
+      'homeActivityCoordination/responsibilities',
+      'homeActivityCoordination/responsibility',
+      'homeActivityCoordination/dispatchConfirmed',
+      'homeActivityCoordination/observeResponsibility',
+      'homeActivityCoordination/reconcileResponsibility',
+    ],
   }
   const globalRole: RemoteAccessRole<'global'> = {
     name: 'test:coordination-list', resource: 'global', actions: ['homeActivityCoordination/activities'],
   }
+  const visibleSessionIds = [TARGET_SESSION]
   ctx.remoteAccess.registerPolicy('coord-test', {
     bindings: () => [
       { role: globalRole, resource: { kind: 'global' } },
       { role: activityRole, resource: { kind: 'activity', id: visible.id } },
       { role: workspaceRole, resource: { kind: 'workspace', id: FIXTURE_WORKSPACE } },
-      { role: sessionRole, resource: { kind: 'session', id: TARGET_SESSION } },
+      ...visibleSessionIds.map(id => ({ role: sessionRole, resource: { kind: 'session' as const, id } })),
     ],
   })
   const guest = new Peer(ctx, { principal })
@@ -168,7 +190,33 @@ it('filters Activity catalogs and recovered responsibilities by authenticated re
   const histories = await ctx.typertGateway.invoke({
     peer: guest, namespace: 'homeActivityCoordination', method: 'responsibilities', args: { request: { activityId: visible.id } },
   })
-  expect(histories).toMatchObject({ items: [{ id: visibleHistory.responsibilityId }] })
+  expect(histories).toMatchObject({ items: [] })
+  const target = {
+    activityId: visible.id,
+    responsibilityId: visibleHistory.responsibilityId,
+    workspaceId: FIXTURE_WORKSPACE,
+    sessionId: TARGET_SESSION,
+  }
+  await expect(ctx.typertGateway.invoke({
+    peer: guest, namespace: 'homeActivityCoordination', method: 'responsibility',
+    args: { request: { activityId: visible.id, responsibilityId: visibleHistory.responsibilityId } },
+  })).rejects.toMatchObject({ code: 'activity-coordination/responsibility-unavailable' })
+  await expect(ctx.typertGateway.invoke({
+    peer: guest, namespace: 'homeActivityCoordination', method: 'observeResponsibility', args: { request: target },
+  })).rejects.toMatchObject({ code: 'activity-coordination/responsibility-unavailable' })
+  await expect(ctx.typertGateway.invoke({
+    peer: guest, namespace: 'homeActivityCoordination', method: 'reconcileResponsibility', args: { request: target },
+  })).rejects.toMatchObject({ code: 'activity-coordination/responsibility-unavailable' })
+  await expect(ctx.typertGateway.invoke({
+    peer: guest,
+    namespace: 'homeActivityCoordination',
+    method: 'dispatchConfirmed',
+    args: { request: dispatchRequest(visibleHistory) },
+  })).rejects.toMatchObject({ code: 'activity-coordination/responsibility-unavailable' })
+  visibleSessionIds.push(COORDINATOR_SESSION)
+  await expect(ctx.typertGateway.invoke({
+    peer: guest, namespace: 'homeActivityCoordination', method: 'responsibilities', args: { request: { activityId: visible.id } },
+  })).resolves.toMatchObject({ items: [{ id: visibleHistory.responsibilityId }] })
   await expect(ctx.typertGateway.invoke({
     peer: guest, namespace: 'homeActivityCoordination', method: 'responsibility',
     args: { request: { activityId: visible.id, responsibilityId: visibleHistory.responsibilityId } },
@@ -440,7 +488,10 @@ it('classifies known admission failures and leaves other provider outcomes uncer
     const dispatch = dispatchRequest(proposal)
     const result = await invoke(ctx, 'dispatchConfirmed', dispatch)
     expect(result).toMatchObject({ outcome: item.outcome, diagnostic: item.diagnostic, recorded: true })
-    expect(route.prompts.at(-1)).toMatchObject({ sessionId: TARGET_SESSION, requestId: dispatch.promptRequestId })
+    const attempt = ctx.homeActivityResponsibilities.get(activity.id, proposal.responsibilityId)?.facts
+      .find(fact => fact.kind === 'dispatch-attempted')
+    if (attempt === undefined) throw new Error('The dispatch did not preserve its Host-generated request identity.')
+    expect(route.prompts.at(-1)).toMatchObject({ sessionId: TARGET_SESSION, requestId: String(attempt.promptRequestId) })
   }
   route.error = undefined
   route.result = { accepted: false }
@@ -460,8 +511,7 @@ it('does not retry an uncertain delivery or duplicate a send when settlement per
   route.beforeReply = undefined
   const retry = await invoke(ctx, 'dispatchConfirmed', request)
   expect(retry).toMatchObject({ outcome: 'uncertain', recorded: true, diagnostic: 'delivery-uncertain' })
-  const differentRequest = { ...request, promptRequestId: brandString<SessionRequestId>(requestId()) }
-  await expect(invoke(ctx, 'dispatchConfirmed', differentRequest)).resolves.toMatchObject({ outcome: 'uncertain', recorded: true })
+  await expect(invoke(ctx, 'dispatchConfirmed', request)).resolves.toMatchObject({ outcome: 'uncertain', recorded: true })
   expect(route.prompts).toHaveLength(1)
 })
 
@@ -982,7 +1032,6 @@ function dispatchRequest(proposal: Awaited<ReturnType<typeof createProposal>>) {
     proposalFactId: proposal.id,
     proposal: proposal.proposal,
     confirmationRequestId: activityResponsibilityRequestId(requestId()),
-    promptRequestId: brandString<SessionRequestId>(requestId()),
   }
 }
 

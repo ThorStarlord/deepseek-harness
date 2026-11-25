@@ -48,7 +48,7 @@ Home Activity 是由用户发起并持久保存的事务，具有稳定身份、
 
 独立的版本 1 `home_activity_responsibilities` 域会为分配到所选 Workspace 和现有 DSH 根 Session 的有界责任追加事实。提议、经过身份验证的用户确认、提示分发意图与结果、被动 Session 观察、目标报告、验证证据和用户接受会作为不同记录保存。每条事实都包含稳定的 Activity 和责任身份、修订号与前序记录、幂等请求身份及来源归属。确认记录保存完整提议内容和可信 Host 路由提供的本地所有者身份；不会持久化无关 Peer 元数据。持久化服务本身不会认证调用方或授权目标访问。Session Controller 接受提示只表示目标 Session 接受了输入。目标报告保存有界摘要和来源事件序列，不复制 Session transcript。验证证据记录命名来源及其报告结果；接受仍是单独的用户决定。列出责任历史不会查询、恢复或提示目标 Session。
 
-可选的 `ctx.homeActivityCoordination` Host 服务通过 Client 路由提供所有者授权的有界 Session 发现、提议记录、确认后的提示分发和被动协调。每次发现都会重新检查 Activity 关联、Workspace 成员关系、根 Session 身份、匹配的仓库路径及当前资源访问权限。提议必须引用关联协调根 Session 中由模型撰写的事件。分发仅在经过身份验证的所有者确认完全相同的已保存提议后接受，并会重新检查目标身份与访问权限；目标 Session 保留自己的运行时、权限和写入者所有权。打开协调历史不会提示或恢复任何目标 Session。客户端工作流请参阅[协调 UI 包](../../packages/client/ui-activity-coordination/README.zh.md)。
+可选的 `ctx.homeActivityCoordination` Host 服务通过 Client 路由提供所有者授权的有界 Session 发现、提议记录、确认后的提示分发和被动协调。每次发现都会重新检查 Activity 关联、Workspace 成员关系、根 Session 身份、匹配的仓库路径及当前资源访问权限。只有调用者有权读取来源协调 Session、目标 Session 和 Workspace 时，服务才会返回责任历史；Activity 关联本身不会授予访问权。提议必须引用关联协调根 Session 中由模型撰写的事件。分发仅在经过身份验证的所有者确认完全相同的已保存提议后接受，并会重新检查目标身份与访问权限；目标 Session 保留自己的运行时、权限和写入者所有权。打开协调历史不会提示或恢复任何目标 Session。客户端工作流请参阅[协调 UI 包](../../packages/client/ui-activity-coordination/README.zh.md)。
 
 ## Cordis API
 
@@ -228,7 +228,7 @@ Authenticated Client API for Activity-scoped, passive Session discovery.
 @Remote({ resources: { activity: request => request.activityId, workspace: request => request.targets.map(target => target.workspaceId), session: request => request.targets.map(target => target.sessionId), } }) async discover( request: { readonly activityId: ActivityId; readonly targets: readonly ActivityCoordinationTarget[] }, signal: AbortSignal, ): Promise<readonly ActivityCoordinationSessionSnapshot[]>
 
 /**
- * Recover responsibility histories whose Activity, Workspace, and target Session are still readable.
+ * Recover responsibility histories whose Activity, source Session, Workspace, and target Session are readable.
  * @param request - saved Activity identity.
  * @returns histories in append order without exposing references the caller cannot read.
  */
@@ -246,14 +246,15 @@ Authenticated Client API for Activity-scoped, passive Session discovery.
 /**
  * Recover append-only histories for an Activity without waking target Sessions.
  * @param request - Activity identity and responsibility identity.
- * @returns the history when the caller can read both its Workspace and target Session.
+ * @returns the history when the caller can read its source and target Sessions and Workspace.
  */
-@Remote({ resources: { activity: request => request.activityId } }) responsibility(request: { readonly activityId: ActivityId; readonly responsibilityId: ActivityResponsibilityId }): ActivityResponsibilityHistory
+@Remote({ resources: { activity: request => request.activityId } }) responsibility(request: { readonly activityId: ActivityId readonly responsibilityId: ActivityResponsibilityId }): ActivityResponsibilityHistory
 
 /**
- * Bind the displayed immutable proposal to an authenticated user confirmation, then send it through the native Session prompt route.
+ * Bind the displayed proposal to an authenticated user confirmation, then send it through the native `session/prompt` route.
+ * Persist a Host-generated request identity before delivery for safe retry handling and later report correlation.
  * The nested Gateway call rechecks the caller's actual `session/prompt` grant for the exact target.
- * @param request - proposal echo, authenticated confirmation id, and native prompt request id.
+ * @param request - exact proposal echo and authenticated confirmation id.
  * @param signal - cancellation for target validation and prompt admission.
  * @returns confirmed admission, known non-admission, or an explicitly uncertain result with recovered history.
  */
@@ -265,7 +266,7 @@ Authenticated Client API for Activity-scoped, passive Session discovery.
  * @param signal - cancellation for passive reads.
  * @returns the new observation and complete responsibility history.
  */
-@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async observeResponsibility( request: { readonly activityId: ActivityId; readonly responsibilityId: ActivityResponsibilityId; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityResponsibilityHistory>
+@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async observeResponsibility( request: { readonly activityId: ActivityId readonly responsibilityId: ActivityResponsibilityId readonly workspaceId: WorkspaceId readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityResponsibilityHistory>
 
 /**
  * Reconcile one responsibility against its exact target request id using only passive Session reads.
@@ -273,7 +274,7 @@ Authenticated Client API for Activity-scoped, passive Session discovery.
  * @param signal - cancellation of the state and history reads.
  * @returns current execution state plus a report only when its matching target turn completed.
  */
-@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async reconcileResponsibility( request: { readonly activityId: ActivityId; readonly responsibilityId: ActivityResponsibilityId; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityCoordinationReconcileResult>
+@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async reconcileResponsibility( request: { readonly activityId: ActivityId readonly responsibilityId: ActivityResponsibilityId readonly workspaceId: WorkspaceId readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityCoordinationReconcileResult>
 ```
 
 Types: [SessionId](core.zh.md) · [WorkspaceId](workspace.zh.md)

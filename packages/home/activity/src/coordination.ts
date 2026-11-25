@@ -2,8 +2,9 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { randomUUID } from 'node:crypto'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { SessionPromptRequest } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { SessionPromptRequest, SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { Remote, RemoteError, TypertRemoteService, type Principal } from '@deepseek-ai/dsh-typert-protocol'
@@ -192,7 +193,7 @@ export class ActivityCoordinationService extends TypertRemoteService {
   }
 
   /**
-   * Recover responsibility histories whose Activity, Workspace, and target Session are still readable.
+   * Recover responsibility histories whose Activity, source Session, Workspace, and target Session are readable.
    * @param request - saved Activity identity.
    * @returns histories in append order without exposing references the caller cannot read.
    */
@@ -200,9 +201,7 @@ export class ActivityCoordinationService extends TypertRemoteService {
   responsibilities(request: { readonly activityId: ActivityId }): ActivityCoordinationResponsibilityList {
     return { items: this.ctx.homeActivityResponsibilities.list(request.activityId)
       .filter((history) => {
-        const target = history.proposal.proposal.target
-        return this.ctx.remoteAccess.allows({ kind: 'workspace', id: target.workspaceId })
-          && this.ctx.remoteAccess.allows({ kind: 'session', id: target.sessionId })
+        return this.canReadHistory(history)
       }) }
   }
 
@@ -264,7 +263,7 @@ export class ActivityCoordinationService extends TypertRemoteService {
   /**
    * Recover append-only histories for an Activity without waking target Sessions.
    * @param request - Activity identity and responsibility identity.
-   * @returns the history when the caller can read both its Workspace and target Session.
+   * @returns the history when the caller can read its source and target Sessions and Workspace.
    */
   @Remote({ resources: { activity: request => request.activityId } })
   responsibility(request: {
@@ -272,18 +271,17 @@ export class ActivityCoordinationService extends TypertRemoteService {
     readonly responsibilityId: ActivityResponsibilityId
   }): ActivityResponsibilityHistory {
     const history = this.ctx.homeActivityResponsibilities.get(request.activityId, request.responsibilityId)
-    if (history === undefined
-      || !this.ctx.remoteAccess.allows({ kind: 'workspace', id: history.proposal.proposal.target.workspaceId })
-      || !this.ctx.remoteAccess.allows({ kind: 'session', id: history.proposal.proposal.target.sessionId })) {
+    if (history === undefined || !this.canReadHistory(history)) {
       throw responsibilityUnavailable(request.activityId)
     }
     return history
   }
 
   /**
-   * Bind the displayed immutable proposal to an authenticated user confirmation, then send it through the native Session prompt route.
+   * Bind the displayed proposal to an authenticated user confirmation, then send it through the native `session/prompt` route.
+   * Persist a Host-generated request identity before delivery for safe retry handling and later report correlation.
    * The nested Gateway call rechecks the caller's actual `session/prompt` grant for the exact target.
-   * @param request - proposal echo, authenticated confirmation id, and native prompt request id.
+   * @param request - exact proposal echo and authenticated confirmation id.
    * @param signal - cancellation for target validation and prompt admission.
    * @returns confirmed admission, known non-admission, or an explicitly uncertain result with recovered history.
    */
@@ -306,9 +304,8 @@ export class ActivityCoordinationService extends TypertRemoteService {
   ): Promise<ActivityCoordinationDispatchResult> {
     const responsibilityId = request.responsibilityId
     const proposalFactId = request.proposalFactId
-    const promptRequestId = activityResponsibilityRequestId(request.promptRequestId)
     const historyBefore = this.ctx.homeActivityResponsibilities.get(request.activityId, responsibilityId)
-    if (historyBefore === undefined || historyBefore.proposal.id !== proposalFactId
+    if (historyBefore === undefined || !this.canReadHistory(historyBefore) || historyBefore.proposal.id !== proposalFactId
       || !sameProposal(historyBefore.proposal.proposal, request.proposal)) {
       throw responsibilityUnavailable(request.activityId)
     }
@@ -339,27 +336,28 @@ export class ActivityCoordinationService extends TypertRemoteService {
       const history = this.ctx.homeActivityResponsibilities.get(request.activityId, responsibilityId)
       if (history === undefined) throw responsibilityUnavailable(request.activityId)
       const settled = history.facts.find(fact => fact.kind === 'dispatch-settled')
-      if (priorAttempt.promptRequestId !== promptRequestId || settled === undefined) {
-        return { outcome: 'uncertain', promptRequestId: request.promptRequestId, recorded: true, diagnostic: 'delivery-uncertain', history }
+      if (settled === undefined) {
+        return { outcome: 'uncertain', promptRequestId: priorAttempt.promptRequestId, recorded: true, diagnostic: 'delivery-uncertain', history }
       }
       return {
         outcome: settled.outcome,
-        promptRequestId: request.promptRequestId,
+        promptRequestId: priorAttempt.promptRequestId,
         recorded: true,
         ...(settled.outcome === 'uncertain' ? { diagnostic: 'delivery-uncertain' as const } : {}),
         history,
       }
     }
 
+    const promptRequestId = brandString<SessionRequestId>(randomUUID())
     await this.ctx.homeActivityResponsibilities.beginDispatch({
       activityId: request.activityId,
       responsibilityId,
-      promptRequestId,
+      promptRequestId: activityResponsibilityRequestId(promptRequestId),
     })
     const activity = this.ctx.homeActivities.get(request.activityId)
     if (activity === undefined) throw contextInvalid(request.activityId, 'activity-unavailable')
     const prompt: SessionPromptRequest = {
-      requestId: request.promptRequestId,
+      requestId: promptRequestId,
       sessionId: target.sessionId,
       mode: 'queue',
       content: [{ type: 'text', text: assignmentPrompt(activity, request.proposal) }],
@@ -392,7 +390,7 @@ export class ActivityCoordinationService extends TypertRemoteService {
       await this.ctx.homeActivityResponsibilities.settleDispatch({
         activityId: request.activityId,
         responsibilityId,
-        promptRequestId,
+        promptRequestId: activityResponsibilityRequestId(promptRequestId),
         outcome,
         ...(outcome === 'uncertain' ? { diagnostic: 'delivery outcome could not be confirmed' } : {}),
       })
@@ -404,7 +402,7 @@ export class ActivityCoordinationService extends TypertRemoteService {
     if (history === undefined) throw responsibilityUnavailable(request.activityId)
     return {
       outcome,
-      promptRequestId: request.promptRequestId,
+      promptRequestId,
       recorded,
       ...(recorded ? {} : { diagnostic: 'history-unconfirmed' as const }),
       ...(recorded && diagnostic !== undefined ? { diagnostic } : {}),
@@ -621,10 +619,20 @@ export class ActivityCoordinationService extends TypertRemoteService {
   }): ActivityResponsibilityHistory {
     const history = this.ctx.homeActivityResponsibilities.get(request.activityId, request.responsibilityId)
     const target = history?.proposal.proposal.target
-    if (history === undefined || target?.workspaceId !== request.workspaceId || target.sessionId !== request.sessionId) {
+    if (history === undefined || target?.workspaceId !== request.workspaceId || target.sessionId !== request.sessionId
+      || !this.canReadHistory(history)) {
       throw responsibilityUnavailable(request.activityId)
     }
     return history
+  }
+
+  /** Require access to every Session and Workspace whose identity appears in a returned history. */
+  private canReadHistory(history: ActivityResponsibilityHistory): boolean {
+    const target = history.proposal.proposal.target
+    const sourceSessionId = history.proposal.source.sessionId
+    return this.ctx.remoteAccess.allows({ kind: 'session', id: sourceSessionId })
+      && this.ctx.remoteAccess.allows({ kind: 'workspace', id: target.workspaceId })
+      && this.ctx.remoteAccess.allows({ kind: 'session', id: target.sessionId })
   }
 }
 

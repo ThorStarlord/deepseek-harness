@@ -1858,7 +1858,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote({ resources: { activity: request => request.activityId } }) responsibilities(request: { readonly activityId: ActivityId }): ActivityCoordinationResponsibilityList',
-        description: 'Recover responsibility histories whose Activity, Workspace, and target Session are still readable.',
+        description: 'Recover responsibility histories whose Activity, source Session, Workspace, and target Session are readable.',
         parameters: [{ name: 'request', description: 'saved Activity identity.' }],
         returns: 'histories in append order without exposing references the caller cannot read.',
       },
@@ -1869,25 +1869,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the append-only proposal fact and stable responsibility identity.',
       },
       {
-        signature: '@Remote({ resources: { activity: request => request.activityId } }) responsibility(request: { readonly activityId: ActivityId; readonly responsibilityId: ActivityResponsibilityId }): ActivityResponsibilityHistory',
+        signature: '@Remote({ resources: { activity: request => request.activityId } }) responsibility(request: { readonly activityId: ActivityId readonly responsibilityId: ActivityResponsibilityId }): ActivityResponsibilityHistory',
         description: 'Recover append-only histories for an Activity without waking target Sessions.',
         parameters: [{ name: 'request', description: 'Activity identity and responsibility identity.' }],
-        returns: 'the history when the caller can read both its Workspace and target Session.',
+        returns: 'the history when the caller can read its source and target Sessions and Workspace.',
       },
       {
         signature: '@Remote({ resources: { activity: request => request.activityId, workspace: request => request.proposal.target.workspaceId, session: request => request.proposal.target.sessionId, } }) async dispatchConfirmed( request: ActivityCoordinationDispatchRequest, signal: AbortSignal, ): Promise<ActivityCoordinationDispatchResult>',
-        description: 'Bind the displayed immutable proposal to an authenticated user confirmation, then send it through the native Session prompt route. The nested Gateway call rechecks the caller\'s actual `session/prompt` grant for the exact target.',
-        parameters: [{ name: 'request', description: 'proposal echo, authenticated confirmation id, and native prompt request id.' }, { name: 'signal', description: 'cancellation for target validation and prompt admission.' }],
+        description: 'Bind the displayed proposal to an authenticated user confirmation, then send it through the native `session/prompt` route. Persist a Host-generated request identity before delivery for safe retry handling and later report correlation. The nested Gateway call rechecks the caller\'s actual `session/prompt` grant for the exact target.',
+        parameters: [{ name: 'request', description: 'exact proposal echo and authenticated confirmation id.' }, { name: 'signal', description: 'cancellation for target validation and prompt admission.' }],
         returns: 'confirmed admission, known non-admission, or an explicitly uncertain result with recovered history.',
       },
       {
-        signature: '@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async observeResponsibility( request: { readonly activityId: ActivityId; readonly responsibilityId: ActivityResponsibilityId; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityResponsibilityHistory>',
+        signature: '@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async observeResponsibility( request: { readonly activityId: ActivityId readonly responsibilityId: ActivityResponsibilityId readonly workspaceId: WorkspaceId readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityResponsibilityHistory>',
         description: 'Read current target state and append a source-attributed observation; it does not resume the target.',
         parameters: [{ name: 'request', description: 'Activity responsibility and exact Workspace/Session target.' }, { name: 'signal', description: 'cancellation for passive reads.' }],
         returns: 'the new observation and complete responsibility history.',
       },
       {
-        signature: '@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async reconcileResponsibility( request: { readonly activityId: ActivityId; readonly responsibilityId: ActivityResponsibilityId; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityCoordinationReconcileResult>',
+        signature: '@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async reconcileResponsibility( request: { readonly activityId: ActivityId readonly responsibilityId: ActivityResponsibilityId readonly workspaceId: WorkspaceId readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityCoordinationReconcileResult>',
         description: 'Reconcile one responsibility against its exact target request id using only passive Session reads.',
         parameters: [{ name: 'request', description: 'Activity, responsibility, and exact Workspace/Session identity.' }, { name: 'signal', description: 'cancellation of the state and history reads.' }],
         returns: 'current execution state plus a report only when its matching target turn completed.',
@@ -5901,7 +5901,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ActivityCoordinationDispatchRequest',
-    declaration: 'export interface ActivityCoordinationDispatchRequest {\n    readonly activityId: ActivityId;\n    readonly responsibilityId: ActivityResponsibilityId;\n    readonly proposalFactId: ActivityResponsibilityFactId;\n    readonly proposal: ActivityResponsibilityProposal;\n    readonly confirmationRequestId: ActivityResponsibilityRequestId;\n    readonly promptRequestId: SessionRequestId;\n}',
+    declaration: 'export interface ActivityCoordinationDispatchRequest {\n    readonly activityId: ActivityId;\n    readonly responsibilityId: ActivityResponsibilityId;\n    readonly proposalFactId: ActivityResponsibilityFactId;\n    readonly proposal: ActivityResponsibilityProposal;\n    readonly confirmationRequestId: ActivityResponsibilityRequestId;\n}',
   },
   {
     name: 'ActivityCoordinationDispatchResult',

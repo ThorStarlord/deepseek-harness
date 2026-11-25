@@ -326,7 +326,7 @@ describe('Activity coordination discovery', () => {
     expect(payload.snapshots[0]?.recentMessages[0]?.truncated).toBe(true)
   })
 
-  it('preserves provider provenance when serializing a selected snapshot', () => {
+  it('preserves provider attribution when serializing a selected snapshot', () => {
     const attributed = {
       ...snapshotA,
       recentMessages: [{
@@ -433,7 +433,6 @@ describe('Activity coordination discovery', () => {
       proposalFactId,
       proposal: proposalFact.proposal,
       confirmationRequestId: expect.any(String),
-      promptRequestId: expect.any(String),
     }), expect.any(AbortSignal))
     expect(harness.subject.state.getSnapshot().dispatchResult?.outcome).toBe('accepted')
   })

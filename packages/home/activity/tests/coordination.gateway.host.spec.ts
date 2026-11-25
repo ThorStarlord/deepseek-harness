@@ -6,7 +6,7 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import TypertGatewayService from '@deepseek-ai/dsh-api-gateway'
 import RemoteAccessService, { type RemoteAccessRole } from '@deepseek-ai/dsh-api-remote-access'
-import type { SessionPromptRequest, SessionPromptValue, SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { SessionPromptRequest, SessionPromptValue } from '@deepseek-ai/dsh-api-session-controller/types'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -91,7 +91,6 @@ it('preserves the authenticated Peer, exact confirmation, and single native prom
     proposalFactId: proposal.id,
     proposal: proposal.proposal,
     confirmationRequestId: activityResponsibilityRequestId('00000000-0000-4000-8000-000000000502'),
-    promptRequestId: brandString<SessionRequestId>('00000000-0000-4000-8000-000000000503'),
   }
   const activityRole: RemoteAccessRole<'activity'> = {
     name: 'test:activity-coordinator',
@@ -125,35 +124,64 @@ it('preserves the authenticated Peer, exact confirmation, and single native prom
   })
   expect(accepted).toMatchObject({
     outcome: 'accepted',
-    promptRequestId: request.promptRequestId,
+    promptRequestId: expect.any(String),
     recorded: true,
     history: {
       facts: [
         { kind: 'proposed' },
         { kind: 'confirmed', actor: { kind: 'authenticated-user', principal: { kind: 'owner' } } },
-        { kind: 'dispatch-attempted', promptRequestId: request.promptRequestId },
+        { kind: 'dispatch-attempted', promptRequestId: expect.any(String) },
         { kind: 'dispatch-settled', outcome: 'accepted' },
       ],
     },
   })
   const route = promptRoute(ctx)
   expect(route.prompts).toHaveLength(1)
+  const promptRequestId = route.prompts[0]?.requestId
+  if (promptRequestId === undefined) throw new Error('The confirmed dispatch did not reach the native Session prompt route.')
+  const history = ctx.homeActivityResponsibilities.get(activity.id, proposal.responsibilityId)
   expect(route.prompts[0]).toMatchObject({
-    requestId: request.promptRequestId,
+    requestId: promptRequestId,
     sessionId: targetSessionId,
     mode: 'queue',
     content: [{ type: 'text', text: expect.stringContaining(request.proposal.task) }],
   })
   expect(route.peers[0]).toBe(peer)
   expect(route.peers[0]?.principal).toEqual({ kind: 'owner' })
+  expect(history?.facts.find(fact => fact.kind === 'dispatch-attempted')?.promptRequestId).toBe(promptRequestId)
+  expect(accepted).toMatchObject({ promptRequestId })
 
   await expect(ctx.typertGateway.invoke({
     peer,
     namespace: 'homeActivityCoordination',
     method: 'dispatchConfirmed',
     args: { request },
-  })).resolves.toMatchObject({ outcome: 'accepted', recorded: true })
+  })).resolves.toMatchObject({ outcome: 'accepted', promptRequestId, recorded: true })
   expect(route.prompts).toHaveLength(1)
+
+  const secondProposal = await ctx.homeActivityResponsibilities.createProposal({
+    ...proposalRequest,
+    activityId: activity.id,
+    requestId: activityResponsibilityRequestId('00000000-0000-4000-8000-000000000504'),
+    task: 'Review a separate bounded parser question.',
+  })
+  const secondRequest = Object.assign({
+    activityId: activity.id,
+    responsibilityId: secondProposal.responsibilityId,
+    proposalFactId: secondProposal.id,
+    proposal: secondProposal.proposal,
+    confirmationRequestId: activityResponsibilityRequestId('00000000-0000-4000-8000-000000000505'),
+  }, { promptRequestId })
+  await expect(ctx.typertGateway.invoke({
+    peer,
+    namespace: 'homeActivityCoordination',
+    method: 'dispatchConfirmed',
+    args: { request: secondRequest },
+  })).resolves.toMatchObject({ outcome: 'accepted', recorded: true })
+  const secondPromptRequestId = route.prompts[1]?.requestId
+  if (secondPromptRequestId === undefined) throw new Error('The separate responsibility did not reach the native Session prompt route.')
+  expect(secondPromptRequestId).not.toBe(promptRequestId)
+  expect(route.prompts).toHaveLength(2)
 })
 
 it('denies unselected resources before Host inspection and rejects a non-owner even when its grants would permit dispatch', async () => {
@@ -177,7 +205,6 @@ it('denies unselected resources before Host inspection and rejects a non-owner e
     proposalFactId: proposal.id,
     proposal: proposal.proposal,
     confirmationRequestId: activityResponsibilityRequestId('00000000-0000-4000-8000-000000000602'),
-    promptRequestId: brandString<SessionRequestId>('00000000-0000-4000-8000-000000000603'),
   }
   const activityRole: RemoteAccessRole<'activity'> = { name: 'test:activity', resource: 'activity', actions: [dispatchAction] }
   const workspaceRole: RemoteAccessRole<'workspace'> = { name: 'test:workspace', resource: 'workspace', actions: [dispatchAction] }
@@ -186,6 +213,7 @@ it('denies unselected resources before Host inspection and rejects a non-owner e
     bindings: principal => principal.id === guest.id ? [
       { role: activityRole, resource: { kind: 'activity', id: activity.id } },
       { role: workspaceRole, resource: { kind: 'workspace', id: workspaceId } },
+      { role: sessionRole, resource: { kind: 'session', id: coordinatorSessionId } },
       { role: sessionRole, resource: { kind: 'session', id: targetSessionId } },
     ] : [],
   })
