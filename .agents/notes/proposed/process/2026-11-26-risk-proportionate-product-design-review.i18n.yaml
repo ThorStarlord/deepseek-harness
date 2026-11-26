@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for 2026-11-26-risk-proportionate-product-design-review.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/process/2026-11-26-risk-proportionate-product-design-review.md
+/agent-note-risk-proportionate-product-design-review:
+  en: b6a5b726c353800b
+  zh: 6c419b14f7d52a77
+/agent-note-risk-proportionate-product-design-review/problem:
+  en: 594d7fbe04abe2fb
+  zh: 3ec72a49da0bbb8b
+/agent-note-risk-proportionate-product-design-review/proposal:
+  en: b0eaa18fe6b17bce
+  zh: 54af810ee818273a
+/agent-note-risk-proportionate-product-design-review/alternatives-considered:
+  en: c0eee59e11a3914e
+  zh: 7dc1f19517a36eb9
+/agent-note-risk-proportionate-product-design-review/acceptance-criteria:
+  en: 92e90ba888996bad
+  zh: a9ac2c115dcc4fb5
+/agent-note-risk-proportionate-product-design-review/risks:
+  en: 571594ecb85d0cc5
+  zh: e37f00083d7e7adc
