@@ -4,6 +4,8 @@
 
 本文定义逻辑会话语料库的查询词汇；当 live 数据存在时，该语料库优先使用 live 数据。[Service Definition 包](../../packages/session-query/session-query)负责精确读取、来源优先级、关系追踪、语义提取，以及与提供方无关的过滤器；[SQLite 提供方](../../packages/session-query/session-query-sqlite)负责具体全文索引的生命周期。
 
+prepared 冷观察会在逻辑事件转录中保留合成的中断轮次闭合事件，但其 `persistedCursor` 和投影基线停在最后一条已存事件。实时观察省略 `persistedCursor`，因为最新事件不保证已持久化。
+
 源码：[`packages/session-query/session-query/src/types.ts`](../../packages/session-query/session-query/src/types.ts)
 
 ## 逻辑记录
