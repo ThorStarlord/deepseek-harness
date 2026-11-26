@@ -135,4 +135,6 @@ gh pr view <number> --json mergeable,mergeStateStatus
 
 GitHub creates no `pull_request` workflow runs while a PR is `CONFLICTING`/`DIRTY`, so the absent signal is the conflict, not infrastructure. Resolving the conflict is the only fix; empty commits, `--allow-empty` pushes, draft/ready toggles, and revert-and-restore bounces all leave `total_count` at zero and add junk history. Confirm the conflicting paths with `git merge-tree --write-tree HEAD origin/<base>` when the branch cannot be merged locally yet.
 
+For an open personal-fork PR with no reported hosted runs, inspect the exact head, PR mergeability, workflow triggers, and repository Actions state before attributing the absence. If no run exists and its cause remains unknown, report hosted CI as unavailable or unexplained, never as passing. Run the relevant required CI gates locally against the exact PR tree when the host cannot supply them; preserve CI's thresholds and platform-specific obligations, and report local results separately from hosted results. Compare a failure with canonical master under equivalent tooling before attributing it to the PR. Do not change repository settings or weaken a gate to create a passing signal.
+
 For `gh stack sync`, use the post-sync validation sequence instead of pretending the ordinary order was possible.

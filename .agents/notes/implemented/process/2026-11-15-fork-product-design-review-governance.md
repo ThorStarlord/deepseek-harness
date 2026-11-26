@@ -10,6 +10,8 @@ This public personal fork inherits a UI skill whose review trigger and inspectio
 
 ## Decision
 
+This note preserves the case-by-case independent-human-review process adopted for this fork. The proposed replacement is recorded in the [risk-proportionate product/design review proposal](../../proposed/process/2026-11-26-risk-proportionate-product-design-review.md); the requirements below record the earlier policy and its rationale.
+
 The repository requires independent human product/design review for extensive UI work and clearly user-perceivable interaction changes. Except for the scoped Stage 1 alternative in [the risk-proportionate review decision](2026-11-15-stage1-risk-proportionate-product-review.md), the owner designates a qualified reviewer for each qualifying pull request. Reviewers may come from outside the upstream roster and need not be repository collaborators. Review effort follows the existing UI workflow and [reviewing-ui-design cookbook](../../../../docs/cookbook/reviewing-ui-design.md) and scales with the change's impact and risk.
 
 A reviewer has relevant product or design responsibility or demonstrable experience evaluating comparable interactions, did not author or materially implement the change, and makes an independent assessment. The pull request records the reviewer's identity, concise qualification basis, any relationship that could affect independence, reviewed commit SHA, inspected interaction and evidence, findings, date, and final disposition. A formal GitHub review or top-level pull-request comment is accepted. When neither channel is available, the pull request links the original, verifiable review record and identifies its reviewer.

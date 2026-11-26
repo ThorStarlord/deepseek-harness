@@ -10,6 +10,8 @@ Status: implemented
 
 ## 决策
 
+本说明保留了本 fork 采用的逐项指定独立人工评审流程。拟议的替代流程记录在[风险比例化产品/设计评审提案](../../proposed/process/2026-11-26-risk-proportionate-product-design-review.zh.md)中；下文记录较早的政策及其理由。
+
 仓库要求对大型 UI 变更和用户可明显感知的交互变更进行独立的人工产品/设计评审。除[Stage 1 风险比例评审决策](2026-11-15-stage1-risk-proportionate-product-review.zh.md)中规定的范围有限的替代方式外，所有者为每个符合条件的 pull request 指定合格评审者。评审者可以来自上游名单之外，也无需成为仓库协作者。评审投入遵循现有 UI 工作流程和[评审 UI 设计指南](../../../../docs/cookbook/reviewing-ui-design.zh.md)，并按变更的影响和风险调整。
 
 评审者应承担相关产品或设计职责，或能证明其具有评估类似交互的经验；不得是该变更的作者或主要实现者，并应独立作出评估。Pull request 应记录评审者身份、简要的资格依据、可能影响独立性的关系、所评审的 commit SHA、检查过的交互和证据、发现、日期及最终结论。可接受正式 GitHub 评审或 pull request 顶层评论。如果这两种渠道都不可用，pull request 应链接到原始且可核实的评审记录，并注明评审者身份。
