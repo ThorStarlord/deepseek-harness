@@ -10,6 +10,8 @@ English | [中文](README.zh.md)
 
 Contributors can link Issues as context without coupling pull-request validation to Project availability. Resolving references additionally enforce Project Priority. The required `Issue policy` job and the separate lifecycle workflow use trusted default-branch code.
 
+The Project-backed workflows are configured for `deepseek-harness/deepseek-harness` and its organization Project App. They skip in forks, which do not have that installation or Project configuration. A fork that needs equivalent automation must configure its own policy and authorization separately.
+
 ## Table of Contents
 
 - [Pull-request policy](#pull-request-policy)
