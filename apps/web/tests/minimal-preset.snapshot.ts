@@ -137,6 +137,7 @@ describe('minimal agent preset', () => {
         "prompt": "You are a helpful software engineer assistant.",
         "tools": [
           "bash",
+          "coordinate_repositories",
           "read_image",
           "working_directory",
         ],
@@ -392,7 +393,7 @@ describe('minimal image reading', () => {
 
   it('logs a durable image with the minimal tool roster', async () => {
     const session = handle.agent.session
-    expect(session.requestHeader()?.tools?.map(tool => tool.name)).toEqual(['bash', 'read_image', 'working_directory'])
+    expect(session.requestHeader()?.tools?.map(tool => tool.name)).toEqual(['bash', 'coordinate_repositories', 'read_image', 'working_directory'])
     const result = session.snapshotEvents().find(event => event.type === 'tool/result')
     expect(result?.data.message.isError).toBe(false)
     expect(result?.data.meta).toEqual({ path: join(scaffold.workspaceCwd, 'red.png') })

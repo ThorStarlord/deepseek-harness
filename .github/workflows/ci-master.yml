@@ -235,6 +235,7 @@ jobs:
           path: |
             apps/web/tests/minimal-preset.snapshot.ts
             snapshots/web/minimal-preset/**
+            snapshots/web/minimal-read-image/**
             apps/web/tests/code-language.snapshot.ts
             snapshots/web/code-language/**
             snapshots/web/fresh-round-trip/**
