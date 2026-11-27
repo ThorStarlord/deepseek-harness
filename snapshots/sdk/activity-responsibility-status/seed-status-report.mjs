@@ -12,7 +12,6 @@ const PROMPT_REQUEST_ID = '15000000-0000-4000-8000-000000000005'
 const SETTLEMENT_ID = '15000000-0000-4000-8000-000000000006'
 const WORKSPACE_ID = '15000000-0000-4000-8000-000000000007'
 const COORDINATOR_SESSION_ID = 'activity-status-coordinator'
-const TARGET_SESSION_ID = 'fixture-root-session'
 const RECORDED_AT = '2026-11-24T12:00:00.000Z'
 
 export async function apply(ctx) {
@@ -30,70 +29,70 @@ export async function apply(ctx) {
     createdAt: RECORDED_AT,
   })
 
-  const proposal = {
-    target: { workspaceId: WORKSPACE_ID, sessionId: TARGET_SESSION_ID },
-    task: 'Inspect the selected fixture and report the current progress.',
-    inScope: ['Read the selected fixture.'],
-    outOfScope: ['Do not change files or claim verification.'],
-    expectedOutcome: 'One attributed progress update.',
-    prerequisites: [],
-    conflictingWork: [],
-  }
-  const facts = responsibilities.table('facts')
-  await facts.put(PROPOSAL_ID, {
-    id: PROPOSAL_ID,
-    responsibilityId: RESPONSIBILITY_ID,
-    activityId: ACTIVITY_ID,
-    revision: 1,
-    requestId: PROPOSAL_ID,
-    recordedAt: RECORDED_AT,
-    kind: 'proposed',
-    proposal,
-    source: { kind: 'coordinating-session', sessionId: COORDINATOR_SESSION_ID, eventSeq: 9 },
-  })
-  await facts.put(CONFIRMATION_ID, {
-    id: CONFIRMATION_ID,
-    responsibilityId: RESPONSIBILITY_ID,
-    activityId: ACTIVITY_ID,
-    revision: 2,
-    previousFactId: PROPOSAL_ID,
-    requestId: CONFIRMATION_ID,
-    recordedAt: RECORDED_AT,
-    kind: 'confirmed',
-    proposalFactId: PROPOSAL_ID,
-    proposal,
-    actor: { kind: 'authenticated-user', principal: { kind: 'owner' } },
-  })
-  await facts.put(PROMPT_REQUEST_ID, {
-    id: PROMPT_REQUEST_ID,
-    responsibilityId: RESPONSIBILITY_ID,
-    activityId: ACTIVITY_ID,
-    revision: 3,
-    previousFactId: CONFIRMATION_ID,
-    requestId: PROMPT_REQUEST_ID,
-    recordedAt: RECORDED_AT,
-    kind: 'dispatch-attempted',
-    promptRequestId: PROMPT_REQUEST_ID,
-    targetSessionId: TARGET_SESSION_ID,
-    source: 'session-controller.prompt',
-  })
-  await facts.put(SETTLEMENT_ID, {
-    id: SETTLEMENT_ID,
-    responsibilityId: RESPONSIBILITY_ID,
-    activityId: ACTIVITY_ID,
-    revision: 4,
-    previousFactId: PROMPT_REQUEST_ID,
-    requestId: SETTLEMENT_ID,
-    recordedAt: RECORDED_AT,
-    kind: 'dispatch-settled',
-    promptRequestId: PROMPT_REQUEST_ID,
-    targetSessionId: TARGET_SESSION_ID,
-    outcome: 'accepted',
-    source: 'session-controller.prompt',
-  })
-
-  ctx.on('agent/created', ({ agent }) => {
-    if (String(agent.session.id) !== TARGET_SESSION_ID) return
+  ctx.on('agent/created', async ({ agent }) => {
+    if (agent.id !== agent.session.id) return
+    const targetSessionId = agent.session.id
+    const proposal = {
+      target: { workspaceId: WORKSPACE_ID, sessionId: targetSessionId },
+      task: 'Inspect the selected fixture and report the current progress.',
+      inScope: ['Read the selected fixture.'],
+      outOfScope: ['Do not change files or claim verification.'],
+      expectedOutcome: 'One attributed progress update.',
+      prerequisites: [],
+      conflictingWork: [],
+    }
+    const facts = responsibilities.table('facts')
+    await facts.put(PROPOSAL_ID, {
+      id: PROPOSAL_ID,
+      responsibilityId: RESPONSIBILITY_ID,
+      activityId: ACTIVITY_ID,
+      revision: 1,
+      requestId: PROPOSAL_ID,
+      recordedAt: RECORDED_AT,
+      kind: 'proposed',
+      proposal,
+      source: { kind: 'coordinating-session', sessionId: COORDINATOR_SESSION_ID, eventSeq: 9 },
+    })
+    await facts.put(CONFIRMATION_ID, {
+      id: CONFIRMATION_ID,
+      responsibilityId: RESPONSIBILITY_ID,
+      activityId: ACTIVITY_ID,
+      revision: 2,
+      previousFactId: PROPOSAL_ID,
+      requestId: CONFIRMATION_ID,
+      recordedAt: RECORDED_AT,
+      kind: 'confirmed',
+      proposalFactId: PROPOSAL_ID,
+      proposal,
+      actor: { kind: 'authenticated-user', principal: { kind: 'owner' } },
+    })
+    await facts.put(PROMPT_REQUEST_ID, {
+      id: PROMPT_REQUEST_ID,
+      responsibilityId: RESPONSIBILITY_ID,
+      activityId: ACTIVITY_ID,
+      revision: 3,
+      previousFactId: CONFIRMATION_ID,
+      requestId: PROMPT_REQUEST_ID,
+      recordedAt: RECORDED_AT,
+      kind: 'dispatch-attempted',
+      promptRequestId: PROMPT_REQUEST_ID,
+      targetSessionId,
+      source: 'session-controller.prompt',
+    })
+    await facts.put(SETTLEMENT_ID, {
+      id: SETTLEMENT_ID,
+      responsibilityId: RESPONSIBILITY_ID,
+      activityId: ACTIVITY_ID,
+      revision: 4,
+      previousFactId: PROMPT_REQUEST_ID,
+      requestId: SETTLEMENT_ID,
+      recordedAt: RECORDED_AT,
+      kind: 'dispatch-settled',
+      promptRequestId: PROMPT_REQUEST_ID,
+      targetSessionId,
+      outcome: 'accepted',
+      source: 'session-controller.prompt',
+    })
     agent.session.append('user/message', {
       id: randomUUID(),
       role: 'user',
