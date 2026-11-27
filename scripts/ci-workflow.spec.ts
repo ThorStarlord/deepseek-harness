@@ -277,6 +277,17 @@ describe('CI workflow', () => {
     })
   })
 
+  it('builds profile artifacts before Linux coverage process tests', () => {
+    const job = workflowJob(loadWorkflow('.github/workflows/ci.yml'), 'node-24-coverage')
+    if (!Array.isArray(job.steps)) throw new TypeError('node-24-coverage must define steps')
+    const steps = job.steps.filter(isRecord)
+    const artifacts = steps.findIndex(step => step.run === 'pnpm run build:artifacts')
+    const coverage = steps.findIndex(step => step.run === 'pnpm run check:ci:coverage')
+
+    expect(artifacts).toBeGreaterThanOrEqual(0)
+    expect(coverage).toBeGreaterThan(artifacts)
+  })
+
   it('isolates every pnpm action setup destination per runner', () => {
     const files = ['.github/workflows/ci.yml', '.github/workflows/ci-windows.yml', '.github/workflows/ci-master.yml']
     const setups: Array<{ jobName: string; step: unknown }> = []

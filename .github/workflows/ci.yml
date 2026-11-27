@@ -21,8 +21,8 @@ concurrency:
 jobs:
 
   # Four required Linux jobs isolate coverage, static analysis, and the
-  # build-backed consumer tail. The consumer job owns the only Linux build so
-  # all four jobs enter runner allocation independently.
+  # build-backed consumer tail. Coverage builds artifacts for process tests;
+  # the consumer job builds independently for artifact consumers.
   #
   # FAILOVER (Linux): each Linux enterprise job resolves its pool through the
   # DSH_CI_FAILOVER_LINUX repository variable. Unset (normal), upstream uses
@@ -194,6 +194,9 @@ jobs:
           wait "$sandbox_pid" || sandbox_status=$?
           if (( install_status != 0 )); then exit "$install_status"; fi
           exit "$sandbox_status"
+
+      - name: Build artifacts for profile process tests
+        run: pnpm run build:artifacts
 
       - name: Run exhaustive coverage
         run: pnpm run check:ci:coverage
