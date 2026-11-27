@@ -9,9 +9,15 @@ interface Exception {
 
 /** Intentional product differences; obsolete entries fail alongside undeclared differences. */
 export const toolParityExceptions: Record<ToolMode, readonly Exception[]> = {
-  standard: [{ tool: 'list_subagent_models', side: 'desktop',
-    reason: 'Desktop enables subagent model discovery; SDK delegation inherits the caller model by default.' }],
+  standard: [
+    { tool: 'coordinate_repositories', side: 'desktop',
+      reason: 'The Web bundle loads read-only multi-repository coordination through its Host Workspace registry and native subagent provider; the SDK default composition does not load the Web bundle.' },
+    { tool: 'list_subagent_models', side: 'desktop',
+      reason: 'Desktop enables subagent model discovery; SDK delegation inherits the caller model by default.' },
+  ],
   ptc: [
+    { tool: 'coordinate_repositories', side: 'desktop',
+      reason: 'The Web bundle loads read-only multi-repository coordination through its Host Workspace registry and native subagent provider; the SDK default composition does not load the Web bundle.' },
     { tool: 'list_subagent_models', side: 'desktop',
       reason: 'Desktop enables subagent model discovery; SDK delegation inherits the caller model by default.' },
     { tool: 'plugin_manager', side: 'sdk',
