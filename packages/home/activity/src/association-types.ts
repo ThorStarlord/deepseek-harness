@@ -1,7 +1,7 @@
 /** Persisted association vocabulary for Home Activities. @module @deepseek-ai/dsh-home-activity/association-types */
 
-import type { ActivityId } from './types.ts'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { ActivityId } from './activity-types.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
 /** Separately user-authored references from an Activity to existing contexts. */

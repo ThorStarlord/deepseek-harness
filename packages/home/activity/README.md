@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Save named Activities with objectives and descriptive scope beyond their Sessions. The Web and SDK `/activity` command reopens them across Sessions and records selected Workspace and Session links, annotations, delegations, reports, handoffs, and reviews. An explicit `/activity assess` can save an advisory strategic brief for later Sessions. Creating or opening an Activity never starts work, activates a Goal, or grants permissions; external handoffs do not become native execution records.
+Save named Activities with objectives and descriptive scope beyond their Sessions. The Web and SDK `/activity` command reopens them across Sessions and records selected Workspace and Session links, annotations, delegations, reports, handoffs, reviews, and append-only responsibility facts. An explicit `/activity assess` can save an advisory strategic brief for later Sessions. Creating or opening an Activity never starts work, activates a Goal, or grants permissions; external handoffs do not become native execution records.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Save named Activities with objectives and descriptive scope beyond their Session
 <a id="use-this-package"></a>
 ## Use this package
 
-The Web and SDK profiles mount this service with the JSON StorageDomain provider, association and annotation services, and the human `/activity` command. A composition that enables delegation also mounts the delegation service, subagent service, and a supported DSH-native provider.
+The Web and SDK profiles mount this service with the JSON StorageDomain provider, association and annotation services, and the human `/activity` command. A composition that records responsibility histories also mounts `@deepseek-ai/dsh-home-activity/responsibilities`. Authenticated coordination routes are a separate consumer and record the local owner identity for confirmations without persisting unrelated Peer metadata.
 
 ### When to choose it
 
@@ -48,9 +48,12 @@ The service declares no configuration fields. A custom composition supplies the 
 - name: '@deepseek-ai/dsh-home-activity/annotations'
 - name: '@deepseek-ai/dsh-home-activity/strategic-episodes'
 - name: '@deepseek-ai/dsh-home-activity/handoffs'
+- name: '@deepseek-ai/dsh-home-activity/responsibilities'
 ```
 
 The storage providers own their settings; see the [JSON backend](../../storage/storage-json/README.md) and [StorageDomain](../../storage/storage-domain/README.md) references.
+
+The optional Host `@deepseek-ai/dsh-home-activity/coordination` service exposes authenticated Client routes for bounded discovery and responsibility supervision. It rechecks Activity associations, Workspace membership, root Session identity, matching repository paths, and current access on each read or dispatch. Responsibility histories are returned only when the caller can read the source coordinator Session, target Session, and Workspace; Activity links alone grant no access. Discovery is passive. Responsibility records do not authorize access, and only an authenticated owner confirmation can dispatch the saved proposal through the target Session's native prompt route. See the [coordination UI](../../client/ui-activity-coordination/README.md) for the user interaction and its evidence limits.
 
 A composition that enables delegation also mounts `@deepseek-ai/dsh-home-activity/delegations`, `@deepseek-ai/dsh-subagent`, and a provider supported by the command. The Web profile includes the `spawn` provider; `codex` and `claude-code` are available when their optional native providers are enabled.
 
@@ -69,6 +72,8 @@ User corrections use a separate version-1 `home_activity_annotations` domain. Ea
 Strategic briefs use a separate append-only version-1 `home_activity_strategic_episodes` domain. A record retains the Activity objective, originating DSH Session, explicit Workspace ids, agent-authored findings and alternatives, repository-relative source references, coordinator-reported Git revisions and observation times, whether tracked and unignored working files had staged, unstaged, or untracked changes, loaded Sensemaking Skill content digests, uncertainties, and a recommendation or explicit no-selection. The recorder binds repository identities and source metadata to matching successful coordinator tool-result metadata in the originating Session; it does not independently verify repository contents or the findings. A brief is incomplete if a selected Workspace was unavailable, had uncommitted source changes, changed during observation, or has unknown source stability. For a dirty Workspace, `HEAD` identifies only the committed base; staged and working-tree source contents are not snapshotted, so a cited path may refer to content that is not recoverable from the saved episode. A repeated recorder call with the same request id returns the existing episode; later assessments append a superseding episode and preserve earlier source history. Opening an Activity shows its latest brief; `/activity brief <activity-id> <revision>` opens an earlier one without checking current repositories or repeating an assessment.
 
 Selected Workspace and DSH Session references use the separate version-1 `home_activity_associations` domain. The associations are resolved against their owning registries when displayed; stale references remain explicit until removed. They do not change Workspace records, Session logs, or the Activity record.
+
+Cross-Session responsibility facts use the separate append-only version-1 `home_activity_responsibilities` domain. A stable responsibility identity retains its immutable proposal, exact user confirmation, prompt dispatch intent and route outcome, passive Session observations, concise target reports with source event sequences, verification evidence, and user disposition. Each new fact links to its predecessor; the service derives no completion status from Session activity. Authenticated user decisions record the local owner identity; other Peer metadata is not persisted. The domain does not authorize Session access or perform dispatch.
 
 User-supplied external handoffs use the separate version-1 `home_activity_handoffs` domain. Each record belongs to an existing Activity and stores a source label, optional user summary or source reference, user-supplied artifact references, and the DSH Session in which the record was added. Supplied text is trimmed, length-bounded, and single-line; control, format, line-separator, and paragraph-separator characters are rejected. Opening the Activity from another Session shows these references as external user input, not imported native execution history. The service does not import transcripts, synchronize external sessions, establish who performed the work, or claim verification or acceptance.
 
@@ -89,6 +94,12 @@ User-supplied external handoffs use the separate version-1 `home_activity_handof
 | [`src/strategic-episode-types.ts`](src/strategic-episode-types.ts) | Strategic episode and evidence-reference types |
 | [`src/strategic-episode-spec.ts`](src/strategic-episode-spec.ts) | Versioned strategic episode schema and domain |
 | [`src/strategic-episodes.ts`](src/strategic-episodes.ts) | Append-only Activity Strategic Brief persistence service |
+| [`src/responsibility-types.ts`](src/responsibility-types.ts) | Responsibility identities and immutable fact types |
+| [`src/responsibility-spec.ts`](src/responsibility-spec.ts) | Versioned append-only responsibility record schema and domain |
+| [`src/responsibilities.ts`](src/responsibilities.ts) | Responsibility persistence service |
+| [`src/activity-types.ts`](src/activity-types.ts) | Client-safe Activity identity and record types |
+| [`src/coordination-types.ts`](src/coordination-types.ts) | Client-safe cross-Session request and observation types |
+| [`src/coordination.ts`](src/coordination.ts) | Authenticated discovery, proposal, dispatch, and observation routes |
 | [`src/handoff-types.ts`](src/handoff-types.ts) | External handoff record types |
 | [`src/handoff-spec.ts`](src/handoff-spec.ts) | Versioned external handoff schema |
 | [`src/handoffs.ts`](src/handoffs.ts) | Separate external handoff StorageDomain service |
@@ -129,6 +140,7 @@ Activity scope remains descriptive, and delegation does not enforce it as an aut
 - Activity views classify only known provider stop reasons; unknown values remain unknown. They show the saved report source and time, and the uncertainty source category and observation time when available. DSH has no freshness check for a saved report, so it may be stale; opening an Activity does not query later provider state or retry work.
 - Artifact references are user-linked pointers. They do not copy or inspect output, prove its producer, verify contents, or trigger cross-Workspace writes, merges, or releases. A missing source revision remains unknown.
 - Review evidence and its reported result are user supplied. DSH preserves their source attribution but does not check the source, evidence, or outcome; the current disposition is separate from provider execution status.
+- Responsibility confirmation is a saved fact supplied by an authenticated local owner route; this service does not authenticate that caller or grant access to the target Session. Prompt admission means the Session accepted the input, not that it executed the task. Reports retain a bounded summary and source event references rather than a transcript. Verification evidence records its named source and reported result without checking that source; acceptance is a separate user decision.
 - Strategic episodes are agent-authored reports, not independent verification or user acceptance. Assessment requires both Sensemaking Skills to be loadable and exactly two registered Workspaces because the existing coordinator supports two repositories. The recorder binds repository ids, `HEAD` revisions, observation times, and working-tree cleanliness metadata to a matching successful coordinator result in the originating Session, but does not independently verify source contents, citations, or findings. For dirty sources, `HEAD` is the committed base only and the episode does not preserve staged or working-tree file contents. Unavailable, dirty, changed, or stability-unknown sources require an incomplete brief. `/activity open` shows the latest brief and `/activity brief` retrieves an earlier saved revision; neither command checks current repositories.
 
 Annotation write errors do not confirm whether the revision was persisted. The JSON backend can fail after replacing its file, so close and reopen the backend and domain, then inspect the Activity before deciding whether to retry; the annotation service does not promise a durable rollback. See the [StorageDomain](../../storage/storage-domain/README.md) and [JSON backend](../../storage/storage-json/README.md) failure contracts.

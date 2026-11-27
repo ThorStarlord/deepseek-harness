@@ -1,0 +1,70 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/client/ui-activity-coordination/README.md
+/:
+  en: 2d3af9cd82cd0ef7
+  zh: e435b6a0a3a2fa05
+/deepseek-ai-dsh-client-ui-activity-coordination:
+  en: 26a2d9d6f675f1db
+  zh: c5f0d8bb472df7f1
+/deepseek-ai-dsh-client-ui-activity-coordination/summary:
+  en: 4d436e46b46406b9
+  zh: 7677fafb49691149
+/deepseek-ai-dsh-client-ui-activity-coordination/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: eb2f3b588406d2d1
+/deepseek-ai-dsh-client-ui-activity-coordination/use-this-package:
+  en: 83fb7a5592025f41
+  zh: 08988a42d9a3e7c6
+/deepseek-ai-dsh-client-ui-activity-coordination/understand-the-implementation:
+  en: a0fe62cd32879413
+  zh: b7a45e4594a3a052
+/deepseek-ai-dsh-client-ui-activity-coordination/further-exploration:
+  en: 9caf1cecc04586c5
+  zh: 6d3503f0f37ce6f6
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/user-selected-activity-session-evidence:
+  en: 2cd3e9a360cbd4c7
+  zh: 5b2164187710bab5
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/user-selected-activity-session-evidence/what-the-model-sees:
+  en: 731c256c51936fa2
+  zh: 8b7ab68a6498cf90
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/user-selected-activity-session-evidence/token-effect:
+  en: 5d5d6dc99f30e82b
+  zh: 60b1f5306cd72a24
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/user-selected-activity-session-evidence/kv-cache-effect:
+  en: 76a38455170633be
+  zh: 917a600640c87b09
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/confirmed-responsibility-prompt:
+  en: 670715797263954d
+  zh: 73de970cceeba834
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/confirmed-responsibility-prompt/what-the-model-sees:
+  en: c59f8b14fbf6835f
+  zh: 6b2d15540e7c9d58
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/confirmed-responsibility-prompt/token-effect:
+  en: ca112cda18683a6e
+  zh: 63f892387c389315
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/confirmed-responsibility-prompt/kv-cache-effect:
+  en: 77da7ddbc31e3ebf
+  zh: 5e05881deaacb7c9
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/explicit-saved-responsibility-reentry:
+  en: 7af707d77d6f460a
+  zh: 3a3d4caf27842e50
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/explicit-saved-responsibility-reentry/what-the-model-sees:
+  en: 5ecccae13e5e1252
+  zh: 8d1eb7f82d22a829
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/explicit-saved-responsibility-reentry/token-effect:
+  en: f5b2e182864227f6
+  zh: 634eabca2f7d699c
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/explicit-saved-responsibility-reentry/kv-cache-effect:
+  en: ef777fa71c46015c
+  zh: fd6caedb15f57b93
+/deepseek-ai-dsh-client-ui-activity-coordination/known-limitations-and-deferred-work:
+  en: 9f7e74b19d02843c
+  zh: d85b3beebbaec0c3
+/deepseek-ai-dsh-client-ui-activity-coordination/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: bafc581f3949d943

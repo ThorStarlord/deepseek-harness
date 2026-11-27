@@ -170,6 +170,10 @@ flowchart LR
   pkg_home_activity["home-activity"]
   svc_homeActivities["ctx.homeActivities<br/>Persistent user-directed Activities"]
   pkg_command_home_activity["command-home-activity"]
+  svc_homeActivityCoordination["ctx.homeActivityCoordination<br/>Authenticated Activity coordination Remote"]
+  pkg_api_remotes["api-remotes"]
+  pkg_client_ui_activity_coordination["client-ui-activity-coordination"]
+  svc_homeActivityResponsibilities["ctx.homeActivityResponsibilities<br/>Append-only Activity responsibility facts"]
   svc_homeActivityDelegations["ctx.homeActivityDelegations<br/>Recorded Home Activity delegations"]
   svc_homeActivityAssociations["ctx.homeActivityAssociations<br/>Activity Workspace and Session references"]
   svc_homeActivityArtifacts["ctx.homeActivityArtifacts<br/>User-linked Activity artifact pointers"]
@@ -403,8 +407,10 @@ flowchart LR
   pkg_home_activity --> svc_homeActivityAnnotations
   pkg_home_activity --> svc_homeActivityArtifacts
   pkg_home_activity --> svc_homeActivityAssociations
+  pkg_home_activity --> svc_homeActivityCoordination
   pkg_home_activity --> svc_homeActivityDelegations
   pkg_home_activity --> svc_homeActivityHandoffs
+  pkg_home_activity --> svc_homeActivityResponsibilities
   pkg_home_activity --> svc_homeActivityReviews
   pkg_home_activity --> svc_homeActivityStrategicEpisodes
   pkg_host_directory_picker --> svc_directoryPicker
@@ -552,8 +558,11 @@ flowchart LR
   svc_homeActivityAnnotations --> pkg_command_home_activity
   svc_homeActivityArtifacts --> pkg_command_home_activity
   svc_homeActivityAssociations --> pkg_command_home_activity
+  svc_homeActivityCoordination --> pkg_api_remotes
+  svc_homeActivityCoordination --> pkg_client_ui_activity_coordination
   svc_homeActivityDelegations --> pkg_command_home_activity
   svc_homeActivityHandoffs --> pkg_command_home_activity
+  svc_homeActivityResponsibilities --> pkg_home_activity
   svc_homeActivityReviews --> pkg_command_home_activity
   svc_homeActivityStrategicEpisodes --> pkg_command_home_activity
   svc_jobs --> pkg_api_job_controller
@@ -738,6 +747,8 @@ flowchart LR
 | `ctx.sessionFeedback` | `core` | [`command-feedback`](../packages/feedback/command-feedback) | - | - | - | 通过 Host 一元 Remote 契约在 live Session 上把一条带分类的 Session 级评价记录为仅写日志的 feedback/record 事件；/feedback 命令共用同一个生产方。 |
 | `ctx.workspaceRegistry` | `core` | [`workspace`](../packages/workspace/workspace) | - | [`api-workspace-controller`](../packages/api/workspace-controller), [`api-session-controller`](../packages/api/session-controller) | - | 通过领域设施拥有带 WorkspaceId 品牌类型的记录；稳定的 sessionIds 账户驱动 Host RPC 与 GUI 投影。 |
 | `ctx.homeActivities` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | 独立于 Session 保存命名目标和描述性边界；人工命令创建、列出并打开记录，但不执行目标。 |
+| `ctx.homeActivityCoordination` | `service` | [`home-activity`](../packages/home/activity) | - | [`api-remotes`](../packages/api/remotes), [`client-ui-activity-coordination`](../packages/client/ui-activity-coordination) | - | 返回对用户明确选定且获授权 Session 的有限观察结果；只有经过身份验证的确认后，才通过 Gateway 发送确切责任。 |
+| `ctx.homeActivityResponsibilities` | `service` | [`home-activity`](../packages/home/activity) | - | [`home-activity`](../packages/home/activity) | - | 将建议、确认、发送、观察、报告、验证和接受分别保存为追加事实，供经过身份验证的协调操作和后续恢复使用。 |
 | `ctx.homeActivityDelegations` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | 将显式请求、已接受的 DSH 激活引用和 provider 报告分别持久化；人工命令使用现有 subagent 运行时，不声称结果已验证或接受。 |
 | `ctx.homeActivityAssociations` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | 分别保存用户选定的 Workspace 注册表身份和 DSH Session 身份，不修改源记录，也不推断两者的关系。 |
 | `ctx.homeActivityArtifacts` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | 保存用户提供的输出位置和可选修订版，关联到 Activity 委派和用户选择的 Workspace，并与提供方报告分开保存。 |

@@ -83,6 +83,9 @@
       "path": "../session-controller/tsconfig.client.json"
     },
     {
+      "path": "../../home/activity"
+    },
+    {
       "path": "../workspace-files/tsconfig.client.json"
     },
     {

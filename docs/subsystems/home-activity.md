@@ -46,6 +46,10 @@ The separate version-1 `home_activity_handoffs` domain stores a user-supplied so
 
 The separate version-1 `home_activity_strategic_episodes` domain appends agent-authored advisory briefs without changing Activity intent, annotations, or delegation facts. `/activity assess` loads the existing Sensemaking Skills and explicitly selected Workspaces; repository reads use the existing read-only coordinator after its separate one-shot approval. Each episode retains the Activity objective, originating Session, Workspace ids, coordinator-reported Git revisions and observation times, whether staged, unstaged, or untracked source files were present, source references, loaded Skill content digests, findings, alternatives, uncertainties, and a recommendation or no-selection. The recorder binds repository ids and source metadata to matching successful coordinator tool-result metadata in the originating Session; it does not independently verify source contents, citations, or findings. Unavailable, dirty, changed, or stability-unknown sources require an incomplete brief. A later brief supersedes the recommendation without removing the earlier episode. `/activity open` shows the latest brief and `/activity brief` retrieves a selected historical revision without re-reading repositories; a later saved observation makes earlier applicability uncertain, and no later observation leaves current applicability unconfirmed. `/activity assess cancel` prevents saving an unfinished brief but cannot stop reads already approved and running.
 
+The separate version-1 `home_activity_responsibilities` domain appends facts for a bounded responsibility proposed for a selected Workspace and existing DSH root Session. A proposal, authenticated user confirmation, prompt dispatch intent and outcome, passive Session observation, target report, verification evidence, and user acceptance remain distinct records. Each fact carries stable Activity and responsibility identities, a revision and predecessor, an idempotency request identity, and source attribution. The confirmation stores the exact proposal content and the local owner identity supplied by the trusted Host route; unrelated Peer metadata is not persisted. The persistence service does not authenticate the caller or authorize target access. A prompt accepted by Session Controller means only that the target accepted input. Target reports retain a bounded summary and source event sequences instead of copying the Session transcript. Verification evidence records its named source and reported result; acceptance remains a separate user decision. Listing responsibility history does not query, resume, or prompt a target Session.
+
+The optional `ctx.homeActivityCoordination` Host service exposes Client-mediated routes for owner-authorized, bounded Session discovery, proposal recording, confirmed prompt dispatch, and passive reconciliation. Each discovery rechecks Activity links, Workspace membership, root Session identity, matching repository paths, and current resource access. Responsibility histories are returned only when the caller can read the source coordinator Session, target Session, and Workspace; Activity links alone grant no access. Proposals cite a model-authored event from an associated coordinating root Session in an associated Workspace. Dispatch accepts only the exact saved proposal after authenticated owner confirmation and rechecks target identity and access; the target Session retains its runtime, permissions, and writer ownership. Opening coordination history does not prompt or resume any target. See the [coordination UI package](../../packages/client/ui-activity-coordination/README.md) for the client workflow.
+
 ## Cordis API
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
@@ -200,6 +204,83 @@ Types: [SessionId](core.md) · [WorkspaceId](workspace.md)
 
 Source: [`packages/home/activity/src/associations.ts`](../../packages/home/activity/src/associations.ts)
 
+<a id="ctxhomeactivitycoordination--activitycoordinationservice"></a>
+
+### `ctx.homeActivityCoordination` — `ActivityCoordinationService`
+
+Authenticated Client API for Activity-scoped, passive Session discovery.
+
+```ts cordis-catalog
+/**
+ * List saved Activities visible to the authenticated caller, with their separately selected references.
+ * @returns newest-first Activities and descriptive Workspace and Session links.
+ */
+@Remote('activities') activities(): readonly ActivityCoordinationCatalogItem[]
+
+/**
+ * Read bounded recent text from explicitly selected associated root Sessions without activating them.
+ * Every request is checked for the Activity, each Workspace, and each Session at the Gateway, then the
+ * Host verifies the saved links, current Workspace membership, root identity, and Session cwd.
+ * @param request - Activity and one to sixteen distinct Workspace/Session pairs.
+ * @param signal - cancellation for all cold Session observations.
+ * @returns exact observations ordered as requested, at their own Session-log cursors.
+ */
+@Remote({ resources: { activity: request => request.activityId, workspace: request => request.targets.map(target => target.workspaceId), session: request => request.targets.map(target => target.sessionId), } }) async discover( request: { readonly activityId: ActivityId; readonly targets: readonly ActivityCoordinationTarget[] }, signal: AbortSignal, ): Promise<readonly ActivityCoordinationSessionSnapshot[]>
+
+/**
+ * Recover responsibility histories whose Activity, source Session, Workspace, and target Session are readable.
+ * @param request - saved Activity identity.
+ * @returns histories in append order without exposing references the caller cannot read.
+ */
+@Remote({ resources: { activity: request => request.activityId } }) responsibilities(request: { readonly activityId: ActivityId }): ActivityCoordinationResponsibilityList
+
+/**
+ * Save an agent recommendation only when its source is an attributed assistant message in the coordinating Session.
+ * This operation records advisory intent; it does not confirm or send the task.
+ * @param request - bounded proposal, selected target, and exact source message identity.
+ * @param signal - cancellation for passive source and target reads.
+ * @returns the append-only proposal fact and stable responsibility identity.
+ */
+@Remote({ resources: { activity: request => request.activityId, workspace: request => request.target.workspaceId, session: request => [request.coordinatingSessionId, request.target.sessionId], } }) async propose( request: ActivityCoordinationProposalRequest, signal: AbortSignal, ): Promise<ActivityResponsibilityProposedFact>
+
+/**
+ * Recover append-only histories for an Activity without waking target Sessions.
+ * @param request - Activity identity and responsibility identity.
+ * @returns the history when the caller can read its source and target Sessions and Workspace.
+ */
+@Remote({ resources: { activity: request => request.activityId } }) responsibility(request: { readonly activityId: ActivityId readonly responsibilityId: ActivityResponsibilityId }): ActivityResponsibilityHistory
+
+/**
+ * Bind the displayed proposal to an authenticated user confirmation, then send it through the native `session/prompt` route.
+ * Persist a Host-generated request identity before delivery for safe retry handling and later report correlation.
+ * The nested Gateway call rechecks the caller's actual `session/prompt` grant for the exact target.
+ * @param request - exact proposal echo and authenticated confirmation id.
+ * @param signal - cancellation for target validation and prompt admission.
+ * @returns confirmed admission, known non-admission, or an explicitly uncertain result with recovered history.
+ */
+@Remote({ resources: { activity: request => request.activityId, workspace: request => request.proposal.target.workspaceId, session: request => request.proposal.target.sessionId, } }) async dispatchConfirmed( request: ActivityCoordinationDispatchRequest, signal: AbortSignal, ): Promise<ActivityCoordinationDispatchResult>
+
+/**
+ * Read current target state and append a source-attributed observation; it does not resume the target.
+ * @param request - Activity responsibility and exact Workspace/Session target.
+ * @param signal - cancellation for passive reads.
+ * @returns the new observation and complete responsibility history.
+ */
+@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async observeResponsibility( request: { readonly activityId: ActivityId readonly responsibilityId: ActivityResponsibilityId readonly workspaceId: WorkspaceId readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityResponsibilityHistory>
+
+/**
+ * Reconcile one responsibility against its exact target request id using only passive Session reads.
+ * @param request - Activity, responsibility, and exact Workspace/Session identity.
+ * @param signal - cancellation of the state and history reads.
+ * @returns current execution state plus a report only when its matching target turn completed.
+ */
+@Remote({ resources: { activity: request => request.activityId, workspace: request => request.workspaceId, session: request => request.sessionId, } }) async reconcileResponsibility( request: { readonly activityId: ActivityId readonly responsibilityId: ActivityResponsibilityId readonly workspaceId: WorkspaceId readonly sessionId: SessionId }, signal: AbortSignal, ): Promise<ActivityCoordinationReconcileResult>
+```
+
+Types: [SessionId](core.md) · [WorkspaceId](workspace.md)
+
+Source: [`packages/home/activity/src/coordination.ts`](../../packages/home/activity/src/coordination.ts)
+
 <a id="ctxhomeactivitydelegations--homeactivitydelegationservice"></a>
 
 ### `ctx.homeActivityDelegations` — `HomeActivityDelegationService`
@@ -285,6 +366,97 @@ list(activityId: ActivityId): readonly ActivityHandoff[]
 ```
 
 Source: [`packages/home/activity/src/handoffs.ts`](../../packages/home/activity/src/handoffs.ts)
+
+<a id="ctxhomeactivityresponsibilities--homeactivityresponsibilityservice"></a>
+
+### `ctx.homeActivityResponsibilities` — `HomeActivityResponsibilityService`
+
+Immutable Activity responsibility facts mounted as `ctx.homeActivityResponsibilities`.
+
+```ts cordis-catalog
+/** Save an immutable recommendation without authorizing or dispatching it.
+ * @param request - Activity, coordinator source, selected target, and exact bounded task.
+ * @returns The saved proposal and its stable responsibility identity.
+ * @throws {ActivityResponsibilityError} when the Activity or request is invalid, or the idempotency key conflicts.
+ * @throws {ActivityResponsibilityStorageError} when persistence cannot be confirmed.
+ */
+createProposal(request: CreateActivityResponsibilityRequest): Promise<ActivityResponsibilityProposedFact>
+
+/** Record a Client-authenticated confirmation of the complete immutable proposal.
+ * @param request - Exact proposal echo, idempotency key, and principal read by the trusted Client route.
+ * @returns The confirmed fact; this record does not itself dispatch work.
+ * @throws {ActivityResponsibilityError} when the proposal is unavailable, differs, or was confirmed already.
+ * @throws {ActivityResponsibilityStorageError} when persistence cannot be confirmed.
+ */
+confirm(request: ConfirmActivityResponsibilityRequest): Promise<ActivityResponsibilityConfirmedFact>
+
+/** Persist dispatch intent before the authenticated Client prompts the target Session.
+ * @param request - Activity responsibility and the exact Session prompt request id.
+ * @returns The durable dispatch intent.
+ * @throws {ActivityResponsibilityError} when confirmation is missing or an attempt already exists.
+ * @throws {ActivityResponsibilityStorageError} when persistence cannot be confirmed.
+ */
+beginDispatch(request: BeginActivityResponsibilityDispatchRequest): Promise<ActivityResponsibilityDispatchAttemptedFact>
+
+/** Append the prompt route's confirmed, rejected, or uncertain admission result.
+ * @param request - Exact prompt request identity and route outcome.
+ * @returns The persisted dispatch result, without claiming target execution.
+ * @throws {ActivityResponsibilityError} when no matching attempt exists or its result conflicts.
+ * @throws {ActivityResponsibilityStorageError} when persistence cannot be confirmed.
+ */
+settleDispatch(request: SettleActivityResponsibilityDispatchRequest): Promise<ActivityResponsibilityDispatchSettledFact>
+
+/** Record a passive target Session state observation without treating it as task completion.
+ * @param request - Activity, responsibility, source time, and Session Controller state.
+ * @returns The append-only observation fact.
+ * @throws {ActivityResponsibilityError} when the Activity or responsibility is unavailable or the request conflicts.
+ * @throws {ActivityResponsibilityStorageError} when persistence cannot be confirmed.
+ */
+recordObservation(request: RecordActivityResponsibilityObservationRequest): Promise<ActivityResponsibilityObservedFact>
+
+/** Record a bounded target-authored summary linked to the target's original Session events.
+ * @param request - Summary, target prompt identity, and non-empty source event sequences.
+ * @returns The provider-reported fact; it is not independently verified or accepted.
+ * @throws {ActivityResponsibilityError} when no matching dispatch or source Session exists.
+ * @throws {ActivityResponsibilityStorageError} when persistence cannot be confirmed.
+ */
+recordReport(request: RecordActivityResponsibilityReportRequest): Promise<ActivityResponsibilityReportedFact>
+
+/** Record separately attributed evidence about one saved target report.
+ * @param request - Report identity, recorder, and named verification evidence.
+ * @returns The evidence fact; DSH does not independently inspect its source.
+ * @throws {ActivityResponsibilityError} when the referenced report is unavailable or the request conflicts.
+ * @throws {ActivityResponsibilityStorageError} when persistence cannot be confirmed.
+ */
+recordVerification(request: RecordActivityResponsibilityVerificationRequest): Promise<ActivityResponsibilityVerificationFact>
+
+/** Record a user disposition of one saved report, separately from verification evidence.
+ * @param request - Report identity, explicit user disposition, and authenticated principal.
+ * @returns The append-only acceptance fact.
+ * @throws {ActivityResponsibilityError} when the report is unavailable or the request conflicts.
+ * @throws {ActivityResponsibilityStorageError} when persistence cannot be confirmed.
+ */
+recordAcceptance(request: RecordActivityResponsibilityAcceptanceRequest): Promise<ActivityResponsibilityAcceptanceFact>
+
+/** Read one complete responsibility history without contacting or resuming its target Session.
+ * @param activityId - Owning Activity identity.
+ * @param responsibilityId - Stable responsibility identity.
+ * @returns Its facts oldest first, or `undefined` when the identity is not in this Activity.
+ * @throws {ActivityResponsibilityError} when the Activity or history is invalid.
+ * @throws {ActivityResponsibilityStorageError} when stored facts cannot be read.
+ */
+get(activityId: ActivityId, responsibilityId: ActivityResponsibilityId): ActivityResponsibilityHistory | undefined
+
+/** List saved responsibilities for one Activity without contacting their target Sessions.
+ * @param activityId - Stable Activity identity.
+ * @returns Immutable histories, newest proposal first and facts oldest first.
+ * @throws {ActivityResponsibilityError} when the Activity or a stored history is invalid.
+ * @throws {ActivityResponsibilityStorageError} when responsibility storage cannot be read.
+ */
+list(activityId: ActivityId): readonly ActivityResponsibilityHistory[]
+```
+
+Source: [`packages/home/activity/src/responsibilities.ts`](../../packages/home/activity/src/responsibilities.ts)
 
 <a id="ctxhomeactivityreviews--homeactivityreviewservice"></a>
 

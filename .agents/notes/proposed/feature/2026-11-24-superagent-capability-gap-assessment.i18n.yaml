@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for 2026-11-24-superagent-capability-gap-assessment.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-11-24-superagent-capability-gap-assessment.md
+/agent-note-superagent-capability-gap-assessment:
+  en: 406d3e16cb406f6b
+  zh: f3c6cd9396969c69
+/agent-note-superagent-capability-gap-assessment/problem:
+  en: 7477fa33953dc141
+  zh: 67d7a85221ebd661
+/agent-note-superagent-capability-gap-assessment/proposal:
+  en: b9a4983f8c9a623e
+  zh: f039ef859aa9fa06
+/agent-note-superagent-capability-gap-assessment/proposal/current-capability-map:
+  en: 1b8025c5b93c4fc9
+  zh: b636033dcafb4a4f
+/agent-note-superagent-capability-gap-assessment/proposal/user-workflow-assessment:
+  en: 24967476dc121d0f
+  zh: edbbd9e9062cd6f7
+/agent-note-superagent-capability-gap-assessment/proposal/relate-assessment-and-bottleneck:
+  en: c51985e3a7fa276c
+  zh: 52d4357b71973fad
+/agent-note-superagent-capability-gap-assessment/proposal/recommended-first-vertical:
+  en: 2225139c2ff23500
+  zh: 5036cedd5c20b6bc
+/agent-note-superagent-capability-gap-assessment/proposal/stage-2b-and-authority:
+  en: 5f3038aad3f7046b
+  zh: a27cfe8b265a622f
+/agent-note-superagent-capability-gap-assessment/alternatives-considered:
+  en: 65cc4d872afe2d3d
+  zh: eb42972eb023979d
+/agent-note-superagent-capability-gap-assessment/acceptance-criteria:
+  en: 536c2fd89ef474f3
+  zh: a8e51899f1ce2b3f
+/agent-note-superagent-capability-gap-assessment/risks:
+  en: 67a1b39856b4c852
+  zh: 408b5eaacf5e1b08

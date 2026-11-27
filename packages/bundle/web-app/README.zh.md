@@ -33,6 +33,8 @@ kind: "package-bundle"
 
 [Agent Teams UI](../../client/ui-agent-team/README.zh.md) 随本 bundle 加载。在模型与推理等级菜单中按 Session 开启；通过 Subagent 控件打开成员树，下方显示共享任务。
 
+在 root Session 中使用 [`/coordinate`](../../client/ui-activity-coordination/README.zh.md) 可查看已保存 Activity 关联的 Session、将检查过的快照加入协调对话，并恢复已保存的责任历史。协调 Session 的已完成消息可启动建议式责任提案；只有单独的确认操作才会向所选目标 Session 发送准确保存的任务。“已接受”只表示提示已接收，恢复历史不会继续工作或重试状态不明的发送。
+
 ### 启动 Web GUI
 
 ```sh

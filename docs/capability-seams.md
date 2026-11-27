@@ -168,6 +168,10 @@ flowchart LR
   pkg_home_activity["home-activity"]
   svc_homeActivities["ctx.homeActivities<br/>Persistent user-directed Activities"]
   pkg_command_home_activity["command-home-activity"]
+  svc_homeActivityCoordination["ctx.homeActivityCoordination<br/>Authenticated Activity coordination Remote"]
+  pkg_api_remotes["api-remotes"]
+  pkg_client_ui_activity_coordination["client-ui-activity-coordination"]
+  svc_homeActivityResponsibilities["ctx.homeActivityResponsibilities<br/>Append-only Activity responsibility facts"]
   svc_homeActivityDelegations["ctx.homeActivityDelegations<br/>Recorded Home Activity delegations"]
   svc_homeActivityAssociations["ctx.homeActivityAssociations<br/>Activity Workspace and Session references"]
   svc_homeActivityArtifacts["ctx.homeActivityArtifacts<br/>User-linked Activity artifact pointers"]
@@ -401,8 +405,10 @@ flowchart LR
   pkg_home_activity --> svc_homeActivityAnnotations
   pkg_home_activity --> svc_homeActivityArtifacts
   pkg_home_activity --> svc_homeActivityAssociations
+  pkg_home_activity --> svc_homeActivityCoordination
   pkg_home_activity --> svc_homeActivityDelegations
   pkg_home_activity --> svc_homeActivityHandoffs
+  pkg_home_activity --> svc_homeActivityResponsibilities
   pkg_home_activity --> svc_homeActivityReviews
   pkg_home_activity --> svc_homeActivityStrategicEpisodes
   pkg_host_directory_picker --> svc_directoryPicker
@@ -550,8 +556,11 @@ flowchart LR
   svc_homeActivityAnnotations --> pkg_command_home_activity
   svc_homeActivityArtifacts --> pkg_command_home_activity
   svc_homeActivityAssociations --> pkg_command_home_activity
+  svc_homeActivityCoordination --> pkg_api_remotes
+  svc_homeActivityCoordination --> pkg_client_ui_activity_coordination
   svc_homeActivityDelegations --> pkg_command_home_activity
   svc_homeActivityHandoffs --> pkg_command_home_activity
+  svc_homeActivityResponsibilities --> pkg_home_activity
   svc_homeActivityReviews --> pkg_command_home_activity
   svc_homeActivityStrategicEpisodes --> pkg_command_home_activity
   svc_jobs --> pkg_api_job_controller
@@ -736,6 +745,8 @@ flowchart LR
 | `ctx.sessionFeedback` | `core` | [`command-feedback`](../packages/feedback/command-feedback) | - | - | - | Records one Session-level remark with its category as a log-only feedback/record event on a live Session through the Host unary Remote contract; the /feedback command shares the same producer. |
 | `ctx.workspaceRegistry` | `core` | [`workspace`](../packages/workspace/workspace) | - | [`api-workspace-controller`](../packages/api/workspace-controller), [`api-session-controller`](../packages/api/session-controller) | - | Owns WorkspaceId-branded records over the domain facility; stable sessionIds accounts drive Host RPC and GUI projections. |
 | `ctx.homeActivities` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | Stores named objectives and descriptive boundaries independently of Sessions; the human command creates, lists, and opens records without executing them. |
+| `ctx.homeActivityCoordination` | `service` | [`home-activity`](../packages/home/activity) | - | [`api-remotes`](../packages/api/remotes), [`client-ui-activity-coordination`](../packages/client/ui-activity-coordination) | - | Returns bounded observations of explicitly selected, authorized Sessions and sends an exact responsibility only after authenticated confirmation through the Gateway. |
+| `ctx.homeActivityResponsibilities` | `service` | [`home-activity`](../packages/home/activity) | - | [`home-activity`](../packages/home/activity) | - | Stores recommendations, confirmations, dispatch, observations, reports, verification, and acceptance as separate durable facts for authenticated coordination and later recovery. |
 | `ctx.homeActivityDelegations` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | Persists explicit requests, accepted DSH activation references, and provider reports as separate facts; the human command uses the existing subagent runtime and does not claim verification or acceptance. |
 | `ctx.homeActivityAssociations` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | Stores separately selected Workspace registry identities and DSH Session identities without changing either source record or inferring a relationship between them. |
 | `ctx.homeActivityArtifacts` | `service` | [`home-activity`](../packages/home/activity) | - | [`command-home-activity`](../packages/interaction/command-home-activity) | - | Stores user-supplied output locations and optional revisions linked to one Activity delegation and one of its selected Workspaces, separately from provider-authored reports. |

@@ -64,6 +64,7 @@
     "tests/home-activity-annotations.e2e.ts",
     "tests/home-activity-next-actions.e2e.ts",
     "tests/home-activity-strategic-brief.e2e.ts",
+    "tests/activity-coordination.e2e.ts",
     "tests/voice-input.e2e.ts",
     "tests/cot-translation.e2e.ts",
     "tests/cot-translation-paid.e2e.ts",
