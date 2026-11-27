@@ -1,5 +1,3 @@
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-
 // Synthetic fixture facts exercise replay attribution; they are not evidence of authenticated dispatch.
 export const name = 'activity-responsibility-status-seed'
 export const inject = ['storageDomain', 'homeActivities', 'homeActivityResponsibilities', 'agents', 'tools']
@@ -103,12 +101,5 @@ export async function apply(ctx) {
       || ctx.tools.get('report_activity_responsibility_status', agent) === undefined) {
       throw new Error('The eligible SDK root Agent cannot use the Activity status-report tool')
     }
-    agent.followup(createUserMessage({
-      content: [{
-        type: 'text',
-        text: `Assigned Activity ${ACTIVITY_ID}, responsibility ${RESPONSIBILITY_ID}: report current progress only.`,
-      }],
-      source: { kind: 'user', rpcId: PROMPT_REQUEST_ID },
-    }))
   })
 }
