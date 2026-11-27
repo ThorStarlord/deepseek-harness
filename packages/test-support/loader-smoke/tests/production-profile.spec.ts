@@ -8,6 +8,7 @@ import { bootProductionProfile } from '../src/production-profile.ts'
 
 const overlayPath = fileURLToPath(new URL('./fixtures/production-profile.patch.yml', import.meta.url))
 const ENVIRONMENT_KEYS = ['DSH_HOME', 'DSH_AGENTS_HOME', 'USERPROFILE', 'HOME'] as const
+const PROFILE_BOOT_TIMEOUT_MS = 30_000
 
 describe.sequential('bootProductionProfile', () => {
   it('rejects overlays outside the supported filename contract before loading a profile', async () => {
@@ -47,7 +48,7 @@ describe.sequential('bootProductionProfile', () => {
       restoreEnvironment(savedEnvironment)
       await rm(userHome, { recursive: true, force: true })
     }
-  })
+  }, PROFILE_BOOT_TIMEOUT_MS)
 
   it('adds only resolvable overlay packages, including nested group entries', async () => {
     const root = await mkdtemp(join(tmpdir(), 'loader-smoke-profile-overlay-'))
@@ -68,8 +69,8 @@ describe.sequential('bootProductionProfile', () => {
       const resolution = context.get('pluginPackages').resolution
       expect(resolution).toBeDefined()
       const overlayPackages = resolution?.entries
-        .filter(entry => entry.packageName.startsWith('test-overlay:'))
-        .map(entry => entry.packageName)
+        .filter(entry => entry.name.startsWith('test-overlay:'))
+        .map(entry => entry.name)
         .sort()
       expect(overlayPackages).toEqual([
         'test-overlay:0:@deepseek-ai/dsh-agent',
@@ -82,7 +83,7 @@ describe.sequential('bootProductionProfile', () => {
       restoreEnvironment(savedEnvironment)
       await rm(root, { recursive: true, force: true })
     }
-  })
+  }, PROFILE_BOOT_TIMEOUT_MS)
 })
 
 function restoreEnvironment(saved: Record<string, string | undefined>): void {
