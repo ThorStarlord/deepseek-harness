@@ -277,9 +277,12 @@ describe('CI workflow', () => {
     })
   })
 
-  it('builds profile artifacts before Linux coverage process tests', () => {
-    const job = workflowJob(loadWorkflow('.github/workflows/ci.yml'), 'node-24-coverage')
-    if (!Array.isArray(job.steps)) throw new TypeError('node-24-coverage must define steps')
+  it.each([
+    ['Linux', '.github/workflows/ci.yml', 'node-24-coverage'],
+    ['Windows', '.github/workflows/ci-windows.yml', 'windows-coverage'],
+  ])('builds profile artifacts before %s coverage process tests', (_platform, file, jobName) => {
+    const job = workflowJob(loadWorkflow(file), jobName)
+    if (!Array.isArray(job.steps)) throw new TypeError('coverage job must define steps')
     const steps = job.steps.filter(isRecord)
     const artifacts = steps.findIndex(step => step.run === 'pnpm run build:artifacts')
     const coverage = steps.findIndex(step => step.run === 'pnpm run check:ci:coverage')
@@ -1005,7 +1008,7 @@ describe('CI workflow', () => {
       'apps/web/tests/subagent-fork-schedule.snapshot.ts',
     ]) {
       expect(refresh.run).toContain(file)
-      expect(upload.with).toMatchObject({ path: expect.stringContaining(file) })
+      expect(upload.with.path).toContain(file)
     }
     expect(refresh.run).toContain('--config vitest.web.config.ts')
     expect(refresh.run).toContain('--update')
@@ -1014,7 +1017,7 @@ describe('CI workflow', () => {
       name: 'web-snapshot-refresh-${{ inputs.source_sha || github.sha }}',
       'if-no-files-found': 'error',
     })
-    expect(upload.with).toMatchObject({ path: expect.stringContaining('snapshots/web/fresh-round-trip/**') })
+    expect(upload.with.path).toContain('snapshots/web/fresh-round-trip/**')
     for (const [event, suite, expected] of [
       ['workflow_dispatch', 'web-snapshot-refresh', true],
       ['workflow_dispatch', 'sdk-snapshot', false],
