@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   JsonSchemaError,
+  lineNumberedTextRowsSchema,
   parameterSchemaSpecToJsonSchema,
   valueSchemaSpecToJsonSchema,
   type InferArgs,
@@ -54,6 +55,24 @@ describe('the unified author schema DSL', () => {
         open: { type: 'object', additionalProperties: true },
       },
       required: ['closed'],
+    })
+  })
+
+  it('compiles the shared line-numbered text rows property', () => {
+    expect(parameterSchemaSpecToJsonSchema({ lines: lineNumberedTextRowsSchema })).toEqual({
+      type: 'object',
+      properties: {
+        lines: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { number: { type: 'integer' }, text: { type: 'string' } },
+            required: ['number', 'text'],
+          },
+        },
+      },
+      required: ['lines'],
     })
   })
 
