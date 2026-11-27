@@ -16,7 +16,12 @@ on:
           - ssh-helper
           - sdk-snapshot
           - web-snapshot-refresh
+          - coverage
           - wine
+      source_sha:
+        description: Exact commit to qualify for snapshot or coverage suites (defaults to this workflow revision)
+        required: false
+        type: string
 
 # New master pushes and manual runs replace obsolete checks in this workflow/ref.
 # Standby drills share cancellation; use completed runs as readiness evidence.
@@ -46,13 +51,16 @@ jobs:
     name: focused keyless SDK snapshot
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
 
       - name: Verify selected source revision
-        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
 
       - name: Verify the selected revision includes the requested SDK scenario
         run: |
@@ -95,19 +103,70 @@ jobs:
           console.log(`Passed: ${selected[0].fullName}`)
           NODE
 
+  coverage:
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'coverage'
+    name: exact-revision coverage (manual)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
+      DSH_GATE_FAIL_FAST: '1'
+    steps:
+      - name: Use runner-owned temporary storage
+        run: echo "TMPDIR=${{ runner.temp }}" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify selected source revision
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install dependencies and prepare bubblewrap
+        run: |
+          pnpm install --frozen-lockfile &
+          install_pid=$!
+          bash scripts/prepare-ci-bubblewrap.sh &
+          sandbox_pid=$!
+          install_status=0
+          wait "$install_pid" || install_status=$?
+          sandbox_status=0
+          wait "$sandbox_pid" || sandbox_status=$?
+          if (( install_status != 0 )); then exit "$install_status"; fi
+          exit "$sandbox_status"
+
+      - name: Build artifacts for profile process tests
+        run: pnpm run build:artifacts
+
+      - name: Run exhaustive coverage
+        run: pnpm run check:ci:coverage
+
   web-snapshot-refresh:
     if: github.event_name == 'workflow_dispatch' && inputs.suite == 'web-snapshot-refresh'
     name: refresh selected Web snapshots (manual)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
 
       - name: Verify selected source revision and snapshot owners
         run: |
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
           test -f apps/web/tests/minimal-preset.snapshot.ts
           test -f apps/web/tests/code-language.snapshot.ts
           test -f apps/web/tests/replay-round-trip.e2e.ts
@@ -159,7 +218,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: web-snapshot-refresh-${{ github.sha }}
+          name: web-snapshot-refresh-${{ inputs.source_sha || github.sha }}
           if-no-files-found: error
           path: |
             apps/web/tests/minimal-preset.snapshot.ts
