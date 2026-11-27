@@ -89,19 +89,31 @@ jobs:
           DSH_SNAPSHOT_MAX_CONCURRENCY: '1'
           SNAPSHOT_REPORT: ${{ runner.temp }}/activity-responsibility-status-vitest.json
         run: |
+          set +e
           pnpm run test:snapshot snapshots/sdk/sdk.snapshot.ts -t activity-responsibility-status --reporter=json --outputFile="$SNAPSHOT_REPORT"
+          snapshot_status=$?
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs'
 
           const report = JSON.parse(readFileSync(process.env.SNAPSHOT_REPORT, 'utf8'))
           const selected = report.testResults.flatMap(result => result.assertionResults)
             .filter(test => test.fullName.includes('activity-responsibility-status'))
+          console.log(`Selected snapshot tests: ${selected.length}`)
+          for (const test of selected) {
+            console.log(`${test.status}: ${test.fullName}`)
+            if (test.status !== 'passed') {
+              const firstError = test.failureMessages?.[0]?.split('\n').find(line => line.trim() !== '')
+              if (firstError) console.log(`Failure: ${firstError.trim()}`)
+            }
+          }
           if (selected.length !== 1 || selected[0].status !== 'passed'
             || report.numFailedTests !== 0 || report.numFailedTestSuites !== 0) {
             throw new Error(`Expected exactly one passing Activity responsibility status test; found ${selected.length}`)
           }
           console.log(`Passed: ${selected[0].fullName}`)
           NODE
+          report_status=$?
+          if (( snapshot_status != 0 || report_status != 0 )); then exit 1; fi
 
   coverage:
     if: github.event_name == 'workflow_dispatch' && inputs.suite == 'coverage'

@@ -895,6 +895,10 @@ describe('CI workflow', () => {
       },
     })
     expect(replay.run).toContain('pnpm run test:snapshot snapshots/sdk/sdk.snapshot.ts -t activity-responsibility-status --reporter=json')
+    expect(replay.run).toContain('set +e')
+    expect(replay.run).toContain('snapshot_status=$?')
+    expect(replay.run).toContain('console.log(`${test.status}: ${test.fullName}`)')
+    expect(replay.run).toContain('if (( snapshot_status != 0 || report_status != 0 )); then exit 1; fi')
     expect(replay.run).toContain('selected.length !== 1 || selected[0].status !== \'passed\'')
     for (const [event, suite, expected] of [
       ['workflow_dispatch', 'sdk-snapshot', true],
