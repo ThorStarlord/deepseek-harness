@@ -181,7 +181,7 @@ describe('SubagentRuntime', () => {
     await expect(start(subagents, 'external', baseRequest()))
       .rejects.toMatchObject({
         code: 'NOT_DISPATCHED',
-        cause: expect.objectContaining({ message: 'directory unavailable' }),
+        cause: { message: 'directory unavailable' },
       })
     expect(provider.startCount).toBe(0)
   })
@@ -312,7 +312,7 @@ describe('SubagentRuntime', () => {
       delivery: 'caller',
     })).rejects.toMatchObject({
       code: 'NOT_DISPATCHED',
-      cause: expect.objectContaining({ code: 'CONTINUATION_UNAVAILABLE' }),
+      cause: { code: 'CONTINUATION_UNAVAILABLE' },
     })
     expect(provider.startCount).toBe(0)
   })
@@ -740,7 +740,7 @@ it('rejects a disposed parent before starting provider execution', async () => {
     parent: handle.agent, prompt: [],
   })).rejects.toMatchObject({
     code: 'NOT_DISPATCHED',
-    cause: expect.objectContaining({ code: 'UNAUTHORIZED' }),
+    cause: { code: 'UNAUTHORIZED' },
   })
   expect(provider.startCount).toBe(0)
 })

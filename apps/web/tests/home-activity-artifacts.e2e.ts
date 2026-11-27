@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
 import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold, watchConsole,
@@ -139,9 +140,10 @@ describe('web e2e: Home Activity artifact pointers', () => {
     )
     expect(firstRepository.root).not.toBe(secondRepository.root)
     expect(secondRepository.revision).toMatch(/^[0-9a-f]{40}$/u)
-    const { sessionId: secondParentSessionId } = await hostRpc<{ sessionId: string }>(
+    const { sessionId: rawSecondParentSessionId } = await hostRpc<{ sessionId: string }>(
       scaffold, 'session/create', { request: { workspaceId: secondWorkspace.workspaceId } },
     )
+    const secondParentSessionId = SessionId(rawSecondParentSessionId)
     const secondSessionSnapshot = await scaffold.ctx.sessionPersistence.stat(secondParentSessionId)
     expect(secondSessionSnapshot?.header.cwd).toBe(secondWorkspaceRecord.path)
     expect(firstWorkspace.id).not.toBe(secondWorkspace.workspaceId)
