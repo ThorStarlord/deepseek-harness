@@ -1092,6 +1092,7 @@ describe('CI workflow', () => {
       'if-no-files-found': 'error',
     })
     expect(upload.with.path).toContain('snapshots/web/fresh-round-trip/**')
+    expect(upload.with.path).toContain('snapshots/web/minimal-compact/**')
     for (const [event, suite, expected] of [
       ['workflow_dispatch', 'web-snapshot-refresh', true],
       ['workflow_dispatch', 'sdk-snapshot', false],
