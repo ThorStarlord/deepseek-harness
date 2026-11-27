@@ -96,6 +96,27 @@ export async function apply(ctx) {
 
   ctx.on('agent/created', ({ agent }) => {
     if (String(agent.session.id) !== TARGET_SESSION_ID) return
+    agent.session.append('user/message', {
+      role: 'user',
+      id: 'activity-status-dispatched-prompt',
+      content: [{
+        type: 'text',
+        text: [
+          'Activity: Snapshot status report',
+          `Activity ID: ${ACTIVITY_ID}`,
+          `Responsibility ID: ${RESPONSIBILITY_ID}`,
+          'Objective: Record a target Session progress update without inferring task completion.',
+          'Task: Inspect the selected fixture and report the current progress.',
+          'Scope: Read the selected fixture.',
+          'Out of scope: Do not change files or claim verification.',
+          'Prerequisites: None recorded.',
+          'Conflicting work to account for: None recorded.',
+          'Expected outcome: One attributed progress update.',
+          'Use this Session’s existing runtime, permissions, and repository context. Do not expand the task or change permissions. Do not commit, merge, deploy, publish, or release unless that exact action is separately authorized in this Session. For meaningful milestones or blockers, call report_activity_responsibility_status with these exact IDs and a concise one-line status. A status report is only your report; do not label work independently verified, user-accepted, or complete. Continue with the task and provide a final outcome when the turn finishes.',
+        ].join('\n'),
+      }],
+      source: { kind: 'user', rpcId: PROMPT_REQUEST_ID },
+    }, { surfaceOp: 'append' })
     if (agent.id !== agent.session.id || ctx.agents.get(agent.id) !== agent
       || !ctx.homeActivityResponsibilities.hasReportableTargetSession(agent.session.id)
       || ctx.tools.get('report_activity_responsibility_status', agent) === undefined) {
