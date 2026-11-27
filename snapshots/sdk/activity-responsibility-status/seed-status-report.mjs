@@ -96,7 +96,7 @@ export async function apply(ctx) {
 
   ctx.on('agent/created', ({ agent }) => {
     if (String(agent.session.id) !== TARGET_SESSION_ID) return
-    agent.session.append('user/message', {
+    agent.inbox.append('next-turn', {
       role: 'user',
       id: 'activity-status-dispatched-prompt',
       content: [{
@@ -116,7 +116,7 @@ export async function apply(ctx) {
         ].join('\n'),
       }],
       source: { kind: 'user', rpcId: PROMPT_REQUEST_ID },
-    }, { surfaceOp: 'append' })
+    })
     if (agent.id !== agent.session.id || ctx.agents.get(agent.id) !== agent
       || !ctx.homeActivityResponsibilities.hasReportableTargetSession(agent.session.id)
       || ctx.tools.get('report_activity_responsibility_status', agent) === undefined) {
