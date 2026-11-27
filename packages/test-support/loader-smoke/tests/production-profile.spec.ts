@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,6 +30,7 @@ describe.sequential('bootProductionProfile', () => {
       process.env['HOME'] = userHome
       const expectedDshHome = join(homedir(), '.dsh')
       expect(expectedDshHome).toBe(join(userHome, '.dsh'))
+      await selectBaseOnlyProfile(expectedDshHome)
 
       context = await bootProductionProfile({
         binName: 'loader-smoke-test',
@@ -58,6 +59,7 @@ describe.sequential('bootProductionProfile', () => {
       process.env['DSH_HOME'] = join(root, '.dsh')
       process.env['DSH_AGENTS_HOME'] = join(root, '.agents')
       const savedHome = process.env['DSH_HOME']
+      await selectBaseOnlyProfile(savedHome)
 
       context = await bootProductionProfile({
         binName: 'loader-smoke-test',
@@ -69,15 +71,10 @@ describe.sequential('bootProductionProfile', () => {
       const resolution = context.get('pluginPackages').resolution
       expect(resolution).toBeDefined()
       const overlayPackages = resolution?.entries
-        .filter(entry => entry.name.startsWith('test-overlay:'))
+        .filter(entry => entry.scope === 'profile' && ['tsx', 'vitest'].includes(entry.name))
         .map(entry => entry.name)
         .sort()
-      expect(overlayPackages).toEqual([
-        'test-overlay:0:@deepseek-ai/dsh-agent',
-        'test-overlay:1:@deepseek-ai/dsh-llm',
-        'test-overlay:2:@deepseek-ai/dsh-session',
-        'test-overlay:3:tsx',
-      ])
+      expect(overlayPackages).toEqual(['tsx', 'vitest'])
     } finally {
       await context?.fiber.dispose()
       restoreEnvironment(savedEnvironment)
@@ -85,6 +82,17 @@ describe.sequential('bootProductionProfile', () => {
     }
   }, PROFILE_BOOT_TIMEOUT_MS)
 })
+
+async function selectBaseOnlyProfile(home: string): Promise<void> {
+  const profileDirectory = join(home, 'profiles', 'headless')
+  await mkdir(profileDirectory, { recursive: true })
+  await writeFile(join(profileDirectory, 'package.json'), `${JSON.stringify({
+    name: 'dsh-profile-headless',
+    private: true,
+    dependencies: {},
+    dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
+  }, undefined, 2)}\n`)
+}
 
 function restoreEnvironment(saved: Record<string, string | undefined>): void {
   for (const name of ENVIRONMENT_KEYS) {
