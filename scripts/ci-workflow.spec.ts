@@ -823,9 +823,11 @@ describe('CI workflow', () => {
     const master = loadWorkflow('.github/workflows/ci-master.yml')
     if (!isRecord(master.on) || !isRecord(master.on.workflow_dispatch)
       || !isRecord(master.on.workflow_dispatch.inputs) || !isRecord(master.on.workflow_dispatch.inputs.suite)
+      || !isRecord(master.on.workflow_dispatch.inputs.source_sha)
       || !isRecord(master.jobs)) throw new TypeError('CI master must define manual suites and jobs')
+    expect(master.on.workflow_dispatch.inputs.source_sha).toMatchObject({ required: false, type: 'string' })
     expect(master.on.workflow_dispatch.inputs.suite.options).toEqual([
-      'larger-runner-benchmark', 'consolidated-runner-benchmark', 'ssh-helper', 'sdk-snapshot', 'web-snapshot-refresh', 'wine',
+      'larger-runner-benchmark', 'consolidated-runner-benchmark', 'ssh-helper', 'sdk-snapshot', 'web-snapshot-refresh', 'coverage', 'wine',
     ])
     const wine = workflowJob(master, 'windows')
     if (typeof wine.if !== 'string') throw new TypeError('Wine must define a trigger condition')
@@ -865,11 +867,12 @@ describe('CI workflow', () => {
       if: "github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot'",
     })
     const sourceCheck = steps.find(step => isRecord(step) && step.name === 'Verify selected source revision')
+    const checkout = steps.find(step => isRecord(step) && step.uses === 'actions/checkout@v7.0.1')
     const scenarioCheck = steps.find(step => isRecord(step) && step.name === 'Verify the selected revision includes the requested SDK scenario')
     const install = steps.find(step => isRecord(step) && step.name === 'Install (immutable)')
     const build = steps.find(step => isRecord(step) && step.name === 'Build the selected revision')
     const replay = steps.find(step => isRecord(step) && step.name === 'Replay the Activity responsibility status scenario')
-    if (!isRecord(sourceCheck) || typeof sourceCheck.run !== 'string'
+    if (!isRecord(sourceCheck) || typeof sourceCheck.run !== 'string' || !isRecord(checkout)
       || !isRecord(scenarioCheck) || typeof scenarioCheck.run !== 'string'
       || !isRecord(install) || !isRecord(build)
       || !isRecord(replay) || typeof replay.run !== 'string') {
@@ -878,7 +881,9 @@ describe('CI workflow', () => {
     const stepOrder = [sourceCheck, scenarioCheck, install, build, replay].map(step => steps.indexOf(step))
     expect(stepOrder.every(index => index >= 0)).toBe(true)
     expect(stepOrder).toEqual([...stepOrder].sort((left, right) => left - right))
-    expect(sourceCheck).toMatchObject({ run: 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' })
+    expect(checkout.with).toMatchObject({ ref: '${{ inputs.source_sha || github.sha }}' })
+    expect(job.env).toMatchObject({ EXPECTED_SOURCE_SHA: '${{ inputs.source_sha || github.sha }}' })
+    expect(sourceCheck.run).toBe('test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"')
     expect(scenarioCheck.run).toContain('test -f snapshots/sdk/activity-responsibility-status/snapshot.yml')
     expect(scenarioCheck.run).toContain("'activity-responsibility-status': {")
     expect(build).toMatchObject({ env: { DSH_BUILD_CLIENT_PROFILE: 'official' }, run: 'pnpm run build' })
@@ -901,6 +906,44 @@ describe('CI workflow', () => {
     }
   })
 
+  it('runs exact-revision coverage from a manual fork workflow dispatch', () => {
+    const workflow = loadWorkflow('.github/workflows/ci-master.yml')
+    const job = workflowJob(workflow, 'coverage')
+    if (!Array.isArray(job.steps) || typeof job.if !== 'string') {
+      throw new TypeError('CI master must define the exact-revision coverage dispatch')
+    }
+    const steps: unknown[] = job.steps
+    const checkout = steps.find(step => isRecord(step) && step.uses === 'actions/checkout@v7.0.1')
+    const sourceCheck = steps.find(step => isRecord(step) && step.name === 'Verify selected source revision')
+    const install = steps.find(step => isRecord(step) && step.name === 'Install dependencies and prepare bubblewrap')
+    const build = steps.find(step => isRecord(step) && step.name === 'Build artifacts for profile process tests')
+    const coverage = steps.find(step => isRecord(step) && step.name === 'Run exhaustive coverage')
+    if (!isRecord(checkout) || !isRecord(sourceCheck) || typeof sourceCheck.run !== 'string'
+      || !isRecord(install) || typeof install.run !== 'string' || !isRecord(build) || !isRecord(coverage)) {
+      throw new TypeError('Coverage dispatch must install the selected revision, prepare its sandbox, and run its gate')
+    }
+    expect(job).toMatchObject({
+      name: 'exact-revision coverage (manual)',
+      'runs-on': 'ubuntu-24.04',
+      'timeout-minutes': 60,
+      if: "github.event_name == 'workflow_dispatch' && inputs.suite == 'coverage'",
+    })
+    expect(checkout.with).toMatchObject({ ref: '${{ inputs.source_sha || github.sha }}', 'persist-credentials': false })
+    expect(job.env).toMatchObject({ EXPECTED_SOURCE_SHA: '${{ inputs.source_sha || github.sha }}' })
+    expect(sourceCheck.run).toBe('test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"')
+    expect(install.run).toContain('bash scripts/prepare-ci-bubblewrap.sh')
+    expect(build.run).toBe('pnpm run build:artifacts')
+    expect(coverage.run).toBe('pnpm run check:ci:coverage')
+    for (const [event, suite, expected] of [
+      ['workflow_dispatch', 'coverage', true],
+      ['workflow_dispatch', 'sdk-snapshot', false],
+      ['pull_request', 'coverage', false],
+      ['push', 'coverage', false],
+    ] as const) {
+      expect(runInNewContext(job.if, { github: { event_name: event }, inputs: { suite } }, { timeout: 1000 })).toBe(expected)
+    }
+  })
+
   it('refreshes only the selected keyless Web snapshots from the exact dispatched revision', () => {
     const workflow = loadWorkflow('.github/workflows/ci-master.yml')
     const job = workflowJob(workflow, 'web-snapshot-refresh')
@@ -915,6 +958,7 @@ describe('CI workflow', () => {
       if: "github.event_name == 'workflow_dispatch' && inputs.suite == 'web-snapshot-refresh'",
     })
     const sourceCheck = steps.find(step => isRecord(step) && step.name === 'Verify selected source revision and snapshot owners')
+    const checkout = steps.find(step => isRecord(step) && step.uses === 'actions/checkout@v7.0.1')
     const install = steps.find(step => isRecord(step) && step.name === 'Install (immutable)')
     const sandbox = steps.find(step => isRecord(step) && step.name === 'Prepare bubblewrap (unrestrict userns)')
     const browser = steps.find(step => isRecord(step) && step.name === 'Install Playwright Chromium and hosted dependencies')
@@ -922,14 +966,16 @@ describe('CI workflow', () => {
     const ownerRefresh = steps.find(step => isRecord(step) && step.name === 'Refresh the shared tool-schema owner')
     const refresh = steps.find(step => isRecord(step) && step.name === 'Refresh only the selected keyless Web scenarios')
     const upload = steps.find(step => isRecord(step) && step.name === 'Upload selected refresh outputs for review')
-    if (!isRecord(sourceCheck) || typeof sourceCheck.run !== 'string'
+    if (!isRecord(sourceCheck) || typeof sourceCheck.run !== 'string' || !isRecord(checkout)
       || !isRecord(install) || !isRecord(sandbox) || !isRecord(browser) || !isRecord(build)
       || !isRecord(ownerRefresh) || typeof ownerRefresh.run !== 'string'
       || !isRecord(refresh) || typeof refresh.run !== 'string'
       || !isRecord(upload)) {
       throw new TypeError('Web snapshot refresh must verify its selected owners, build, refresh, and publish review outputs')
     }
-    expect(sourceCheck.run).toContain('test "$(git rev-parse HEAD)" = "$GITHUB_SHA"')
+    expect(checkout.with).toMatchObject({ ref: '${{ inputs.source_sha || github.sha }}' })
+    expect(job.env).toMatchObject({ EXPECTED_SOURCE_SHA: '${{ inputs.source_sha || github.sha }}' })
+    expect(sourceCheck.run).toContain('test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"')
     for (const file of [
       'apps/web/tests/minimal-preset.snapshot.ts',
       'apps/web/tests/code-language.snapshot.ts',
@@ -961,7 +1007,7 @@ describe('CI workflow', () => {
     expect(refresh.run).toContain('--update')
     expect(upload).toMatchObject({ if: 'always()', uses: 'actions/upload-artifact@v7.0.1' })
     expect(upload.with).toMatchObject({
-      name: 'web-snapshot-refresh-${{ github.sha }}',
+      name: 'web-snapshot-refresh-${{ inputs.source_sha || github.sha }}',
       'if-no-files-found': 'error',
     })
     expect(upload.with).toMatchObject({ path: expect.stringContaining('snapshots/web/fresh-round-trip/**') })
@@ -1029,6 +1075,7 @@ describe('CI workflow', () => {
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'ssh-helper'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'web-snapshot-refresh'",
+      "github.event_name == 'workflow_dispatch' && inputs.suite == 'coverage'",
     ])
     const pushReachable = Object.entries(workflow.jobs)
       .filter(([, job]) => {
