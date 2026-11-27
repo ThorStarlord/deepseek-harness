@@ -2665,22 +2665,25 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 ```json
 {
-  "repositories": {
-    "type": "array",
-    "required": true,
-    "minItems": 2,
-    "maxItems": 2,
-    "items": {
-      "type": "string",
-      "description": "Absolute root path of one registered Workspace."
+  "type": "object",
+  "properties": {
+    "repositories": {
+      "type": "array",
+      "description": "Exactly two absolute registered Workspace roots, in result order.",
+      "items": {
+        "type": "string",
+        "description": "Absolute root path of one registered Workspace."
+      }
     },
-    "description": "Exactly two absolute registered Workspace roots, in result order."
+    "task": {
+      "type": "string",
+      "description": "One analysis task to perform independently in each repository."
+    }
   },
-  "task": {
-    "type": "string",
-    "required": true,
-    "description": "One analysis task to perform independently in each repository."
-  }
+  "required": [
+    "repositories",
+    "task"
+  ]
 }
 ```
 
@@ -2692,11 +2695,16 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 ```json
 {
-  "path": {
-    "type": "string",
-    "required": true,
-    "description": "One repository-relative file path."
-  }
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "One repository-relative file path."
+    }
+  },
+  "required": [
+    "path"
+  ]
 }
 ```
 
@@ -2707,7 +2715,10 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 列出此所选仓库中已跟踪且未被忽略的未跟踪路径；忽略文件会被排除。
 
 ```json
-{}
+{
+  "type": "object",
+  "properties": {}
+}
 ```
 
 来源：[`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
@@ -2718,19 +2729,24 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 ```json
 {
-  "path": {
-    "type": "string",
-    "required": true,
-    "description": "One path relative to the selected repository root."
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "One path relative to the selected repository root."
+    },
+    "offset": {
+      "type": "number",
+      "description": "1-based first line to return; defaults to 1."
+    },
+    "limit": {
+      "type": "number",
+      "description": "Maximum lines to return; defaults to 400."
+    }
   },
-  "offset": {
-    "type": "number",
-    "description": "1-based first line to return; defaults to 1."
-  },
-  "limit": {
-    "type": "number",
-    "description": "Maximum lines to return; defaults to 400."
-  }
+  "required": [
+    "path"
+  ]
 }
 ```
 

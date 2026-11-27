@@ -345,6 +345,14 @@ describe('read-only multi-repository coordination', () => {
     const coordinate = f.ctx.tools.get('coordinate_repositories')
     expect(coordinate).toBeDefined()
     await expect(coordinate?.execute(
+      { repositories: [f.alphaPath], task: 'inspect one repository' },
+      directToolContext('coordinate_repositories', {}, f.parent),
+    )).rejects.toMatchObject({ code: 'REPOSITORY_COUNT_INVALID' })
+    await expect(coordinate?.execute(
+      { repositories: [f.alphaPath, f.betaPath, f.thirdPath], task: 'inspect three repositories' },
+      directToolContext('coordinate_repositories', {}, f.parent),
+    )).rejects.toMatchObject({ code: 'REPOSITORY_COUNT_INVALID' })
+    await expect(coordinate?.execute(
       { repositories: [f.alphaPath, f.betaPath], task: 'inspect both repositories' },
       directToolContext('coordinate_repositories', {}, undefined),
     )).rejects.toMatchObject({ code: 'PARENT_UNAVAILABLE' })
@@ -356,9 +364,10 @@ describe('read-only multi-repository coordination', () => {
     for (const name of REPO_READ_TOOLS) {
       const reader = f.ctx.tools.get(name)
       expect(reader).toBeDefined()
-      await expect(reader?.execute({}, directToolContext(name, {}, undefined)))
+      const args = name === 'repository_list_files' ? {} : { path: 'README.md' }
+      await expect(reader?.execute(args, directToolContext(name, {}, undefined)))
         .rejects.toMatchObject({ code: 'REPOSITORY_WORKER_REQUIRED' })
-      await expect(reader?.execute({}, directToolContext(name, {}, f.parent)))
+      await expect(reader?.execute(args, directToolContext(name, {}, f.parent)))
         .rejects.toMatchObject({ code: 'REPOSITORY_WORKER_REQUIRED' })
     }
     expect(await f.parent.ctx.waterfall(
@@ -611,7 +620,7 @@ describe('read-only multi-repository coordination', () => {
     expect(parentToolResult?.type === 'tool/result' ? JSON.stringify(parentToolResult.data) : '')
       .toContain('ignored untracked files excluded: 2')
     expect(parentToolResult?.type === 'tool/result' ? JSON.stringify(parentToolResult.data) : '')
-      .toContain('Git command enforcement: partial')
+      .toMatch(/Git command enforcement: (full|partial); partial enforcement uses fixed read-only Git commands/u)
 
     const after = await Promise.all([f.alphaPath, f.betaPath, f.thirdPath].map(snapshotRepository))
     expect(after).toEqual(before)

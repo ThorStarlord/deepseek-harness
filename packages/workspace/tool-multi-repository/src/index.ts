@@ -11,7 +11,8 @@ import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentActivation, SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { ToolDefinition, ToolExecution, JsonSchemaNode, PreToolDecision } from '@deepseek-ai/dsh-tools'
+import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition, ToolExecution, PreToolDecision, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
 import type { Workspace, WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { AgentPresetRegistry } from '@deepseek-ai/dsh-agent-preset-registry'
 import { assertReadOnlyGitCommand, gitNullDevice } from './read-only-git-command.ts'
@@ -95,9 +96,9 @@ interface RepositoryResult {
   readonly gitIdentity: string
   readonly head: string
   readonly branch: string | null
-  readonly stagedPaths: readonly string[]
-  readonly unstagedPaths: readonly string[]
-  readonly untrackedPaths: readonly string[]
+  readonly stagedPaths: string[]
+  readonly unstagedPaths: string[]
+  readonly untrackedPaths: string[]
   readonly stagedCount: number
   readonly unstagedCount: number
   readonly untrackedCount: number
@@ -125,59 +126,52 @@ class MultiRepositoryError extends HarnessError {
   }
 }
 
-const resultSchema: JsonSchemaNode = {
+const resultSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['repositories'],
   properties: {
     repositories: {
       type: 'array',
+      required: true,
       items: {
         type: 'object',
         additionalProperties: false,
-        required: [
-          'execution', 'gitCommandEnforcement', 'workspaceId', 'workspaceTitle', 'root', 'gitIdentity', 'head', 'branch',
-          'stagedPaths', 'unstagedPaths', 'untrackedPaths', 'ignoredPathCount', 'childSessionId',
-          'stagedCount', 'unstagedCount', 'untrackedCount',
-          'runId', 'stopReason', 'assistantOutput', 'sourceChanged', 'observedAtStart',
-          'observedAtEnd', 'observationError',
-        ],
         properties: {
-          execution: { type: 'string', enum: ['result', 'startup-error', 'result-error'] },
-          gitCommandEnforcement: { type: 'string', enum: ['full', 'partial'] },
-          workspaceId: { type: 'string' },
-          workspaceTitle: { type: 'string' },
-          root: { type: 'string' },
-          gitIdentity: { type: 'string' },
-          head: { type: 'string' },
-          branch: nullableStringSchema(),
-          stagedPaths: stringArraySchema(),
-          unstagedPaths: stringArraySchema(),
-          untrackedPaths: stringArraySchema(),
-          stagedCount: { type: 'integer' },
-          unstagedCount: { type: 'integer' },
-          untrackedCount: { type: 'integer' },
-          ignoredPathCount: { type: 'integer' },
-          childSessionId: nullableStringSchema(),
-          runId: nullableStringSchema(),
-          stopReason: { type: 'string' },
-          assistantOutput: { type: 'string' },
-          sourceChanged: { oneOf: [{ type: 'boolean' }, { type: 'null' }] },
-          observedAtStart: { type: 'string' },
-          observedAtEnd: nullableStringSchema(),
-          observationError: nullableStringSchema(),
+          execution: { type: 'string', required: true, enum: ['result', 'startup-error', 'result-error'] },
+          gitCommandEnforcement: { type: 'string', required: true, enum: ['full', 'partial'] },
+          workspaceId: { type: 'string', required: true },
+          workspaceTitle: { type: 'string', required: true },
+          root: { type: 'string', required: true },
+          gitIdentity: { type: 'string', required: true },
+          head: { type: 'string', required: true },
+          branch: { ...nullableStringSchema(), required: true },
+          stagedPaths: { ...stringArraySchema(), required: true },
+          unstagedPaths: { ...stringArraySchema(), required: true },
+          untrackedPaths: { ...stringArraySchema(), required: true },
+          stagedCount: { type: 'integer', required: true },
+          unstagedCount: { type: 'integer', required: true },
+          untrackedCount: { type: 'integer', required: true },
+          ignoredPathCount: { type: 'integer', required: true },
+          childSessionId: { ...nullableStringSchema(), required: true },
+          runId: { ...nullableStringSchema(), required: true },
+          stopReason: { type: 'string', required: true },
+          assistantOutput: { type: 'string', required: true },
+          sourceChanged: { oneOf: [{ type: 'boolean' }, { type: 'null' }], required: true },
+          observedAtStart: { type: 'string', required: true },
+          observedAtEnd: { ...nullableStringSchema(), required: true },
+          observationError: { ...nullableStringSchema(), required: true },
         },
       },
     },
   },
+} as const satisfies ValueSchemaSpec
+
+function nullableStringSchema() {
+  return { oneOf: [{ type: 'string' }, { type: 'null' }] as const } as const
 }
 
-function nullableStringSchema(): JsonSchemaNode {
-  return { oneOf: [{ type: 'string' }, { type: 'null' }] }
-}
-
-function stringArraySchema(): JsonSchemaNode {
-  return { type: 'array', items: { type: 'string' } }
+function stringArraySchema() {
+  return { type: 'array', items: { type: 'string' } } as const
 }
 
 function createCoordinationTool(
@@ -187,7 +181,7 @@ function createCoordinationTool(
   workerRoots: Map<string, string>,
   workerRunIds: Map<string, string>,
 ): ToolDefinition {
-  return {
+  return defineTool({
     name: TOOL_NAME,
     description: [
       'Coordinate one read-only analysis across exactly two explicitly selected registered local Git Workspaces.',
@@ -198,7 +192,7 @@ function createCoordinationTool(
     ].join(' '),
     parameters: {
       repositories: {
-        type: 'array', required: true, minItems: 2, maxItems: 2,
+        type: 'array', required: true,
         items: { type: 'string', description: 'Absolute root path of one registered Workspace.' },
         description: 'Exactly two absolute registered Workspace roots, in result order.',
       },
@@ -227,8 +221,10 @@ function createCoordinationTool(
         })),
       }),
     },
-    async execute(rawArgs, exec) {
-      const args = rawArgs as ToolArgs
+    async execute(args, exec) {
+      if (args.repositories.length !== 2) {
+        throw new MultiRepositoryError('repository coordination requires exactly two selected Workspaces', 'REPOSITORY_COUNT_INVALID')
+      }
       const parent = exec.agent
       if (parent === undefined || ctx.agents.get(parent.id) !== parent || parent.ctx.fiber.state !== FiberState.ACTIVE) {
         throw new MultiRepositoryError('repository coordination requires a live parent Agent', 'PARENT_UNAVAILABLE')
@@ -277,14 +273,14 @@ function createCoordinationTool(
       exec.signal.throwIfAborted()
       return { repositories: results }
     },
-  }
+  })
 }
 
 function createStagedReadTool(
   ctx: Context,
   workerRoots: Map<string, string>,
 ): ToolDefinition {
-  return {
+  return defineTool({
     name: STAGED_READ_TOOL,
     description: 'Read the staged Git index version of one file without changing the index or working tree.',
     parameters: {
@@ -293,15 +289,15 @@ function createStagedReadTool(
     output: {
       schema: {
         type: 'object', additionalProperties: false,
-        required: ['path', 'stage', 'content'],
         properties: {
-          path: { type: 'string' }, stage: { type: 'integer' }, content: { type: 'string' },
+          path: { type: 'string', required: true },
+          stage: { type: 'integer', required: true },
+          content: { type: 'string', required: true },
         },
       },
       render: (_args, value) => [{ type: 'text', text: renderStagedContent(value) }],
     },
-    async execute(rawArgs, exec) {
-      const args = rawArgs as { readonly path: string }
+    async execute(args, exec) {
       const root = exec.agent === undefined ? undefined : repositoryWorkerRoot(exec.agent, workerRoots)
       if (root === undefined) throw new MultiRepositoryError('staged file reads are available only to an active repository worker', 'REPOSITORY_WORKER_REQUIRED')
       const gitPath = normalizeRepositoryRelativePath(root, args.path)
@@ -318,25 +314,24 @@ function createStagedReadTool(
       const lines = blob.stdout.split(/\r?\n/u).slice(0, 400).map((line, index) => `${index + 1}: ${line}`)
       return { path: gitPath, stage: entry.stage, content: lines.join('\n') }
     },
-  }
+  })
 }
 
 function createListFilesTool(
   ctx: Context,
   workerRoots: Map<string, string>,
 ): ToolDefinition {
-  return {
+  return defineTool({
     name: 'repository_list_files',
     description: 'List tracked and unignored untracked paths in this selected repository; ignored files are omitted.',
     parameters: {},
     output: {
       schema: {
         type: 'object', additionalProperties: false,
-        required: ['paths', 'totalFiles', 'omittedSensitiveFiles'],
         properties: {
-          paths: stringArraySchema(),
-          totalFiles: { type: 'integer' },
-          omittedSensitiveFiles: { type: 'integer' },
+          paths: { ...stringArraySchema(), required: true },
+          totalFiles: { type: 'integer', required: true },
+          omittedSensitiveFiles: { type: 'integer', required: true },
         },
       },
       render: (_args, value) => [{ type: 'text', text: renderFileList(value) }],
@@ -353,14 +348,14 @@ function createListFilesTool(
         omittedSensitiveFiles: paths.length - safe.length,
       }
     },
-  }
+  })
 }
 
 function createWorkingTreeReadTool(
   ctx: Context,
   workerRoots: Map<string, string>,
 ): ToolDefinition {
-  return {
+  return defineTool({
     name: 'repository_read_file',
     description: 'Read one bounded file from this selected repository working tree.',
     parameters: {
@@ -371,24 +366,24 @@ function createWorkingTreeReadTool(
     output: {
       schema: {
         type: 'object', additionalProperties: false,
-        required: ['path', 'offset', 'lines', 'totalLines'],
         properties: {
-          path: { type: 'string' },
-          offset: { type: 'integer' },
-          totalLines: { type: 'integer' },
+          path: { type: 'string', required: true },
+          offset: { type: 'integer', required: true },
+          totalLines: { type: 'integer', required: true },
           lines: {
-            type: 'array', items: {
+            type: 'array', required: true, items: {
               type: 'object', additionalProperties: false,
-              required: ['number', 'text'],
-              properties: { number: { type: 'integer' }, text: { type: 'string' } },
+              properties: {
+                number: { type: 'integer', required: true },
+                text: { type: 'string', required: true },
+              },
             },
           },
         },
       },
       render: (_args, value) => [{ type: 'text', text: renderWorkingTreeFile(value) }],
     },
-    async execute(rawArgs, exec) {
-      const args = rawArgs as { readonly path: string; readonly offset?: number; readonly limit?: number }
+    async execute(args, exec) {
       const root = exec.agent === undefined ? undefined : repositoryWorkerRoot(exec.agent, workerRoots)
       if (root === undefined) throw new MultiRepositoryError('file reads are available only to a repository worker', 'REPOSITORY_WORKER_REQUIRED')
       const requested = normalizeRepositoryRelativePath(root, args.path)
@@ -416,7 +411,7 @@ function createWorkingTreeReadTool(
       const lines = allLines.slice(offset - 1, offset - 1 + limit).map((text, index) => ({ number: offset + index, text }))
       return { path: normalizeGitPath(canonicalPath), offset, lines, totalLines: allLines.length }
     },
-  }
+  })
 }
 
 /** Register model tools and enforce selected-root reads for every worker tool call. */
@@ -778,9 +773,9 @@ async function runRepositoryWorker(
     gitIdentity: source.commonGitDirectory,
     head: source.state.head,
     branch: source.state.branch,
-    stagedPaths: source.state.stagedPaths,
-    unstagedPaths: source.state.unstagedPaths,
-    untrackedPaths: source.state.untrackedPaths,
+    stagedPaths: [...source.state.stagedPaths],
+    unstagedPaths: [...source.state.unstagedPaths],
+    untrackedPaths: [...source.state.untrackedPaths],
     stagedCount: source.state.stagedCount,
     unstagedCount: source.state.unstagedCount,
     untrackedCount: source.state.untrackedCount,

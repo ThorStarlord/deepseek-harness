@@ -419,7 +419,7 @@ it('resolves a named external run but not a path below it', async () => {
 it('rejects a name for a caller-delivered external run that never enters the catalog', async () => {
   const start = vi.fn<(request: SubagentStartRequest) => Promise<SubagentRun>>()
   const fixture = await setup(start)
-  await expect(fixture.start('caller', 'auditor')).rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' })
+  await expect(fixture.start('caller', 'auditor')).rejects.toMatchObject({ code: 'NOT_DISPATCHED' })
   expect(start).not.toHaveBeenCalled()
   const backend = execution()
   start.mockResolvedValue(backend.run)

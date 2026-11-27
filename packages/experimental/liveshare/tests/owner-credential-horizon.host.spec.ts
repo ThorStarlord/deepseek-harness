@@ -13,13 +13,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import { WebSocketServer } from 'ws'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import type {} from '../src/index.ts'
 import { apply } from '../src/host/share-host.ts'
 
-const START = Date.parse('2026-10-15T00:00:00.000Z')
-const PAST = new Date(START).toISOString()
-const LIVE = new Date(START + 30 * 24 * 60 * 60_000).toISOString()
+const NOW = Date.now()
+const PAST = new Date(NOW - 60_000).toISOString()
+const LIVE = new Date(NOW + 30 * 24 * 60 * 60_000).toISOString()
 const STORED_TOKEN = 'stored-payload.stored-signature'
 
 /**
@@ -76,12 +77,17 @@ async function relayStandIn(options: {
     res.writeHead(404, { 'content-type': 'application/json' })
     res.end('{"error":"not-found"}')
   })
+  const sockets = new WebSocketServer({ server })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   const { port } = server.address() as AddressInfo
   return {
     relayUrl: `http://127.0.0.1:${String(port)}`,
     claims,
-    close: async () => { await new Promise<void>((resolve) => { server.close(() => { resolve() }) }) },
+    close: async () => {
+      for (const socket of sockets.clients) socket.terminate()
+      await new Promise<void>((resolve) => { sockets.close(() => { resolve() }) })
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+    },
   }
 }
 

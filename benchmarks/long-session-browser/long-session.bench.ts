@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
-import { chromium, type Page, type CDPSession, type Locator } from 'playwright'
+import { chromium, type Page, type CDPSession } from 'playwright'
 import { expect, it, vi } from 'vitest'
 import { launchWebScaffold, seedSession, watchConsole, webSnapshotMode } from '../../apps/web/tests/scaffold.ts'
 import { newEnglishPage } from '../../apps/web/tests/support.ts'
@@ -27,7 +27,7 @@ const SCALED_ENDPOINTS = ['open', 'page', 'trajectory', 'streamTask'] as const
 const IO_SHARE = 0.05
 const CASE: BenchmarkCase = {
   id: 'long-session-browser',
-  measures: 'Chromium on the built Web GUI: opening a 240-turn Session, the slowest older page, first Trajectory view, and main-thread task time while a reply streams.',
+  measures: 'Chromium on the built Web GUI: opening a 240-turn Session, the slowest older page, first Trajectory view, main-thread task time while a reply streams, and first-key input latency during that reply.',
   affects: 'Everyday Web GUI use with a long Session.',
 }
 
@@ -105,18 +105,27 @@ async function waitForTrajectory(page: Page, timeout = 30000): Promise<void> {
   await ready.dispose()
 }
 
-async function watchInputOverlap(composer: Locator): Promise<void> {
-  await composer.evaluate((element, markers) => {
-    element.removeAttribute('data-benchmark-input-witness')
-    element.removeAttribute('data-benchmark-input-overlap')
-    element.removeAttribute('data-benchmark-input-timing')
-    element.addEventListener('input', (event) => {
+async function watchInputOverlap(page: Page, key: string): Promise<void> {
+  await page.evaluate((markers) => {
+    const root = document.documentElement
+    root.removeAttribute('data-benchmark-input-witness')
+    root.removeAttribute('data-benchmark-input-overlap')
+    root.removeAttribute('data-benchmark-input-timing')
+    const onKeydown = (event: KeyboardEvent) => {
+      if (event.key !== markers.key) return
+      const target = event.target
+      const element = target instanceof Element
+        ? target.closest('[data-composer-input]')
+        : null
+      if (element === null || element.getAttribute('contenteditable') !== 'true') return
       const transcript = Array.from(document.querySelectorAll('[data-chat-flow-kind="assistant-step"]')).at(-1)?.textContent ?? ''
-      element.setAttribute('data-benchmark-input-overlap', String(event.isTrusted && transcript.includes(markers.first) && !transcript.includes(markers.done)))
-      element.setAttribute('data-benchmark-input-witness', JSON.stringify({ trusted: event.isTrusted, first: transcript.includes(markers.first), done: transcript.includes(markers.done) }))
-      element.setAttribute('data-benchmark-input-timing', JSON.stringify({ atMs: window.performance.now(), eventAtMs: event.timeStamp, focused: document.activeElement === element }))
-    }, { once: true })
-  }, { first: FIRST, done: DONE })
+      root.setAttribute('data-benchmark-input-overlap', String(event.isTrusted && transcript.includes(markers.first) && !transcript.includes(markers.done)))
+      root.setAttribute('data-benchmark-input-witness', JSON.stringify({ trusted: event.isTrusted, focused: document.activeElement === element, first: transcript.includes(markers.first), done: transcript.includes(markers.done) }))
+      root.setAttribute('data-benchmark-input-timing', JSON.stringify({ atMs: window.performance.now(), eventAtMs: event.timeStamp, focused: document.activeElement === element }))
+      document.removeEventListener('keydown', onKeydown, true)
+    }
+    document.addEventListener('keydown', onKeydown, true)
+  }, { key, first: FIRST, done: DONE })
 }
 
 it('accepts recorded hosted open samples and rejects slower endpoints', () => {
@@ -396,20 +405,21 @@ it('opens, pages, navigates and streams into a 240-turn browser history', async 
             () => ({ ok: true as const }),
             (error: unknown) => ({ ok: false as const, error }),
           )
-          await watchInputOverlap(composer)
+          await watchInputOverlap(page, 'n')
           const started = performance.now()
           await page.keyboard.press('Enter')
           const firstMarker = await waitForReplyMarker(page, FIRST)
           const first = performance.now() - started
           // Keep focus across submission; mouse actionability must not delay the input probe.
-          const input = await measure(page, async () => {
-            await page.keyboard.type('next synthetic question')
-            await expect.poll(() => composer.textContent()).toBe('next synthetic question')
-          })
-          const inputOverlapped = await composer.getAttribute('data-benchmark-input-overlap') === 'true'
+          const inputStarted = performance.now()
+          await page.keyboard.type('n')
+          await expect.poll(() => composer.textContent()).toBe('n')
+          const input = performance.now() - inputStarted
           const firstObservation = await firstMarker.jsonValue()
+          expect(firstObservation).toMatchObject({ first: true, done: false })
+          const inputOverlapped = await page.locator('html').getAttribute('data-benchmark-input-overlap') === 'true'
           await firstMarker.dispose()
-          console.log(JSON.stringify({ benchmark: 'long-session-browser/input', sample, first, input, firstObservation, witness: await composer.getAttribute('data-benchmark-input-witness'), inputTiming: await composer.getAttribute('data-benchmark-input-timing') }))
+          console.log(JSON.stringify({ benchmark: 'long-session-browser/input', sample, first, input, firstObservation, witness: await page.locator('html').getAttribute('data-benchmark-input-witness'), inputTiming: await page.locator('html').getAttribute('data-benchmark-input-timing') }))
           expectInputOverlap(inputOverlapped)
           await (await waitForReplyMarker(page, DONE)).dispose()
           const settlement = await settled
@@ -424,11 +434,11 @@ it('opens, pages, navigates and streams into a 240-turn browser history', async 
           if (heap === undefined) throw new Error('Chromium heap metric missing')
           samples.push({ open, page: Math.max(...pages), trajectory, first, streamTask, streamWall, input, inputOverlapped, heapMb: heap.value / 1048576, nodes: await page.locator('*').count() })
           console.log(JSON.stringify({ benchmark: 'long-session-browser/sample', sample, initialTurns, pages, ...samples.at(-1) }))
-          await watchInputOverlap(composer)
+          await watchInputOverlap(page, '!')
           await composer.click()
           await page.keyboard.type('!')
-          const lateInputOverlapped = await composer.getAttribute('data-benchmark-input-overlap') === 'true'
-          expect(await composer.getAttribute('data-benchmark-input-witness')).toBe(JSON.stringify({ trusted: true, first: true, done: true }))
+          const lateInputOverlapped = await page.locator('html').getAttribute('data-benchmark-input-overlap') === 'true'
+          expect(await page.locator('html').getAttribute('data-benchmark-input-witness')).toBe(JSON.stringify({ trusted: true, focused: true, first: true, done: true }))
           expect(() => expectInputOverlap(lateInputOverlapped)).toThrow()
           expect(consoleWatch.pageErrors).toEqual([])
           expect(consoleWatch.warnings).toEqual([])

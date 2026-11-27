@@ -2658,22 +2658,25 @@ Coordinate one read-only analysis across exactly two explicitly selected registe
 
 ```json
 {
-  "repositories": {
-    "type": "array",
-    "required": true,
-    "minItems": 2,
-    "maxItems": 2,
-    "items": {
-      "type": "string",
-      "description": "Absolute root path of one registered Workspace."
+  "type": "object",
+  "properties": {
+    "repositories": {
+      "type": "array",
+      "description": "Exactly two absolute registered Workspace roots, in result order.",
+      "items": {
+        "type": "string",
+        "description": "Absolute root path of one registered Workspace."
+      }
     },
-    "description": "Exactly two absolute registered Workspace roots, in result order."
+    "task": {
+      "type": "string",
+      "description": "One analysis task to perform independently in each repository."
+    }
   },
-  "task": {
-    "type": "string",
-    "required": true,
-    "description": "One analysis task to perform independently in each repository."
-  }
+  "required": [
+    "repositories",
+    "task"
+  ]
 }
 ```
 
@@ -2685,11 +2688,16 @@ Read the staged Git index version of one file without changing the index or work
 
 ```json
 {
-  "path": {
-    "type": "string",
-    "required": true,
-    "description": "One repository-relative file path."
-  }
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "One repository-relative file path."
+    }
+  },
+  "required": [
+    "path"
+  ]
 }
 ```
 
@@ -2700,7 +2708,10 @@ Source: [`packages/workspace/tool-multi-repository/src/index.ts`](../packages/wo
 List tracked and unignored untracked paths in this selected repository; ignored files are omitted.
 
 ```json
-{}
+{
+  "type": "object",
+  "properties": {}
+}
 ```
 
 Source: [`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
@@ -2711,19 +2722,24 @@ Read one bounded file from this selected repository working tree.
 
 ```json
 {
-  "path": {
-    "type": "string",
-    "required": true,
-    "description": "One path relative to the selected repository root."
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "One path relative to the selected repository root."
+    },
+    "offset": {
+      "type": "number",
+      "description": "1-based first line to return; defaults to 1."
+    },
+    "limit": {
+      "type": "number",
+      "description": "Maximum lines to return; defaults to 400."
+    }
   },
-  "offset": {
-    "type": "number",
-    "description": "1-based first line to return; defaults to 1."
-  },
-  "limit": {
-    "type": "number",
-    "description": "Maximum lines to return; defaults to 400."
-  }
+  "required": [
+    "path"
+  ]
 }
 ```
 

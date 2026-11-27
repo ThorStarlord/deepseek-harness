@@ -27,13 +27,14 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     const catalog = await collectToolCatalog()
     const names = catalog.flatMap(entry => entry.schemas.map(s => s.name)).sort()
     expect(names).toEqual([
-      'apply_patch', 'ask_user_question', 'bash', 'bash', 'cordis_inspect_list',
+      'apply_patch', 'ask_user_question', 'bash', 'bash', 'coordinate_repositories', 'cordis_inspect_list',
       'cordis_inspect_query',
       'create_goal', 'create_worktree', 'edit', 'exit_plan_mode', 'get_goal', 'glob', 'grep',
       'interrupt_agent', 'job_kill', 'job_list', 'job_output',
       'list_agents', 'list_mcp_resource_templates', 'list_mcp_resources',
       'list_subagent_models', 'load_workspace_dependencies', 'lsp', 'plugin_manager', 'plugin_market', 'present', 'propose_action', 'pwsh', 'pwsh', 'ralph',
-      'read', 'read_image', 'read_mcp_resource', 'run_code', 'schedule_create', 'schedule_edit',
+      'read', 'read_image', 'read_mcp_resource', 'read_staged_file', 'repository_list_files', 'repository_read_file',
+      'run_code', 'schedule_create', 'schedule_edit',
       'schedule_list', 'schedule_view', 'send_message', 'session_event_read', 'session_event_search',
       'session_event_trace', 'session_search', 'session_trace', 'skill',
       'stagehand_act', 'stagehand_extract', 'stagehand_navigate', 'stagehand_observe', 'stagehand_screenshot', 'stagehand_tabs',
@@ -45,7 +46,7 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     // Every tool carries a JSON-Schema `parameters` object (what the model sees).
     for (const entry of catalog) {
       for (const schema of entry.schemas) {
-        expect((schema.parameters as unknown as JsonSchema).type).toBe('object')
+        expect((schema.parameters as unknown as JsonSchema).type, `${entry.pkg}:${schema.name}`).toBe('object')
       }
     }
     const directory = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tool-working-directory')
