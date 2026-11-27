@@ -15,6 +15,7 @@ on:
           - consolidated-runner-benchmark
           - ssh-helper
           - sdk-snapshot
+          - web-snapshot-refresh
           - wine
 
 # New master pushes and manual runs replace obsolete checks in this workflow/ref.
@@ -93,6 +94,64 @@ jobs:
           }
           console.log(`Passed: ${selected[0].fullName}`)
           NODE
+
+  web-snapshot-refresh:
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'web-snapshot-refresh'
+    name: refresh selected Web snapshots (manual)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify selected source revision and snapshot owners
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -f apps/web/tests/minimal-preset.snapshot.ts
+          test -f apps/web/tests/code-language.snapshot.ts
+          test -f apps/web/tests/subagent-fork-schedule.snapshot.ts
+
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the selected revision
+        env:
+          DSH_BUILD_CLIENT_PROFILE: official
+        run: pnpm run build
+
+      - name: Refresh only the selected keyless Web scenarios
+        env:
+          DSH_EXAMPLE_MODE: lib
+          DSH_SNAPSHOT: refresh
+        run: >-
+          pnpm exec vitest run --config vitest.web.config.ts
+          apps/web/tests/minimal-preset.snapshot.ts
+          apps/web/tests/code-language.snapshot.ts
+          apps/web/tests/subagent-fork-schedule.snapshot.ts
+          --update
+
+      - name: Upload selected refresh outputs for review
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: web-snapshot-refresh-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            apps/web/tests/minimal-preset.snapshot.ts
+            snapshots/web/minimal-preset/**
+            apps/web/tests/code-language.snapshot.ts
+            snapshots/web/code-language/**
+            apps/web/tests/subagent-fork-schedule.snapshot.ts
+            snapshots/web/subagent-fork-schedule/**
 
   # These native runtime carriers are post-merge checks; release keeps all targets.
   python-runtime:
