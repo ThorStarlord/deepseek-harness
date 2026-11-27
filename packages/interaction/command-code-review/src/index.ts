@@ -11,7 +11,8 @@ import { createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SubagentRunId } from '@deepseek-ai/dsh-subagent'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { assertReadOnlyGitCommand, gitNullDevice } from './git-command.ts'
+import { assertReadOnlyGitCommand } from './git-command.ts'
+import { collectSubprocessResult, readOnlyGitEnvironment } from '@deepseek-ai/dsh-subprocess'
 import { sameRepositoryPath } from './repository-path.ts'
 import {
   digestSnapshot,
@@ -29,7 +30,6 @@ import type { CapturedRepository, RepositorySnapshot } from './render.ts'
 import type {} from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-subagent'
-import type {} from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-working-directory'
 import type {} from '@deepseek-ai/dsh-agent-loop'
 
@@ -433,7 +433,6 @@ async function runGit(
   assertReadOnlyGitCommand(args)
   const confinedPolicy: SandboxPolicy = { mode: 'read-only', workspaceRoot: cwd }
   const confined = await ctx.sandbox.confine(['git', ...args], confinedPolicy, signal)
-  const device = gitNullDevice(process.platform)
   const argv = confined.enforcement === 'full' ? confined.argv : ['git', ...args]
   const handle = ctx.subprocess.spawn({
     argv,
@@ -445,31 +444,9 @@ async function runGit(
     },
     graceMs: 5_000,
     signal,
-    env: {
-      GIT_CONFIG_NOSYSTEM: '1',
-      GIT_CONFIG_GLOBAL: device,
-      GIT_CONFIG_COUNT: '2',
-      GIT_CONFIG_KEY_0: 'core.fsmonitor',
-      GIT_CONFIG_VALUE_0: 'false',
-      GIT_CONFIG_KEY_1: 'core.hooksPath',
-      GIT_CONFIG_VALUE_1: device,
-      GIT_OPTIONAL_LOCKS: '0',
-      GIT_TERMINAL_PROMPT: '0',
-      GIT_PAGER: device,
-      GIT_DIR: undefined,
-      GIT_WORK_TREE: undefined,
-      GIT_INDEX_FILE: undefined,
-      GIT_COMMON_DIR: undefined,
-      GIT_PREFIX: undefined,
-      GIT_OBJECT_DIRECTORY: undefined,
-      GIT_ALTERNATE_OBJECT_DIRECTORIES: undefined,
-      GIT_NO_REPLACE_OBJECTS: '1',
-    },
+    env: readOnlyGitEnvironment(process.platform),
   })
-  const outcome = await handle.done
-  await handle.waitForExit(signal)
-  const stdout = handle.collected.stdout?.readFrom(0)
-  const stderr = handle.collected.stderr?.readFrom(0)
+  const { outcome, stdout, stderr } = await collectSubprocessResult(handle, signal)
   if (stdout?.lossy === true || stderr?.lossy === true) {
     throw new CodeReviewError('Git review output exceeded the configured capture limit.', 'REVIEW_GIT_OUTPUT_TOO_LARGE')
   }

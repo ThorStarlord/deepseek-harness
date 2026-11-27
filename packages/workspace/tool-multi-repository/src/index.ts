@@ -8,13 +8,14 @@ import { HarnessError, type ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SandboxEnforcement, SandboxPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxProvider } from '@deepseek-ai/dsh-sandbox'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
+import { collectSubprocessResult, readOnlyGitEnvironment } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentActivation, SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition, ToolExecution, JsonSchemaNode, PreToolDecision } from '@deepseek-ai/dsh-tools'
 import type { Workspace, WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { AgentPresetRegistry } from '@deepseek-ai/dsh-agent-preset-registry'
-import { assertReadOnlyGitCommand, gitNullDevice } from './read-only-git-command.ts'
+import { assertReadOnlyGitCommand } from './read-only-git-command.ts'
 
 /** Cordis plugin name used by Loader composition. */
 export const name = 'tool-multi-repository'
@@ -915,7 +916,6 @@ async function runGit(
   // Keep Git internal: only fixed read verbs run on the host process, and no
   // arbitrary subprocess tool is exposed to the delegated worker.
   const argv = confined.enforcement === 'full' ? confined.argv : ['git', ...args]
-  const windowsNull = gitNullDevice(process.platform)
   const handle = ctx.subprocess.spawn({
     argv,
     cwd: root,
@@ -926,31 +926,9 @@ async function runGit(
     },
     graceMs: 30_000,
     signal,
-    env: {
-      GIT_OPTIONAL_LOCKS: '0',
-      GIT_CONFIG_NOSYSTEM: '1',
-      GIT_CONFIG_GLOBAL: windowsNull,
-      GIT_CONFIG_COUNT: '2',
-      GIT_CONFIG_KEY_0: 'core.fsmonitor',
-      GIT_CONFIG_VALUE_0: 'false',
-      GIT_CONFIG_KEY_1: 'core.hooksPath',
-      GIT_CONFIG_VALUE_1: windowsNull,
-      GIT_DIR: undefined,
-      GIT_WORK_TREE: undefined,
-      GIT_INDEX_FILE: undefined,
-      GIT_COMMON_DIR: undefined,
-      GIT_PREFIX: undefined,
-      GIT_OBJECT_DIRECTORY: undefined,
-      GIT_ALTERNATE_OBJECT_DIRECTORIES: undefined,
-      GIT_NO_REPLACE_OBJECTS: '1',
-      GIT_TERMINAL_PROMPT: '0',
-      GIT_PAGER: windowsNull,
-    },
+    env: readOnlyGitEnvironment(process.platform),
   })
-  const outcome = await handle.done
-  await handle.waitForExit(signal)
-  const stdout = handle.collected.stdout?.readFrom(0)
-  const stderr = handle.collected.stderr?.readFrom(0)
+  const { outcome, stdout, stderr } = await collectSubprocessResult(handle, signal)
   if (stdout?.lossy === true || stderr?.lossy === true) {
     throw new MultiRepositoryError('Git output exceeded the bounded read limit', 'GIT_OUTPUT_TRUNCATED')
   }

@@ -52,6 +52,8 @@ const { exitCode, signal } = await handle.done
 const output = handle.collected.stdout?.readFrom(0)
 ```
 
+批处理命令若需要在受管理的进程范围退出后同时读取退出事实和已收集输出，可调用 `collectSubprocessResult(handle, signal)`。它先等待 `done` 和 `waitForExit()`，再读取 stdout 与 stderr；生命周期错误原样传播，调用方负责解释退出码、输出丢失以及命令专属错误。
+
 ### 选择输出投递方式
 
 - `'pipe'` 把原始流交给你做自己的协议分帧——LSP 主机用 JSON-RPC，ACP（Agent Client Protocol）后端用 ndjson。
@@ -76,6 +78,8 @@ const output = handle.collected.stdout?.readFrom(0)
 终端请求可显式启用 `shellActivity`。`inspectActivity()` 结合支持的 shell 生命周期信号与自有任务观察，返回 `idle`、`busy` 或 `unknown`，以及句柄内的 revision。不支持或不完整的观察不能推出空闲；输入会使已有提示符证据失效。启用后，根 shell 退出时继续持有剩余工作，不把该退出视为终止后代进程的许可。保活和清理期限由消费者决定。
 
 ### 每个子进程起步时的环境
+
+readOnlyGitEnvironment(process.platform) 返回新的 Git 专用环境，禁用系统和全局配置、hooks、fsmonitor、分页、提示以及继承的仓库选择变量。它不会限制命令参数或应用 sandbox；调用方仍负责这些检查以及输出和进程生命周期策略。
 
 子进程永远不会隐式继承 harness 的环境秘密：形似凭据的名称与环境中的 `DSH_*` 事实都会被清除，调用方显式的 `env` 在该清除之后合并。有意转发的凭据或当前的 `DSH_*` 部署事实仍会到达子进程；显式的 `undefined` 墓碑值则移除一个普通的环境项。
 

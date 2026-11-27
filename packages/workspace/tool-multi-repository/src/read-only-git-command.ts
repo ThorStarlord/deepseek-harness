@@ -13,11 +13,3 @@ export function assertReadOnlyGitCommand(args: readonly string[]): void {
     throw new HarnessError('repository inspection only permits fixed read-only Git commands', 'GIT_COMMAND_DENIED')
   }
 }
-
-/** Return the null-device path understood by the selected host platform.
- * @param platform - process platform whose Git configuration should use the null device.
- * @returns `NUL` on Windows or `/dev/null` on other supported hosts.
- */
-export function gitNullDevice(platform: NodeJS.Platform): string {
-  return platform === 'win32' ? 'NUL' : '/dev/null'
-}

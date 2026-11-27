@@ -39,7 +39,7 @@ import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Workspace, WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import * as ToolMultiRepository from '../src/index.ts'
-import { assertReadOnlyGitCommand, gitNullDevice } from '../src/read-only-git-command.ts'
+import { assertReadOnlyGitCommand } from '../src/read-only-git-command.ts'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 
 const execFileAsync = promisify(execFile)
@@ -335,7 +335,7 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
 }
 
 describe('read-only multi-repository coordination', () => {
-  it('allows only fixed read-only Git builtins and uses each platform null device', () => {
+  it('allows only fixed read-only Git builtins', () => {
     for (const verb of ['rev-parse', 'branch', 'diff', 'ls-files', 'cat-file', 'check-ignore']) {
       expect(() => { assertReadOnlyGitCommand(['--literal-pathspecs', verb, '--', 'repository path']) }).not.toThrow()
     }
@@ -344,8 +344,6 @@ describe('read-only multi-repository coordination', () => {
       try { assertReadOnlyGitCommand(args) } catch (caught: unknown) { error = caught }
       expect(error).toMatchObject({ code: 'GIT_COMMAND_DENIED' })
     }
-    expect(gitNullDevice('win32')).toBe('NUL')
-    expect(gitNullDevice('linux')).toBe('/dev/null')
   })
 
   it('rejects coordinator calls without parent authority and keeps repository readers worker-only', async () => {
