@@ -80,6 +80,9 @@
     - id: home-activity-strategic-episodes
       name: '@deepseek-ai/dsh-home-activity/strategic-episodes'
 
+    - id: session-controller
+      name: '@deepseek-ai/dsh-api-session-controller'
+
     - id: command-home-activity
       name: '@deepseek-ai/dsh-command-home-activity'
 

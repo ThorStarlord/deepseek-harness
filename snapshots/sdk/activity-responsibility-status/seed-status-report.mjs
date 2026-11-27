@@ -99,9 +99,9 @@ export async function apply(ctx) {
   ctx.on('agent/created', ({ agent }) => {
     if (String(agent.session.id) !== TARGET_SESSION_ID) return
     if (agent.id !== agent.session.id || ctx.agents.get(agent.id) !== agent
-      || ctx.tools.get('report_activity_responsibility_status', agent) === undefined
-      || !ctx.homeActivityResponsibilities.hasReportableTargetSession(agent.session.id)) {
-      throw new Error('The live replay root cannot use the Activity status-report tool')
+      || !ctx.homeActivityResponsibilities.hasReportableTargetSession(agent.session.id)
+      || ctx.tools.get('report_activity_responsibility_status', agent) === undefined) {
+      throw new Error('The eligible SDK root Agent cannot use the Activity status-report tool')
     }
     agent.session.append('user/message', {
       id: randomUUID(),
