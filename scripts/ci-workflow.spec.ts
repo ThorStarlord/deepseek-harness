@@ -966,8 +966,12 @@ describe('CI workflow', () => {
     expect(build).toMatchObject({ env: { DSH_BUILD_CLIENT_PROFILE: 'official' }, run: 'pnpm run build' })
     expect(refresh).toMatchObject({
       env: { DSH_EXAMPLE_MODE: 'lib', DSH_SNAPSHOT: 'refresh', DSH_SNAPSHOT_MAX_CONCURRENCY: '1' },
-      run: 'pnpm run test:snapshot:refresh snapshots/sdk/sdk.snapshot.ts -t activity-responsibility-status',
     })
+    expect(refresh.env).toMatchObject({ SNAPSHOT_REPORT: '${{ runner.temp }}/activity-responsibility-status-refresh-vitest.json' })
+    expect(refresh.run).toContain('pnpm run test:snapshot:refresh snapshots/sdk/sdk.snapshot.ts -t activity-responsibility-status --reporter=json')
+    expect(refresh.run).toContain('report.testResults.flatMap(result => result.assertionResults)')
+    expect(refresh.run).toContain('selected.length !== 1 || selected[0].status !== \'passed\'')
+    expect(refresh.run).toContain('snapshot_status != 0 || report_status != 0')
     expect(upload).toMatchObject({ if: 'always()', uses: 'actions/upload-artifact@v7.0.1' })
     expect(upload.with).toMatchObject({
       name: 'sdk-snapshot-refresh-${{ inputs.source_sha || github.sha }}',
@@ -1071,11 +1075,19 @@ describe('CI workflow', () => {
     expect(sandbox).toMatchObject({ run: 'bash scripts/prepare-ci-bubblewrap.sh' })
     expect(build).toMatchObject({ env: { DSH_BUILD_CLIENT_PROFILE: 'official' }, run: 'pnpm run build' })
     expect(ownerRefresh).toMatchObject({
-      env: { DSH_EXAMPLE_MODE: 'lib', DSH_SNAPSHOT: 'refresh' },
+      env: {
+        DSH_EXAMPLE_MODE: 'lib',
+        DSH_SNAPSHOT: 'refresh',
+        SNAPSHOT_REPORT: '${{ runner.temp }}/web-tool-schema-refresh-vitest.json',
+      },
     })
     expect(ownerRefresh.run).toContain('apps/web/tests/replay-round-trip.e2e.ts')
     expect(ownerRefresh.run).toContain('-t "drives the recorded prompt to a settled turn"')
+    expect(ownerRefresh.run).toContain('--reporter=json --outputFile="$SNAPSHOT_REPORT"')
+    expect(ownerRefresh.run).toContain('selected.length !== 1 || selected[0].status !== \'passed\'')
+    expect(ownerRefresh.run).toContain('snapshot_status != 0 || report_status != 0')
     expect(refresh).toMatchObject({ env: { DSH_EXAMPLE_MODE: 'lib', DSH_SNAPSHOT: 'refresh' } })
+    expect(refresh.env).toMatchObject({ SNAPSHOT_REPORT: '${{ runner.temp }}/web-selected-snapshots-vitest.json' })
     for (const file of [
       'apps/web/tests/minimal-preset.snapshot.ts',
       'apps/web/tests/code-language.snapshot.ts',
@@ -1086,6 +1098,12 @@ describe('CI workflow', () => {
     }
     expect(refresh.run).toContain('--config vitest.web.config.ts')
     expect(refresh.run).toContain('--update')
+    expect(refresh.run).toContain('--reporter=json --outputFile="$SNAPSHOT_REPORT"')
+    expect(refresh.run).toContain("'minimal-preset.snapshot.ts'")
+    expect(refresh.run).toContain("'code-language.snapshot.ts'")
+    expect(refresh.run).toContain("'subagent-fork-schedule.snapshot.ts'")
+    expect(refresh.run).toContain('if (missing.length > 0 || failed.length > 0')
+    expect(refresh.run).toContain('snapshot_status != 0 || report_status != 0')
     expect(upload).toMatchObject({ if: 'always()', uses: 'actions/upload-artifact@v7.0.1' })
     expect(upload.with).toMatchObject({
       name: 'web-snapshot-refresh-${{ inputs.source_sha || github.sha }}',

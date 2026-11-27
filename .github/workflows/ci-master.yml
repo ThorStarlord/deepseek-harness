@@ -156,7 +156,26 @@ jobs:
           DSH_EXAMPLE_MODE: lib
           DSH_SNAPSHOT: refresh
           DSH_SNAPSHOT_MAX_CONCURRENCY: '1'
-        run: pnpm run test:snapshot:refresh snapshots/sdk/sdk.snapshot.ts -t activity-responsibility-status
+          SNAPSHOT_REPORT: ${{ runner.temp }}/activity-responsibility-status-refresh-vitest.json
+        run: |
+          set +e
+          pnpm run test:snapshot:refresh snapshots/sdk/sdk.snapshot.ts -t activity-responsibility-status --reporter=json --outputFile="$SNAPSHOT_REPORT"
+          snapshot_status=$?
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+
+          const report = JSON.parse(readFileSync(process.env.SNAPSHOT_REPORT, 'utf8'))
+          const selected = report.testResults.flatMap(result => result.assertionResults)
+            .filter(test => test.fullName.includes('activity-responsibility-status'))
+          console.log(`Selected snapshot tests: ${selected.length}`)
+          for (const test of selected) console.log(`${test.status}: ${test.fullName}`)
+          if (selected.length !== 1 || selected[0].status !== 'passed'
+            || report.numFailedTests !== 0 || report.numFailedTestSuites !== 0) {
+            throw new Error(`Expected exactly one passing Activity responsibility status refresh test; found ${selected.length}`)
+          }
+          NODE
+          report_status=$?
+          if (( snapshot_status != 0 || report_status != 0 )); then exit 1; fi
 
       - name: Upload selected SDK refresh outputs for review
         if: always()
@@ -261,21 +280,56 @@ jobs:
         env:
           DSH_EXAMPLE_MODE: lib
           DSH_SNAPSHOT: refresh
-        run: >-
-          pnpm exec vitest run --config vitest.web.config.ts
-          apps/web/tests/replay-round-trip.e2e.ts
-          -t "drives the recorded prompt to a settled turn"
+          SNAPSHOT_REPORT: ${{ runner.temp }}/web-tool-schema-refresh-vitest.json
+        run: |
+          set +e
+          pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/replay-round-trip.e2e.ts -t "drives the recorded prompt to a settled turn" --reporter=json --outputFile="$SNAPSHOT_REPORT"
+          snapshot_status=$?
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+
+          const report = JSON.parse(readFileSync(process.env.SNAPSHOT_REPORT, 'utf8'))
+          const selected = report.testResults.flatMap(result => result.assertionResults)
+            .filter(test => test.fullName.includes('drives the recorded prompt to a settled turn'))
+          console.log(`Selected Web owner tests: ${selected.length}`)
+          for (const test of selected) console.log(`${test.status}: ${test.fullName}`)
+          if (selected.length !== 1 || selected[0].status !== 'passed'
+            || report.numFailedTests !== 0 || report.numFailedTestSuites !== 0) {
+            throw new Error(`Expected exactly one passing Web tool-schema owner test; found ${selected.length}`)
+          }
+          NODE
+          report_status=$?
+          if (( snapshot_status != 0 || report_status != 0 )); then exit 1; fi
 
       - name: Refresh only the selected keyless Web scenarios
         env:
           DSH_EXAMPLE_MODE: lib
           DSH_SNAPSHOT: refresh
-        run: >-
-          pnpm exec vitest run --config vitest.web.config.ts
-          apps/web/tests/minimal-preset.snapshot.ts
-          apps/web/tests/code-language.snapshot.ts
-          apps/web/tests/subagent-fork-schedule.snapshot.ts
-          --update
+          SNAPSHOT_REPORT: ${{ runner.temp }}/web-selected-snapshots-vitest.json
+        run: |
+          set +e
+          pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/minimal-preset.snapshot.ts apps/web/tests/code-language.snapshot.ts apps/web/tests/subagent-fork-schedule.snapshot.ts --update --reporter=json --outputFile="$SNAPSHOT_REPORT"
+          snapshot_status=$?
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+
+          const report = JSON.parse(readFileSync(process.env.SNAPSHOT_REPORT, 'utf8'))
+          const expected = [
+            'minimal-preset.snapshot.ts',
+            'code-language.snapshot.ts',
+            'subagent-fork-schedule.snapshot.ts',
+          ]
+          const results = report.testResults.filter(result => expected.some(file => result.name.endsWith(file)))
+          const missing = expected.filter(file => !results.some(result => result.name.endsWith(file)
+            && result.assertionResults.length > 0))
+          const failed = results.flatMap(result => result.assertionResults).filter(test => test.status !== 'passed')
+          console.log(`Selected Web snapshot files: ${results.length}; tests: ${results.reduce((count, result) => count + result.assertionResults.length, 0)}`)
+          if (missing.length > 0 || failed.length > 0 || report.numFailedTests !== 0 || report.numFailedTestSuites !== 0) {
+            throw new Error(`Expected passing tests in each selected Web snapshot file; missing: ${missing.join(', ')}`)
+          }
+          NODE
+          report_status=$?
+          if (( snapshot_status != 0 || report_status != 0 )); then exit 1; fi
 
       - name: Upload selected refresh outputs for review
         if: always()
