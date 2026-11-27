@@ -916,11 +916,15 @@ describe('CI workflow', () => {
     })
     const sourceCheck = steps.find(step => isRecord(step) && step.name === 'Verify selected source revision and snapshot owners')
     const install = steps.find(step => isRecord(step) && step.name === 'Install (immutable)')
+    const browser = steps.find(step => isRecord(step) && step.name === 'Install Playwright Chromium and hosted dependencies')
     const build = steps.find(step => isRecord(step) && step.name === 'Build the selected revision')
+    const ownerRefresh = steps.find(step => isRecord(step) && step.name === 'Refresh the shared tool-schema owner')
     const refresh = steps.find(step => isRecord(step) && step.name === 'Refresh only the selected keyless Web scenarios')
     const upload = steps.find(step => isRecord(step) && step.name === 'Upload selected refresh outputs for review')
     if (!isRecord(sourceCheck) || typeof sourceCheck.run !== 'string'
-      || !isRecord(install) || !isRecord(build) || !isRecord(refresh) || typeof refresh.run !== 'string'
+      || !isRecord(install) || !isRecord(browser) || !isRecord(build)
+      || !isRecord(ownerRefresh) || typeof ownerRefresh.run !== 'string'
+      || !isRecord(refresh) || typeof refresh.run !== 'string'
       || !isRecord(upload)) {
       throw new TypeError('Web snapshot refresh must verify its selected owners, build, refresh, and publish review outputs')
     }
@@ -928,14 +932,29 @@ describe('CI workflow', () => {
     for (const file of [
       'apps/web/tests/minimal-preset.snapshot.ts',
       'apps/web/tests/code-language.snapshot.ts',
+      'apps/web/tests/replay-round-trip.e2e.ts',
       'apps/web/tests/subagent-fork-schedule.snapshot.ts',
     ]) {
       expect(sourceCheck.run).toContain(`test -f ${file}`)
+    }
+    expect(browser).toMatchObject({
+      run: 'pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install --with-deps chromium',
+    })
+    expect(build).toMatchObject({ env: { DSH_BUILD_CLIENT_PROFILE: 'official' }, run: 'pnpm run build' })
+    expect(ownerRefresh).toMatchObject({
+      env: { DSH_EXAMPLE_MODE: 'lib', DSH_SNAPSHOT: 'refresh' },
+    })
+    expect(ownerRefresh.run).toContain('apps/web/tests/replay-round-trip.e2e.ts')
+    expect(ownerRefresh.run).toContain('-t "drives the recorded prompt to a settled turn"')
+    expect(refresh).toMatchObject({ env: { DSH_EXAMPLE_MODE: 'lib', DSH_SNAPSHOT: 'refresh' } })
+    for (const file of [
+      'apps/web/tests/minimal-preset.snapshot.ts',
+      'apps/web/tests/code-language.snapshot.ts',
+      'apps/web/tests/subagent-fork-schedule.snapshot.ts',
+    ]) {
       expect(refresh.run).toContain(file)
       expect(upload.with).toMatchObject({ path: expect.stringContaining(file) })
     }
-    expect(build).toMatchObject({ env: { DSH_BUILD_CLIENT_PROFILE: 'official' }, run: 'pnpm run build' })
-    expect(refresh).toMatchObject({ env: { DSH_EXAMPLE_MODE: 'lib', DSH_SNAPSHOT: 'refresh' } })
     expect(refresh.run).toContain('--config vitest.web.config.ts')
     expect(refresh.run).toContain('--update')
     expect(upload).toMatchObject({ if: 'always()', uses: 'actions/upload-artifact@v7.0.1' })
@@ -943,6 +962,7 @@ describe('CI workflow', () => {
       name: 'web-snapshot-refresh-${{ github.sha }}',
       'if-no-files-found': 'error',
     })
+    expect(upload.with).toMatchObject({ path: expect.stringContaining('snapshots/web/fresh-round-trip/**') })
     for (const [event, suite, expected] of [
       ['workflow_dispatch', 'web-snapshot-refresh', true],
       ['workflow_dispatch', 'sdk-snapshot', false],

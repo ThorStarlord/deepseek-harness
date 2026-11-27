@@ -110,6 +110,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -f apps/web/tests/minimal-preset.snapshot.ts
           test -f apps/web/tests/code-language.snapshot.ts
+          test -f apps/web/tests/replay-round-trip.e2e.ts
           test -f apps/web/tests/subagent-fork-schedule.snapshot.ts
 
       - uses: pnpm/action-setup@v5.0.0
@@ -123,10 +124,22 @@ jobs:
       - name: Install (immutable)
         run: pnpm install --frozen-lockfile
 
+      - name: Install Playwright Chromium and hosted dependencies
+        run: pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install --with-deps chromium
+
       - name: Build the selected revision
         env:
           DSH_BUILD_CLIENT_PROFILE: official
         run: pnpm run build
+
+      - name: Refresh the shared tool-schema owner
+        env:
+          DSH_EXAMPLE_MODE: lib
+          DSH_SNAPSHOT: refresh
+        run: >-
+          pnpm exec vitest run --config vitest.web.config.ts
+          apps/web/tests/replay-round-trip.e2e.ts
+          -t "drives the recorded prompt to a settled turn"
 
       - name: Refresh only the selected keyless Web scenarios
         env:
@@ -150,6 +163,7 @@ jobs:
             snapshots/web/minimal-preset/**
             apps/web/tests/code-language.snapshot.ts
             snapshots/web/code-language/**
+            snapshots/web/fresh-round-trip/**
             apps/web/tests/subagent-fork-schedule.snapshot.ts
             snapshots/web/subagent-fork-schedule/**
 
