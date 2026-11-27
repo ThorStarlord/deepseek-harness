@@ -916,13 +916,14 @@ describe('CI workflow', () => {
     })
     const sourceCheck = steps.find(step => isRecord(step) && step.name === 'Verify selected source revision and snapshot owners')
     const install = steps.find(step => isRecord(step) && step.name === 'Install (immutable)')
+    const sandbox = steps.find(step => isRecord(step) && step.name === 'Prepare bubblewrap (unrestrict userns)')
     const browser = steps.find(step => isRecord(step) && step.name === 'Install Playwright Chromium and hosted dependencies')
     const build = steps.find(step => isRecord(step) && step.name === 'Build the selected revision')
     const ownerRefresh = steps.find(step => isRecord(step) && step.name === 'Refresh the shared tool-schema owner')
     const refresh = steps.find(step => isRecord(step) && step.name === 'Refresh only the selected keyless Web scenarios')
     const upload = steps.find(step => isRecord(step) && step.name === 'Upload selected refresh outputs for review')
     if (!isRecord(sourceCheck) || typeof sourceCheck.run !== 'string'
-      || !isRecord(install) || !isRecord(browser) || !isRecord(build)
+      || !isRecord(install) || !isRecord(sandbox) || !isRecord(browser) || !isRecord(build)
       || !isRecord(ownerRefresh) || typeof ownerRefresh.run !== 'string'
       || !isRecord(refresh) || typeof refresh.run !== 'string'
       || !isRecord(upload)) {
@@ -940,6 +941,7 @@ describe('CI workflow', () => {
     expect(browser).toMatchObject({
       run: 'pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install --with-deps chromium',
     })
+    expect(sandbox).toMatchObject({ run: 'bash scripts/prepare-ci-bubblewrap.sh' })
     expect(build).toMatchObject({ env: { DSH_BUILD_CLIENT_PROFILE: 'official' }, run: 'pnpm run build' })
     expect(ownerRefresh).toMatchObject({
       env: { DSH_EXAMPLE_MODE: 'lib', DSH_SNAPSHOT: 'refresh' },
