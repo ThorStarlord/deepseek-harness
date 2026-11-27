@@ -39,6 +39,10 @@ export function ActivityResponsibilityHistory({
               <ol className={css.facts}>
                 {history.facts.map(fact => <HistoryFact key={fact.id} fact={fact} t={t} />)}
               </ol>
+              <TargetStatusReports
+                reports={state.statusReports.filter(report => report.responsibilityId === history.id)}
+                t={t}
+              />
               <ResponsibilityShareAction history={history} state={state} t={t} addToConversation={addToConversation} />
               {history.facts.some(fact => fact.kind === 'dispatch-attempted') && (
                 <Button
@@ -54,6 +58,31 @@ export function ActivityResponsibilityHistory({
           </details>
         ))}
       </div>
+    </section>
+  )
+}
+
+function TargetStatusReports({
+  reports, t,
+}: {
+  readonly reports: NonNullable<ActivityCoordinationState['statusReports']>
+  readonly t: ActivityCoordinationProps['t']
+}) {
+  if (reports.length === 0) return null
+  return (
+    <section className={css.facts} aria-label={t('responsibility.progress.heading')}>
+      <h4>{t('responsibility.progress.heading')}</h4>
+      <p>{t('responsibility.progress.notice')}</p>
+      <ol>
+        {reports.map(report => (
+          <li key={report.id} className={css.fact}>
+            <strong>{t(`responsibility.progress.${report.status}`)}</strong>
+            <time dateTime={report.recordedAt}>{new Date(report.recordedAt).toLocaleString()}</time>
+            <p>{t('responsibility.progress.source', { session: report.targetSessionId, event: String(report.sourceEventSeq) })}</p>
+            <blockquote>{report.summary}</blockquote>
+          </li>
+        ))}
+      </ol>
     </section>
   )
 }

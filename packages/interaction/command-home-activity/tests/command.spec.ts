@@ -11,14 +11,17 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
-import { createToolResultMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
+import { createToolResultMessage, createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { SessionPageRequest } from '@deepseek-ai/dsh-api-session-controller/types'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Workspace } from '@deepseek-ai/dsh-workspace/types'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import { isJsonValue } from '@deepseek-ai/dsh-util-values'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { Agent as DshAgent } from '@deepseek-ai/dsh-agent'
-import type { ToolDefinition, ToolGuard, ToolRegistrationOptions } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition, ToolGuard, ToolRegistrationOptions, ToolRunContext, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import Storage, { StorageError } from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
@@ -40,6 +43,8 @@ import HomeActivityAnnotationService, {
   ActivityAnnotationStorageError,
 } from '@deepseek-ai/dsh-home-activity/annotations'
 import HomeActivityStrategicEpisodeService from '@deepseek-ai/dsh-home-activity/strategic-episodes'
+import HomeActivityResponsibilityService from '@deepseek-ai/dsh-home-activity/responsibilities'
+import { activityResponsibilityRequestId } from '@deepseek-ai/dsh-home-activity/responsibilities'
 import type { ActivityAnnotation, ActivityAnnotationId } from '@deepseek-ai/dsh-home-activity/annotations'
 import * as commandHomeActivity from '../src/index.ts'
 
@@ -88,12 +93,15 @@ async function harness() {
   await ctx.plugin(CommandRuntime)
   await ctx.plugin(HomeActivityService)
   await ctx.plugin(HomeActivityStrategicEpisodeService)
+  await ctx.plugin(HomeActivityResponsibilityService)
   await ctx.plugin(HomeActivityDelegations)
   const workspaces = new Map<string, Workspace>([
     ['00000000-0000-4000-8000-000000000011', workspace('00000000-0000-4000-8000-000000000011', 'Project one')],
     ['00000000-0000-4000-8000-000000000012', workspace('00000000-0000-4000-8000-000000000012', 'Project two')],
   ])
   const persistedSessions = new Map<string, SessionPersistenceSnapshot>()
+  const sessionHistoryReads: SessionPageRequest[] = []
+  const malformedHistoryEventSeqs = new Set<number>()
   const persistence = {
     stat: vi.fn(async (id: SessionId) => persistedSessions.get(id)),
     list: vi.fn(async () => [...persistedSessions.values()]),
@@ -104,6 +112,30 @@ async function harness() {
     list: () => [...workspaces.values()],
   }
   ctx.provide('workspaceRegistry', workspaceRegistry as never)
+  ctx.provide('sessionController', {
+    async events(request: SessionPageRequest, signal: AbortSignal) {
+      signal.throwIfAborted()
+      sessionHistoryReads.push(request)
+      if (request.address.kind !== 'session') throw new Error('Status report history must use the target root Session address.')
+      const session = ctx.sessions.get(request.address.sessionId)
+      if (session === undefined) throw new Error('Target Session not found in test history fixture.')
+      const eligible = session.snapshotEvents().filter(event => event.seq <= (request.throughSeq ?? Number.MAX_SAFE_INTEGER)
+        && (request.beforeSeq === undefined || event.seq < request.beforeSeq))
+      const records = eligible.slice(-40).map((event) => {
+        if (!isJsonValue(event.data)) throw new Error('Target Session fixture data must be JSON.')
+        return {
+          type: 'event' as const,
+          event: {
+            type: event.type,
+            seq: event.seq,
+            time: event.time,
+            data: malformedHistoryEventSeqs.has(event.seq) ? null : event.data,
+          },
+        }
+      })
+      return { cursor: request.throughSeq ?? session.seq, records, hasMore: eligible.length > records.length }
+    },
+  } as never)
   const registeredTools = new Map<string, { definition: ToolDefinition; options: ToolRegistrationOptions }>()
   const toolGuards: ToolGuard[] = []
   const coordinatorTool: ToolDefinition = {
@@ -146,6 +178,8 @@ async function harness() {
     secondarySession: secondary.session,
     workspaces,
     persistedSessions,
+    sessionHistoryReads,
+    makeMalformedHistoryEvent(seq: number) { malformedHistoryEventSeqs.add(seq) },
     persistence,
     workspaceRegistry,
     commandFiber,
@@ -245,7 +279,8 @@ it('registers a discoverable command and creates, lists, and reopens without sta
     'commands', 'tools', 'agents', 'homeActivities', 'homeActivityStrategicEpisodes', 'homeActivityDelegations', 'subagents',
     'homeActivityAssociations', 'homeActivityArtifacts', 'homeActivityHandoffs',
     'homeActivityReviews', 'homeActivityAnnotations',
-    'workspaceRegistry', 'sessionPersistence',
+    'homeActivityResponsibilities',
+    'workspaceRegistry', 'sessionPersistence', 'sessionController',
   ])
   const descriptor = test.ctx.commands.list(test.agent).find(command =>
     command.definitionId === '@deepseek-ai/dsh-command-home-activity',
@@ -286,6 +321,248 @@ it('registers a discoverable command and creates, lists, and reopens without sta
   expect(sessionEventTypes.some(type => type.startsWith('goal/') || type === 'turn/start' || type === 'turn/end')).toBe(false)
   await test.commandFiber.dispose()
   expect(test.ctx.commands.find(test.agent, 'activity')).toBeUndefined()
+})
+
+it('exposes status reporting only to the dispatched live target and binds it to the logged call', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Target progress', objective: 'Report milestones on one assigned task.',
+    boundaries: { inScope: ['Report progress.'], outOfScope: ['Do not dispatch more work.'] },
+  })
+  const proposal = await test.ctx.homeActivityResponsibilities.createProposal({
+    activityId: activity.id,
+    requestId: activityResponsibilityRequestId('00000000-0000-4000-8000-000000000811'),
+    coordinatingSessionId: test.secondaryAgent.id,
+    sourceEventSeq: 3,
+    target: { workspaceId: WorkspaceId('00000000-0000-4000-8000-000000000011'), sessionId: test.agent.session.id },
+    task: 'Report the progress of the selected parser task.',
+    inScope: ['Report milestones.'],
+    outOfScope: ['Do not perform more work.'],
+    expectedOutcome: 'A target-authored status report.',
+    prerequisites: [],
+    conflictingWork: [],
+  })
+  await test.ctx.homeActivityResponsibilities.confirm({
+    activityId: activity.id,
+    responsibilityId: proposal.responsibilityId,
+    requestId: activityResponsibilityRequestId('00000000-0000-4000-8000-000000000812'),
+    proposalFactId: proposal.id,
+    proposal: proposal.proposal,
+    principal: { kind: 'owner' },
+  })
+  const promptRequestId = activityResponsibilityRequestId('00000000-0000-4000-8000-000000000813')
+  await test.ctx.homeActivityResponsibilities.beginDispatch({
+    activityId: activity.id,
+    responsibilityId: proposal.responsibilityId,
+    promptRequestId,
+  })
+  await test.ctx.homeActivityResponsibilities.settleDispatch({
+    activityId: activity.id,
+    responsibilityId: proposal.responsibilityId,
+    promptRequestId,
+    outcome: 'accepted',
+  })
+
+  const registered = test.registeredTools.get('report_activity_responsibility_status')
+  expect(registered).toBeDefined()
+  expect(await registered!.options.when?.({ agent: test.agent } as never)).toBe(true)
+  expect(await registered!.options.when?.({ agent: test.secondaryAgent } as never)).toBe(false)
+  const prompt = createUserMessage({
+    content: [{ type: 'text', text: 'Assigned work.' }],
+    source: { kind: 'user', rpcId: brandString<SessionRequestId>(String(promptRequestId)) },
+  })
+  const dispatchedPromptEvent = test.session.append('user/message', prompt, { surfaceOp: 'append' })
+  const args = {
+    activityId: String(activity.id),
+    responsibilityId: String(proposal.responsibilityId),
+    status: 'progress',
+    summary: 'The first bounded milestone is complete; the next check is running.',
+  }
+  const callId = ToolCallId('status-report-call')
+  const callEvent = test.session.append('tool/call', {
+    turn: 1,
+    step: 1,
+    callId,
+    name: 'report_activity_responsibility_status',
+    arguments: JSON.stringify(args),
+  })
+  const execution: ToolRunContext = {
+    token: Symbol() as ToolExecutionToken,
+    callId,
+    rootCallId: callId,
+    name: 'report_activity_responsibility_status',
+    arguments: args,
+    agent: test.agent,
+    signal: new AbortController().signal,
+    sourceEventSeq: callEvent.seq,
+    deferContext() {},
+    concludeTurn() {},
+  }
+  await registered!.definition.execute(args, execution)
+  expect(test.sessionHistoryReads.map(request => request.beforeSeq)).toEqual([undefined])
+  expect(test.ctx.homeActivityResponsibilities.listTargetStatusReports(activity.id, proposal.responsibilityId)).toMatchObject([
+    { status: 'progress', sourceEventSeq: callEvent.seq, targetSessionId: test.session.id },
+  ])
+  expect(registered!.definition.output.render(args, 'Rendered report')).toEqual([{ type: 'text', text: 'Rendered report' }])
+  const { sourceEventSeq, ...withoutSourceEventSeq } = execution
+  expect(sourceEventSeq).toBe(callEvent.seq)
+  await expect(registered!.definition.execute(args, withoutSourceEventSeq))
+    .rejects.toThrow('directly logged call')
+  await expect(registered!.definition.execute(args, { ...execution, parent: Symbol('nested') as ToolExecutionToken }))
+    .rejects.toThrow('directly logged call')
+  const { agent, ...withoutAgent } = execution
+  expect(agent).toBe(test.agent)
+  await expect(registered!.definition.execute(args, withoutAgent))
+    .rejects.toThrow('live target DSH Agent')
+  const unknownResponsibility = { ...args, responsibilityId: '00000000-0000-4000-8000-000000000999' }
+  await expect(registered!.definition.execute(unknownResponsibility, execution))
+    .rejects.toThrow('No dispatched Activity responsibility')
+  const noPromptProposal = await test.ctx.homeActivityResponsibilities.createProposal({
+    activityId: activity.id,
+    requestId: activityResponsibilityRequestId('00000000-0000-4000-8000-000000000814'),
+    coordinatingSessionId: test.secondaryAgent.id,
+    sourceEventSeq: 4,
+    target: { workspaceId: WorkspaceId('00000000-0000-4000-8000-000000000011'), sessionId: test.agent.session.id },
+    task: 'Report progress when prompted.',
+    inScope: ['Report progress.'],
+    outOfScope: ['Do not perform more work.'],
+    expectedOutcome: 'A target-authored status report.',
+    prerequisites: [],
+    conflictingWork: [],
+  })
+  await test.ctx.homeActivityResponsibilities.confirm({
+    activityId: activity.id,
+    responsibilityId: noPromptProposal.responsibilityId,
+    requestId: activityResponsibilityRequestId('00000000-0000-4000-8000-000000000815'),
+    proposalFactId: noPromptProposal.id,
+    proposal: noPromptProposal.proposal,
+    principal: { kind: 'owner' },
+  })
+  const noPromptRequestId = activityResponsibilityRequestId('00000000-0000-4000-8000-000000000816')
+  await test.ctx.homeActivityResponsibilities.beginDispatch({
+    activityId: activity.id,
+    responsibilityId: noPromptProposal.responsibilityId,
+    promptRequestId: noPromptRequestId,
+  })
+  await test.ctx.homeActivityResponsibilities.settleDispatch({
+    activityId: activity.id,
+    responsibilityId: noPromptProposal.responsibilityId,
+    promptRequestId: noPromptRequestId,
+    outcome: 'accepted',
+  })
+  const noPromptArgs = { ...args, responsibilityId: String(noPromptProposal.responsibilityId) }
+  test.makeMalformedHistoryEvent(dispatchedPromptEvent.seq)
+  const noPromptCall = test.session.append('tool/call', {
+    turn: 1, step: 3, callId: ToolCallId('no-prompt-status-call'), name: 'report_activity_responsibility_status', arguments: JSON.stringify(noPromptArgs),
+  })
+  await expect(registered!.definition.execute(noPromptArgs, {
+    ...execution, arguments: noPromptArgs, callId: ToolCallId('no-prompt-status-call'), sourceEventSeq: noPromptCall.seq,
+  }))
+    .rejects.toThrow('exact dispatched Activity prompt is not present')
+  const unrelatedCall = test.session.append('tool/call', {
+    turn: 1, step: 2, callId: ToolCallId('unrelated-status-call'), name: 'other-tool', arguments: '{}',
+  })
+  const wrongEventExecution: ToolRunContext = { ...execution, sourceEventSeq: unrelatedCall.seq }
+  await expect(registered!.definition.execute(args, wrongEventExecution))
+    .rejects.toThrow('not bound to the current logged tool call')
+  const nonToolEvent = test.session.append('user/message', createUserMessage({
+    content: [{ type: 'text', text: 'A later non-tool event.' }],
+    source: { kind: 'user', rpcId: brandString<SessionRequestId>('another-request') },
+  }), { surfaceOp: 'append' })
+  await expect(registered!.definition.execute(args, { ...execution, sourceEventSeq: nonToolEvent.seq }))
+    .rejects.toThrow('not bound to the current logged tool call')
+  await expect(registered!.definition.execute(args, { ...execution, callId: ToolCallId('different-status-call') }))
+    .rejects.toThrow('not bound to the current logged tool call')
+  const malformedArguments = test.session.append('tool/call', {
+    turn: 1, step: 3, callId: ToolCallId('malformed-status-call'), name: 'report_activity_responsibility_status', arguments: '{',
+  })
+  await expect(registered!.definition.execute(args, { ...execution, callId: ToolCallId('malformed-status-call'), sourceEventSeq: malformedArguments.seq }))
+    .rejects.toThrow('not bound to the current logged tool call')
+  const differentArguments = test.session.append('tool/call', {
+    turn: 1, step: 4, callId: ToolCallId('different-arguments-status-call'), name: 'report_activity_responsibility_status',
+    arguments: JSON.stringify({ ...args, summary: 'Different logged report.' }),
+  })
+  await expect(registered!.definition.execute(args, {
+    ...execution,
+    callId: ToolCallId('different-arguments-status-call'),
+    sourceEventSeq: differentArguments.seq,
+  })).rejects.toThrow('not bound to the current logged tool call')
+  expect(test.ctx.homeActivityResponsibilities.get(activity.id, proposal.responsibilityId)?.facts.map(fact => fact.kind))
+    .toEqual(['proposed', 'confirmed', 'dispatch-attempted', 'dispatch-settled'])
+  expect(test.ctx.homeActivityResponsibilities.listTargetStatusReports(activity.id, proposal.responsibilityId)).toHaveLength(1)
+})
+
+it('finds an old dispatched prompt through bounded asynchronous Session history pages', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Paginated target report', objective: 'Verify reports against the original dispatched prompt.',
+    boundaries: { inScope: ['Report progress.'], outOfScope: ['Do not dispatch more work.'] },
+  })
+  const proposal = await test.ctx.homeActivityResponsibilities.createProposal({
+    activityId: activity.id,
+    requestId: activityResponsibilityRequestId('00000000-0000-4000-8000-000000000821'),
+    coordinatingSessionId: test.secondaryAgent.id,
+    sourceEventSeq: 3,
+    target: { workspaceId: WorkspaceId('00000000-0000-4000-8000-000000000011'), sessionId: test.agent.session.id },
+    task: 'Report the progress of the selected parser task.',
+    inScope: ['Report milestones.'],
+    outOfScope: ['Do not perform more work.'],
+    expectedOutcome: 'A target-authored status report.',
+    prerequisites: [],
+    conflictingWork: [],
+  })
+  await test.ctx.homeActivityResponsibilities.confirm({
+    activityId: activity.id,
+    responsibilityId: proposal.responsibilityId,
+    requestId: activityResponsibilityRequestId('00000000-0000-4000-8000-000000000822'),
+    proposalFactId: proposal.id,
+    proposal: proposal.proposal,
+    principal: { kind: 'owner' },
+  })
+  const promptRequestId = activityResponsibilityRequestId('00000000-0000-4000-8000-000000000823')
+  await test.ctx.homeActivityResponsibilities.beginDispatch({
+    activityId: activity.id, responsibilityId: proposal.responsibilityId, promptRequestId,
+  })
+  await test.ctx.homeActivityResponsibilities.settleDispatch({
+    activityId: activity.id, responsibilityId: proposal.responsibilityId, promptRequestId, outcome: 'accepted',
+  })
+  test.session.append('user/message', createUserMessage({
+    content: [{ type: 'text', text: 'Exact dispatched assignment.' }],
+    source: { kind: 'user', rpcId: brandString<SessionRequestId>(String(promptRequestId)) },
+  }), { surfaceOp: 'append' })
+  for (let index = 0; index < 55; index++) {
+    test.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: `Later target context ${index}.` }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+  }
+  const args = {
+    activityId: String(activity.id),
+    responsibilityId: String(proposal.responsibilityId),
+    status: 'progress',
+    summary: 'The assigned parser work has an initial milestone.',
+  }
+  const callId = ToolCallId('paginated-status-report-call')
+  const callEvent = test.session.append('tool/call', {
+    turn: 1, step: 1, callId, name: 'report_activity_responsibility_status', arguments: JSON.stringify(args),
+  })
+  const registered = test.registeredTools.get('report_activity_responsibility_status')
+  if (registered === undefined) throw new Error('Target status tool was not registered.')
+  await registered.definition.execute(args, {
+    token: Symbol() as ToolExecutionToken,
+    callId,
+    rootCallId: callId,
+    name: 'report_activity_responsibility_status',
+    arguments: args,
+    agent: test.agent,
+    signal: new AbortController().signal,
+    sourceEventSeq: callEvent.seq,
+    deferContext() {},
+    concludeTurn() {},
+  })
+  expect(test.sessionHistoryReads.map(request => request.beforeSeq)).toHaveLength(2)
+  expect(test.ctx.homeActivityResponsibilities.listTargetStatusReports(activity.id, proposal.responsibilityId))
+    .toMatchObject([{ promptRequestId, sourceEventSeq: callEvent.seq }])
 })
 
 it('requires an explicit assessment command and steers the active Agent with loaded Sensemaking Skills', async () => {

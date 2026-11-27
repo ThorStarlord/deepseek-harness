@@ -325,6 +325,8 @@ type ToolExecutionToken = symbol & { readonly [toolExecutionTokenBrand]: true }
  */
 interface ToolExecutionInput {
   readonly callId: ToolCallId
+  /** Durable Session sequence of this root call when the owning step is logged. */
+  readonly sourceEventSeq?: SessionSeq
   /**
    * Root model-requested call owning this execution tree. Callers omit it for
    * a root execution; nested dispatchers propagate the enclosing value.

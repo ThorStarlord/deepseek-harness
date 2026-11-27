@@ -9,8 +9,8 @@
   en: 26a2d9d6f675f1db
   zh: c5f0d8bb472df7f1
 /deepseek-ai-dsh-client-ui-activity-coordination/summary:
-  en: 4d436e46b46406b9
-  zh: 7677fafb49691149
+  en: 080188cf2c92d45c
+  zh: 2d1cba347f125ee0
 /deepseek-ai-dsh-client-ui-activity-coordination/table-of-contents:
   en: d152484eb41ac6b4
   zh: eb2f3b588406d2d1
@@ -18,8 +18,8 @@
   en: 83fb7a5592025f41
   zh: 08988a42d9a3e7c6
 /deepseek-ai-dsh-client-ui-activity-coordination/understand-the-implementation:
-  en: a0fe62cd32879413
-  zh: b7a45e4594a3a052
+  en: 11e1e9dc551e25fd
+  zh: 0eb6cddc2be34f76
 /deepseek-ai-dsh-client-ui-activity-coordination/further-exploration:
   en: 9caf1cecc04586c5
   zh: 6d3503f0f37ce6f6
@@ -60,8 +60,20 @@
   en: f5b2e182864227f6
   zh: 634eabca2f7d699c
 /deepseek-ai-dsh-client-ui-activity-coordination/model-experience/explicit-saved-responsibility-reentry/kv-cache-effect:
-  en: ef777fa71c46015c
-  zh: fd6caedb15f57b93
+  en: ebef7e8f064826f5
+  zh: ee9a5dc7766f19c4
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/target-reported-progress:
+  en: cb0c572f8791750e
+  zh: 70284ed04ca07158
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/target-reported-progress/what-the-model-sees:
+  en: dd209c45a7f42db7
+  zh: bb32538ff59ed09b
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/target-reported-progress/token-effect:
+  en: 34826b5e1a4d80f3
+  zh: 6a77b3ec748c5540
+/deepseek-ai-dsh-client-ui-activity-coordination/model-experience/target-reported-progress/kv-cache-effect:
+  en: 3c04412eecfeda5d
+  zh: 9bd595949028c47e
 /deepseek-ai-dsh-client-ui-activity-coordination/known-limitations-and-deferred-work:
   en: 9f7e74b19d02843c
   zh: d85b3beebbaec0c3

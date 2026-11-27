@@ -10,6 +10,7 @@
     { "path": "../../core/tools" },
     { "path": "../../interaction/commands" },
     { "path": "../../home/activity" },
+    { "path": "../../api/session-controller/tsconfig.host.json" },
     { "path": "../../llm/llm" },
     { "path": "../../preset/agent-preset-registry" },
     { "path": "../../skill/skill" },

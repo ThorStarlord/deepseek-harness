@@ -3,7 +3,7 @@ import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type { ToolCallId, ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
 import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
-import type { UserMessage } from '@deepseek-ai/dsh-session'
+import type { SessionSeq, UserMessage } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { JsonSchemaNode } from './json-schema.ts'
 import type { ToolCallView, ToolResultView } from './presentation.ts'
@@ -173,6 +173,8 @@ export type ToolExecutionToken = symbol & { readonly [toolExecutionTokenBrand]: 
  */
 export interface ToolExecutionInput {
   readonly callId: ToolCallId
+  /** Durable Session sequence of this root call when the owning step is logged. */
+  readonly sourceEventSeq?: SessionSeq
   /**
    * Root model-requested call owning this execution tree. Callers omit it for
    * a root execution; nested dispatchers propagate the enclosing value.

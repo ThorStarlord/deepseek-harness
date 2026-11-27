@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
+import { ToolCallId, createAssistantMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
@@ -277,6 +278,57 @@ describe('web e2e: Activity cross-Session coordination', () => {
       && String(event.data.source.rpcId) === String(dispatchAttempt.promptRequestId),
     ).length
     await expect.poll(async () => countDeliveryInputs(await readPersistedEvents(scaffold, firstTarget.id)), { timeout: 5_000 }).toBe(1)
+
+    // Deterministic assembled-UI fixture: the command test exercises the actual target-only tool;
+    // this complete logged turn and saved report exercise Web rendering without claiming model execution.
+    const targetSession = scaffold.ctx.sessions.get(firstTarget.id)
+    if (targetSession === undefined) throw new Error('The dispatched target Session is not available to the isolated fixture.')
+    const nextTurn = targetSession.snapshotEvents().reduce((maximum, event) =>
+      event.type === 'turn/start' ? Math.max(maximum, event.data.turn) : maximum, 0) + 1
+    const statusArguments = {
+      activityId: String(activity.id),
+      responsibilityId: String(savedProposal.responsibilityId),
+      status: 'blocked',
+      summary: 'Waiting for the selected dependency before continuing the read-only review.',
+    }
+    const statusCallId = ToolCallId('activity-coordination-status-fixture')
+    targetSession.append('turn/start', { turn: nextTurn })
+    targetSession.append('step/start', { turn: nextTurn, step: 1 })
+    targetSession.append('assistant/message', {
+      turn: nextTurn,
+      step: 1,
+      stream: [],
+      message: createAssistantMessage({
+        content: [{ type: 'tool-call', id: statusCallId, name: 'report_activity_responsibility_status', arguments: JSON.stringify(statusArguments) }],
+        source: { provider: 'fixture', model: 'fixture' },
+      }),
+    }, { surfaceOp: 'append' })
+    const statusCall = targetSession.append('tool/call', {
+      turn: nextTurn,
+      step: 1,
+      callId: statusCallId,
+      name: 'report_activity_responsibility_status',
+      arguments: JSON.stringify(statusArguments),
+    })
+    targetSession.append('tool/result', {
+      turn: nextTurn,
+      step: 1,
+      message: createToolResultMessage({
+        callId: statusCallId,
+        content: [{ type: 'text', text: 'Saved target-reported blocked status.' }],
+        isError: false,
+      }),
+    }, { surfaceOp: 'append', sourceEventSeqs: [statusCall.seq] })
+    targetSession.append('step/end', { turn: nextTurn, step: 1 })
+    targetSession.append('turn/end', { turn: nextTurn, reason: { kind: 'completed' } })
+    await scaffold.ctx.homeActivityResponsibilities.recordTargetStatusReport({
+      activityId: activity.id,
+      responsibilityId: savedProposal.responsibilityId,
+      callerSessionId: firstTarget.id,
+      sourceEventSeq: statusCall.seq,
+      status: 'blocked',
+      summary: statusArguments.summary,
+    })
     await responsibilityDialog.getByRole('button', { name: 'Cancel' }).click()
     await page.setViewportSize(viewport)
 
@@ -301,6 +353,48 @@ describe('web e2e: Activity cross-Session coordination', () => {
     await responsibility.locator('summary').click()
     await responsibility.getByText(savedProposal.responsibilityId, { exact: true }).waitFor({ state: 'visible' })
     await responsibility.getByText('Prompt admission recorded', { exact: true }).waitFor({ state: 'visible' })
+    await responsibility.getByText('Target progress reports', { exact: true }).waitFor({ state: 'visible' })
+    await responsibility.getByText('These are self-reported updates. They do not establish completion, verification, or user acceptance.', { exact: true }).waitFor({ state: 'visible' })
+    await responsibility.getByText('Blocked', { exact: true }).waitFor({ state: 'visible' })
+    await responsibility.getByText('Waiting for the selected dependency before continuing the read-only review.', { exact: true }).waitFor({ state: 'visible' })
+    await responsibility.getByText(new RegExp(`source event ${statusCall.seq}`)).waitFor({ state: 'visible' })
+    await page.setViewportSize({ width: 390, height: 844 })
+    const recoveredStatus = responsibility.getByText('Blocked', { exact: true })
+    const selfReportNotice = responsibility.getByText(
+      'These are self-reported updates. They do not establish completion, verification, or user acceptance.',
+      { exact: true },
+    )
+    await recoveredStatus.scrollIntoViewIfNeeded()
+    const recoveredStatusBounds = await recoveredStatus.boundingBox()
+    if (recoveredStatusBounds === null) {
+      throw new Error('The progress status or its self-report limitation did not render on the narrow screen.')
+    }
+    expect(recoveredStatusBounds.y).toBeGreaterThanOrEqual(0)
+    expect(recoveredStatusBounds.y + recoveredStatusBounds.height).toBeLessThanOrEqual(844)
+    await page.screenshot({ path: join(SCREENSHOT_DIR, 'activity-coordination-history-reentry-narrow-status.png'), fullPage: true })
+    await selfReportNotice.scrollIntoViewIfNeeded()
+    const selfReportNoticeBounds = await selfReportNotice.boundingBox()
+    if (selfReportNoticeBounds === null) throw new Error('The report limitation did not render on the narrow screen.')
+    expect(selfReportNoticeBounds.y).toBeGreaterThanOrEqual(0)
+    expect(selfReportNoticeBounds.y + selfReportNoticeBounds.height).toBeLessThanOrEqual(844)
+    await page.screenshot({ path: join(SCREENSHOT_DIR, 'activity-coordination-history-reentry-narrow-limitation.png'), fullPage: true })
+    const recoveredSummary = responsibility.getByText(
+      'Waiting for the selected dependency before continuing the read-only review.', { exact: true },
+    )
+    await recoveredSummary.scrollIntoViewIfNeeded()
+    const narrowHistory = await historyDialog.evaluate(element => ({
+      dialogWidth: element.getBoundingClientRect().width,
+      viewportWidth: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+    }))
+    expect(narrowHistory.dialogWidth).toBeLessThanOrEqual(narrowHistory.viewportWidth)
+    expect(narrowHistory.documentWidth).toBeLessThanOrEqual(narrowHistory.viewportWidth)
+    const recoveredSummaryBounds = await recoveredSummary.boundingBox()
+    if (recoveredSummaryBounds === null) throw new Error('The recovered progress report did not render on the narrow screen.')
+    expect(recoveredSummaryBounds.x).toBeGreaterThanOrEqual(0)
+    expect(recoveredSummaryBounds.x + recoveredSummaryBounds.width).toBeLessThanOrEqual(390)
+    await page.screenshot({ path: join(SCREENSHOT_DIR, 'activity-coordination-history-reentry-narrow.png'), fullPage: true })
+    await page.setViewportSize(viewport)
     await responsibility.getByRole('button', { name: 'Add this responsibility to this conversation' }).click()
     await responsibility.getByRole('status').filter({ hasText: 'Historical responsibility queued' }).waitFor({ state: 'visible' })
     await page.screenshot({ path: join(SCREENSHOT_DIR, 'activity-coordination-history-reentry.png'), fullPage: true })

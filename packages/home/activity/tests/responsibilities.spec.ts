@@ -14,6 +14,7 @@ import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import HomeActivityService, { ActivityId } from '../src/index.ts'
 import HomeActivityResponsibilityService, {
+  ActivityResponsibilityError,
   ActivityResponsibilityStorageError,
   activityResponsibilityRequestId,
 } from '../src/responsibilities.ts'
@@ -23,11 +24,18 @@ import {
   MAX_HOME_ACTIVITY_RESPONSIBILITY_FACTS_PER_ACTIVITY,
   recordActivityResponsibilityAcceptanceRequestSchema,
 } from '../src/responsibility-spec.ts'
+import {
+  activityResponsibilityStatusReportSchema,
+  MAX_ACTIVITY_RESPONSIBILITY_STATUS_REPORTS,
+} from '../src/responsibility-status-spec.ts'
 import type {
   ActivityResponsibilityFact,
   ActivityResponsibilityFactId,
   ActivityResponsibilityHistory,
   ActivityResponsibilityId,
+  ActivityResponsibilityRequestId,
+  ActivityResponsibilityStatusReport,
+  ActivityResponsibilityStatusReportId,
   ConfirmActivityResponsibilityRequest,
   RecordActivityResponsibilityAcceptanceRequest,
   CreateActivityResponsibilityRequest,
@@ -94,6 +102,75 @@ function confirmation(history: ActivityResponsibilityHistory, requestId = '00000
     proposal: history.proposal.proposal,
     principal: { kind: 'owner' },
   }
+}
+
+async function dispatchedStatusFixture(
+  ctx: Context,
+  activityId: ActivityIdType,
+  suffix: number,
+  outcome?: 'accepted' | 'not-admitted' | 'uncertain',
+): Promise<{
+  readonly responsibilityId: ActivityResponsibilityId
+  readonly promptRequestId: ActivityResponsibilityRequestId
+  readonly request: ReturnType<typeof statusRequest>
+}> {
+  const proposal = await ctx.homeActivityResponsibilities.createProposal(request(activityId, uuid(suffix)))
+  const history: ActivityResponsibilityHistory = {
+    id: proposal.responsibilityId,
+    activityId,
+    proposal,
+    facts: [proposal],
+  }
+  await ctx.homeActivityResponsibilities.confirm(confirmation(history, uuid(suffix + 1_000)))
+  const promptRequestId = activityResponsibilityRequestId(uuid(suffix + 2_000))
+  const dispatch = { activityId, responsibilityId: proposal.responsibilityId, promptRequestId }
+  await ctx.homeActivityResponsibilities.beginDispatch(dispatch)
+  if (outcome !== undefined) await ctx.homeActivityResponsibilities.settleDispatch({ ...dispatch, outcome })
+  return {
+    responsibilityId: proposal.responsibilityId,
+    promptRequestId,
+    request: statusRequest(activityId, proposal.responsibilityId, suffix + 3_000),
+  }
+}
+
+function statusRequest(activityId: ActivityIdType, responsibilityId: ActivityResponsibilityId, sourceEventSeq: number) {
+  return {
+    activityId,
+    responsibilityId,
+    callerSessionId: SessionId('target-session'),
+    sourceEventSeq,
+    status: 'progress' as const,
+    summary: `The target reports bounded progress at event ${sourceEventSeq}.`,
+  }
+}
+
+function statusReportRow(
+  activityId: ActivityIdType,
+  responsibilityId: ActivityResponsibilityId,
+  targetSessionId: ReturnType<typeof SessionId>,
+  promptRequestId: ActivityResponsibilityRequestId,
+  sourceEventSeq: number,
+): ActivityResponsibilityStatusReport {
+  return {
+    id: brandString<ActivityResponsibilityStatusReportId>(uuid(10_000 + sourceEventSeq)),
+    activityId,
+    responsibilityId,
+    targetSessionId,
+    promptRequestId,
+    status: 'progress',
+    summary: `Target report at event ${sourceEventSeq}.`,
+    sourceEventSeq,
+    recordedAt: '2026-11-25T12:00:00.000Z',
+    source: 'target-session-status-tool',
+  }
+}
+
+function sourceKey(sessionId: string, sourceEventSeq: number): string {
+  return `${sessionId.length}:${sessionId}:${sourceEventSeq}`
+}
+
+function uuid(value: number): string {
+  return `00000000-0000-4000-8000-${String(value).padStart(12, '0')}`
 }
 
 it('persists append-only responsibility evidence across a fresh storage context', async () => {
@@ -233,6 +310,181 @@ it('persists append-only responsibility evidence across a fresh storage context'
   expect(reopened.homeActivityResponsibilities.list(activity.id)).toEqual([beforeRestart])
   expect(reopened.homeActivityResponsibilities.get(activity.id, proposal.responsibilityId)?.facts.at(-2)).toEqual(laterDisposition)
   expect(reopened.homeActivityResponsibilities.get(activity.id, proposal.responsibilityId)?.facts.at(-1)).toEqual(userVerification)
+})
+
+it('stores idempotent target status reports separately from final responsibility facts', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-status-report-')); roots.push(root)
+  const first = await harness(root)
+  const activity = await first.homeActivities.create(activityRequest)
+  const proposal = await first.homeActivityResponsibilities.createProposal(request(activity.id))
+  const history = { id: proposal.responsibilityId, activityId: activity.id, proposal, facts: [proposal] }
+  await first.homeActivityResponsibilities.confirm(confirmation(history))
+  const promptRequestId = activityResponsibilityRequestId('00000000-0000-4000-8000-000000000701')
+  const dispatch = { activityId: activity.id, responsibilityId: proposal.responsibilityId, promptRequestId }
+  await first.homeActivityResponsibilities.beginDispatch(dispatch)
+  await first.homeActivityResponsibilities.settleDispatch({ ...dispatch, outcome: 'accepted' })
+  const statusRequest = {
+    activityId: activity.id,
+    responsibilityId: proposal.responsibilityId,
+    callerSessionId: SessionId('target-session'),
+    sourceEventSeq: 91,
+    status: 'blocked' as const,
+    summary: 'Waiting for the approved dependency update before continuing.',
+  }
+
+  await expect(first.homeActivityResponsibilities.recordTargetStatusReport({ ...statusRequest, callerSessionId: SessionId('other-session') }))
+    .rejects.toMatchObject({ code: 'status-report-unavailable' })
+  const report = await first.homeActivityResponsibilities.recordTargetStatusReport(statusRequest)
+  expect(await first.homeActivityResponsibilities.recordTargetStatusReport(statusRequest)).toEqual(report)
+  await expect(first.homeActivityResponsibilities.recordTargetStatusReport({ ...statusRequest, summary: 'Conflicting report for the same logged event.' }))
+    .rejects.toMatchObject({ code: 'request-id-reused' })
+  expect(first.homeActivityResponsibilities.hasReportableTargetSession(SessionId('target-session'))).toBe(true)
+  expect(first.homeActivityResponsibilities.listTargetStatusReports(activity.id, proposal.responsibilityId)).toEqual([report])
+  expect(first.homeActivityResponsibilities.get(activity.id, proposal.responsibilityId)?.facts.map(fact => fact.kind))
+    .toEqual(['proposed', 'confirmed', 'dispatch-attempted', 'dispatch-settled'])
+
+  await first.homeActivityResponsibilities.recordReport({
+    activityId: activity.id,
+    responsibilityId: proposal.responsibilityId,
+    requestId: promptRequestId,
+    promptRequestId,
+    sourceEventSeqs: [88, 92],
+    summary: 'The target reports a final response after the assignment turn ended.',
+    reportedAt: '2026-11-25T12:00:00.000Z',
+  })
+  expect(first.homeActivityResponsibilities.hasReportableTargetSession(SessionId('target-session'))).toBe(false)
+  await expect(first.homeActivityResponsibilities.recordTargetStatusReport({ ...statusRequest, sourceEventSeq: 92 }))
+    .rejects.toMatchObject({ code: 'status-report-unavailable' })
+  await first.fiber.dispose()
+
+  const reopened = await harness(root)
+  expect(reopened.homeActivityResponsibilities.listTargetStatusReports(activity.id, proposal.responsibilityId)).toEqual([report])
+})
+
+it('rejects invalid, undispatched, and denied status reports while retaining unresolved dispatch eligibility', async () => {
+  const ctx = await memoryHarness(new MemoryMediaPool())
+  const activity = await ctx.homeActivities.create(activityRequest)
+  const undispatched = await ctx.homeActivityResponsibilities.createProposal(request(activity.id, uuid(801)))
+  const undispatchedRequest = statusRequest(activity.id, undispatched.responsibilityId, 801)
+  expect(ctx.homeActivityResponsibilities.hasReportableTargetSession(SessionId('target-session'))).toBe(false)
+  await expect(ctx.homeActivityResponsibilities.recordTargetStatusReport({ ...undispatchedRequest, sourceEventSeq: -1 }))
+    .rejects.toMatchObject({ code: 'invalid-request' })
+  await expect(ctx.homeActivityResponsibilities.recordTargetStatusReport(undispatchedRequest))
+    .rejects.toMatchObject({ code: 'status-report-unavailable' })
+
+  const denied = await dispatchedStatusFixture(ctx, activity.id, 802, 'not-admitted')
+  expect(ctx.homeActivityResponsibilities.hasReportableTargetSession(SessionId('target-session'))).toBe(false)
+  await expect(ctx.homeActivityResponsibilities.recordTargetStatusReport(denied.request))
+    .rejects.toMatchObject({ code: 'status-report-unavailable' })
+
+  const unresolved = await dispatchedStatusFixture(ctx, activity.id, 803)
+  expect(ctx.homeActivityResponsibilities.hasReportableTargetSession(SessionId('target-session'))).toBe(true)
+  await expect(ctx.homeActivityResponsibilities.recordTargetStatusReport(unresolved.request)).resolves.toMatchObject({
+    promptRequestId: unresolved.promptRequestId,
+    sourceEventSeq: unresolved.request.sourceEventSeq,
+  })
+})
+
+it('fails closed when target status storage, generated records, or history reads fail', async () => {
+  const ctx = await memoryHarness(new MemoryMediaPool())
+  const activity = await ctx.homeActivities.create(activityRequest)
+  const target = await dispatchedStatusFixture(ctx, activity.id, 811, 'accepted')
+  const service = ctx.homeActivityResponsibilities
+  const table = Reflect.get(service, 'statusReportsTable') as KvTable<string, ActivityResponsibilityStatusReport>
+
+  const reportEntries = vi.spyOn(table, 'entries').mockImplementationOnce(() => { throw new Error('injected status read failure') })
+  await expect(service.recordTargetStatusReport(target.request)).rejects.toBeInstanceOf(ActivityResponsibilityStorageError)
+  reportEntries.mockRestore()
+
+  const reportPut = vi.spyOn(table, 'put').mockRejectedValueOnce(new Error('injected status write failure'))
+  await expect(service.recordTargetStatusReport(target.request)).rejects.toBeInstanceOf(ActivityResponsibilityStorageError)
+  reportPut.mockRestore()
+
+  const rejection = activityResponsibilityStatusReportSchema.safeParse({ kind: 'invalid-status-report' })
+  if (rejection.success) throw new Error('Expected the invalid status row to be rejected.')
+  const parse = vi.spyOn(activityResponsibilityStatusReportSchema, 'safeParse').mockReturnValue(rejection)
+  try {
+    await expect(service.recordTargetStatusReport(target.request)).rejects.toMatchObject({ code: 'invalid-request' })
+  } finally {
+    parse.mockRestore()
+  }
+
+  const domainError = new ActivityResponsibilityError('status-report-unavailable', 'Injected domain rejection.')
+  const domainEntries = vi.spyOn(table, 'entries').mockImplementationOnce(() => { throw domainError })
+  expect(() => service.listTargetStatusReports(activity.id, target.responsibilityId)).toThrow(domainError)
+  domainEntries.mockRestore()
+
+  const storageError = new ActivityResponsibilityStorageError(new Error('injected typed storage error'))
+  const storageEntries = vi.spyOn(table, 'entries').mockImplementationOnce(() => { throw storageError })
+  expect(() => service.listTargetStatusReports(activity.id, target.responsibilityId)).toThrow(storageError)
+  storageEntries.mockRestore()
+
+  const listEntries = vi.spyOn(table, 'entries').mockImplementationOnce(() => { throw new Error('injected list read failure') })
+  expect(() => service.listTargetStatusReports(activity.id, target.responsibilityId))
+    .toThrow(ActivityResponsibilityStorageError)
+  listEntries.mockRestore()
+
+  Reflect.set(service, 'statusReportsTable', undefined)
+  expect(() => service.listTargetStatusReports(activity.id, target.responsibilityId))
+    .toThrow(ActivityResponsibilityStorageError)
+})
+
+it('enforces per-responsibility and per-Activity target report limits', async () => {
+  const ctx = await memoryHarness(new MemoryMediaPool())
+  const activity = await ctx.homeActivities.create(activityRequest)
+  const target = await dispatchedStatusFixture(ctx, activity.id, 821, 'accepted')
+  const table = Reflect.get(ctx.homeActivityResponsibilities, 'statusReportsTable') as KvTable<string, ActivityResponsibilityStatusReport>
+  const entries = vi.spyOn(table, 'entries')
+  const perResponsibility = Array.from({ length: MAX_ACTIVITY_RESPONSIBILITY_STATUS_REPORTS }, (_, index) => [
+    `seed-responsibility-${index}`,
+    statusReportRow(activity.id, target.responsibilityId, SessionId('target-session'), target.promptRequestId, index),
+  ] as const)
+  entries.mockImplementationOnce(() => new Map(perResponsibility).entries())
+  await expect(ctx.homeActivityResponsibilities.recordTargetStatusReport(target.request))
+    .rejects.toMatchObject({ code: 'status-report-limit' })
+
+  const atActivityLimit = [
+    ['unrelated-activity', statusReportRow(ActivityId(uuid(822)), target.responsibilityId, SessionId('target-session'), target.promptRequestId, 1)],
+    ...Array.from({ length: MAX_HOME_ACTIVITY_RESPONSIBILITY_FACTS_PER_ACTIVITY }, (_, index) => [
+      `seed-activity-${index}`,
+      statusReportRow(activity.id, brandString<ActivityResponsibilityId>(`other-responsibility-${index}`), SessionId('target-session'), target.promptRequestId, index + 1),
+    ] as const),
+  ] as const
+  entries.mockImplementationOnce(() => new Map(atActivityLimit).entries())
+  await expect(ctx.homeActivityResponsibilities.recordTargetStatusReport(target.request))
+    .rejects.toMatchObject({ code: 'status-report-limit' })
+  entries.mockRestore()
+})
+
+it('lists only reports bound to the stored target, dispatch, Activity, responsibility, and source key', async () => {
+  const ctx = await memoryHarness(new MemoryMediaPool())
+  const activity = await ctx.homeActivities.create(activityRequest)
+  const target = await dispatchedStatusFixture(ctx, activity.id, 831, 'accepted')
+  const service = ctx.homeActivityResponsibilities
+  const table = Reflect.get(service, 'statusReportsTable') as KvTable<string, ActivityResponsibilityStatusReport>
+  await service.recordTargetStatusReport({ ...target.request, sourceEventSeq: 9 })
+  await service.recordTargetStatusReport({ ...target.request, sourceEventSeq: 2 })
+
+  await table.put(sourceKey('target-session', 1), statusReportRow(
+    activity.id, target.responsibilityId, SessionId('other-target-session'), target.promptRequestId, 1,
+  ))
+  await table.put(sourceKey('target-session', 3), statusReportRow(
+    activity.id, target.responsibilityId, SessionId('target-session'), activityResponsibilityRequestId(uuid(832)), 3,
+  ))
+  await table.put(sourceKey('target-session', 4), statusReportRow(
+    ActivityId(uuid(834)), target.responsibilityId, SessionId('target-session'), target.promptRequestId, 4,
+  ))
+  await table.put(sourceKey('target-session', 5), statusReportRow(
+    activity.id, brandString<ActivityResponsibilityId>(uuid(835)), SessionId('target-session'), target.promptRequestId, 5,
+  ))
+  await table.put('mismatched-storage-key', statusReportRow(
+    activity.id, target.responsibilityId, SessionId('target-session'), target.promptRequestId, 6,
+  ))
+
+  const historyRows = service.listTargetStatusReports(activity.id, target.responsibilityId)
+  expect(historyRows.map(report => report.sourceEventSeq)).toEqual([2, 9])
+  const undispatched = await service.createProposal(request(activity.id, uuid(836)))
+  expect(service.listTargetStatusReports(activity.id, undispatched.responsibilityId)).toEqual([])
 })
 
 it('rejects mismatched confirmation, illegal dispatch, and reports without an admitted prompt', async () => {

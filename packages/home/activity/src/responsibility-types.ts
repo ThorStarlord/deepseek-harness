@@ -14,6 +14,39 @@ export type ActivityResponsibilityFactId = Branded<'ActivityResponsibilityFactId
 /** Idempotency identity supplied by the operation's caller. */
 export type ActivityResponsibilityRequestId = Branded<'ActivityResponsibilityRequestId'>
 
+/** Stable identity of one target-authored progress report. */
+export type ActivityResponsibilityStatusReportId = Branded<'ActivityResponsibilityStatusReportId'>
+
+/** Bounded progress state reported by the target Session; none means completion. */
+export type ActivityResponsibilityStatus = 'progress' | 'waiting' | 'ready' | 'blocked' | 'failed'
+
+/** Append-only target-authored progress report stored beside the v1 responsibility ledger. */
+export interface ActivityResponsibilityStatusReport {
+  readonly id: ActivityResponsibilityStatusReportId
+  readonly activityId: ActivityId
+  readonly responsibilityId: ActivityResponsibilityId
+  readonly targetSessionId: SessionId
+  readonly promptRequestId: ActivityResponsibilityRequestId
+  readonly status: ActivityResponsibilityStatus
+  readonly summary: string
+  /** Exact target Session tool/call event carrying this report. */
+  readonly sourceEventSeq: number
+  readonly recordedAt: string
+  readonly source: 'target-session-status-tool'
+}
+
+/** Request for a target Session to append one bounded status report. */
+export interface RecordActivityResponsibilityStatusReportRequest {
+  readonly activityId: ActivityId
+  readonly responsibilityId: ActivityResponsibilityId
+  /** Trusted live Agent Session identity supplied by the DSH tool implementation. */
+  readonly callerSessionId: SessionId
+  /** Trusted sequence of the current logged tool/call event. */
+  readonly sourceEventSeq: number
+  readonly status: ActivityResponsibilityStatus
+  readonly summary: string
+}
+
 /** Local DSH owner identity used for authenticated coordination decisions. */
 export interface ActivityResponsibilityPrincipal {
   readonly kind: 'owner'

@@ -16,6 +16,8 @@ Provider reports preserve the provider stop reason. Activity views classify only
 
 For degraded outcomes, opening an Activity shows inspection guidance for pending or uncertain starts. It offers a separate, explicit new request only when saved facts support new work and the selected provider route is registered; registration does not establish credential readiness, consent, native permission, or admission. Activity has no stop action, and external one-shot runs have no Activity status query, transcript inspection, or resume action. Unclassified outcomes remain unresolved, and opening an Activity never starts or resumes execution.
 
+
+Target Sessions can append interim status reports for admitted or unresolved responsibilities. Each report is stored in a separate version-1 `home_activity_responsibility_status_reports` domain and identifies the target Session, dispatched prompt, and exact logged tool-call event. Reports do not change responsibility facts or establish completion, verification, or user acceptance; reopening history never prompts the target.
 ## Context references
 
 The separate version-1 `home_activity_associations` domain stores selected Workspace and DSH Session ids apart from the Activity record. It permits up to 256 references of each kind. The ids are selected independently: sharing an Activity does not assign a Session to a Workspace or infer a Git repository root from a Workspace directory. Removing a reference changes only the association record; it never rewrites a Workspace record or Session log.
@@ -47,6 +49,8 @@ The separate version-1 `home_activity_handoffs` domain stores a user-supplied so
 The separate version-1 `home_activity_strategic_episodes` domain appends agent-authored advisory briefs without changing Activity intent, annotations, or delegation facts. `/activity assess` loads the existing Sensemaking Skills and explicitly selected Workspaces; repository reads use the existing read-only coordinator after its separate one-shot approval. Each episode retains the Activity objective, originating Session, Workspace ids, coordinator-reported Git revisions and observation times, whether staged, unstaged, or untracked source files were present, source references, loaded Skill content digests, findings, alternatives, uncertainties, and a recommendation or no-selection. The recorder binds repository ids and source metadata to matching successful coordinator tool-result metadata in the originating Session; it does not independently verify source contents, citations, or findings. Unavailable, dirty, changed, or stability-unknown sources require an incomplete brief. A later brief supersedes the recommendation without removing the earlier episode. `/activity open` shows the latest brief and `/activity brief` retrieves a selected historical revision without re-reading repositories; a later saved observation makes earlier applicability uncertain, and no later observation leaves current applicability unconfirmed. `/activity assess cancel` prevents saving an unfinished brief but cannot stop reads already approved and running.
 
 The separate version-1 `home_activity_responsibilities` domain appends facts for a bounded responsibility proposed for a selected Workspace and existing DSH root Session. A proposal, authenticated user confirmation, prompt dispatch intent and outcome, passive Session observation, target report, verification evidence, and user acceptance remain distinct records. Each fact carries stable Activity and responsibility identities, a revision and predecessor, an idempotency request identity, and source attribution. The confirmation stores the exact proposal content and the local owner identity supplied by the trusted Host route; unrelated Peer metadata is not persisted. The persistence service does not authenticate the caller or authorize target access. A prompt accepted by Session Controller means only that the target accepted input. Target reports retain a bounded summary and source event sequences instead of copying the Session transcript. Verification evidence records its named source and reported result; acceptance remains a separate user decision. Listing responsibility history does not query, resume, or prompt a target Session.
+
+Target Sessions can append interim progress through a conditional model tool when an admitted or unresolved responsibility is assigned to that exact live root Session. Each report is stored in the separate version-1 `home_activity_responsibility_status_reports` domain and cites the target Session's logged tool-call event. The reports remain self-attributed status evidence and never change the responsibility facts or establish completion, verification, or user acceptance.
 
 The optional `ctx.homeActivityCoordination` Host service exposes Client-mediated routes for owner-authorized, bounded Session discovery, proposal recording, confirmed prompt dispatch, and passive reconciliation. Each discovery rechecks Activity links, Workspace membership, root Session identity, matching repository paths, and current resource access. Responsibility histories are returned only when the caller can read the source coordinator Session, target Session, and Workspace; Activity links alone grant no access. Proposals cite a model-authored event from an associated coordinating root Session in an associated Workspace. Dispatch accepts only the exact saved proposal after authenticated owner confirmation and rechecks target identity and access; the target Session retains its runtime, permissions, and writer ownership. Opening coordination history does not prompt or resume any target. See the [coordination UI package](../../packages/client/ui-activity-coordination/README.md) for the client workflow.
 
@@ -422,6 +426,27 @@ recordObservation(request: RecordActivityResponsibilityObservationRequest): Prom
  */
 recordReport(request: RecordActivityResponsibilityReportRequest): Promise<ActivityResponsibilityReportedFact>
 
+/** Append a status report from the exact target Session of a confirmed responsibility.
+ * @param request - Activity, responsibility, trusted caller Session and logged tool-call sequence.
+ * @returns The idempotent target-authored report; it does not mark work complete or verified.
+ * @throws {ActivityResponsibilityError} when the caller, dispatch, or report identity is unavailable.
+ * @throws {ActivityResponsibilityStorageError} when persistence cannot be confirmed.
+ */
+recordTargetStatusReport(request: RecordActivityResponsibilityStatusReportRequest): Promise<ActivityResponsibilityStatusReport>
+
+/** Whether one Session has an unresolved or admitted responsibility that can accept a self-report.
+ * @param targetSessionId - Session identity from a live ToolActivationContext Agent.
+ * @returns True only when an existing responsibility is dispatched to this Session and has no final report.
+ */
+hasReportableTargetSession(targetSessionId: SessionId): boolean
+
+/** Read immutable status reports without contacting or resuming the target Session.
+ * @param activityId - Owning Activity identity.
+ * @param responsibilityId - Stable responsibility identity.
+ * @returns Target-authored reports in Session event order.
+ */
+listTargetStatusReports( activityId: ActivityId, responsibilityId: ActivityResponsibilityId, ): readonly ActivityResponsibilityStatusReport[]
+
 /** Record separately attributed evidence about one saved target report.
  * @param request - Report identity, recorder, and named verification evidence.
  * @returns The evidence fact; DSH does not independently inspect its source.
@@ -455,6 +480,8 @@ get(activityId: ActivityId, responsibilityId: ActivityResponsibilityId): Activit
  */
 list(activityId: ActivityId): readonly ActivityResponsibilityHistory[]
 ```
+
+Types: [SessionId](core.md)
 
 Source: [`packages/home/activity/src/responsibilities.ts`](../../packages/home/activity/src/responsibilities.ts)
 

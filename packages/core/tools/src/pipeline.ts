@@ -132,6 +132,7 @@ export class ToolExecutionPipeline {
       callId,
       rootCallId,
       name,
+      ...exec.sourceEventSeq === undefined ? {} : { sourceEventSeq: exec.sourceEventSeq },
       signal,
       ...agent !== undefined ? { agent } : {},
       ...exec.toolSet !== undefined ? { toolSet: exec.toolSet } : {},

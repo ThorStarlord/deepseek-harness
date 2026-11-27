@@ -154,9 +154,11 @@ async function runGroup(
   const startCall = async (index: number): Promise<void> => {
     // oxlint-disable-next-line typescript/no-non-null-assertion -- bounded index
     const call = group[index]!
-    callSeqs[index] = settlement.start(call.block)
+    const callSeq = settlement.start(call.block)
+    callSeqs[index] = callSeq
     started++
-    const prepared = await pipeline.prepare(call.exec)
+    const execution = callSeq === undefined ? call.exec : { ...call.exec, sourceEventSeq: callSeq }
+    const prepared = await pipeline.prepare(execution)
     throwSchedulerFailure()
     switch (prepared.kind) {
       case 'dispatch': {

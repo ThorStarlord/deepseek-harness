@@ -31,6 +31,9 @@ import { SubagentRunId } from '@deepseek-ai/dsh-subagent'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import HomeActivityService from '@deepseek-ai/dsh-home-activity'
+import HomeActivityStrategicEpisodeService from '@deepseek-ai/dsh-home-activity/strategic-episodes'
+import HomeActivityHandoffService from '@deepseek-ai/dsh-home-activity/handoffs'
+import HomeActivityResponsibilities from '@deepseek-ai/dsh-home-activity/responsibilities'
 import HomeActivityAssociationService from '@deepseek-ai/dsh-home-activity/associations'
 import HomeActivityArtifactService from '@deepseek-ai/dsh-home-activity/artifacts'
 import HomeActivityDelegations, { ActivityDelegationError } from '@deepseek-ai/dsh-home-activity/delegations'
@@ -141,17 +144,22 @@ async function harness(adapter: DelegationAdapter, existingRoot?: string) {
   await ctx.plugin(StorageDomain, { backend: 'json' })
   await ctx.plugin(CommandRuntime)
   await ctx.plugin(HomeActivityService)
+  await ctx.plugin(HomeActivityStrategicEpisodeService)
+  await ctx.plugin(HomeActivityHandoffService)
+  await ctx.plugin(HomeActivityResponsibilities)
   await ctx.plugin(HomeActivityDelegations)
   ctx.provide('workspaceRegistry', { get: () => undefined, list: () => [] } as never)
   await ctx.plugin(HomeActivityAssociationService)
   await ctx.plugin(HomeActivityArtifactService)
   await ctx.plugin(HomeActivityReviewService)
   await ctx.plugin(HomeActivityAnnotationService)
+  ctx.provide('sessionController', { events: vi.fn() } as never)
   await ctx.plugin(commandHomeActivity)
   ctx.llm.registerAdapter(['mock'], adapter)
   const parent = await ctx.agentLoop.create(SessionId(`activity-parent-${randomUUID()}`), {
     provider: 'mock', model: 'mock',
   })
+  expect(ctx.commands.list(parent).map(command => command.name)).toContain('activity')
   return { ctx, parent, root }
 }
 

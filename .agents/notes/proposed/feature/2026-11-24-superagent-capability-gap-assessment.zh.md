@@ -68,6 +68,14 @@ Stage 2B 的战略重新进入实现仍是独立的未合并工作。首个协�
 
 本建议不授权自动派发、更改权限、修改代码库、集成或接受工作。用户必须批准发送给其他 Session 的每项任务。提供方报告仍与验证和用户接受相区分。用户可见的实现仍须遵循当前有效的产品/设计评审政策。
 
+### Superagent Prototype 复用评估
+
+[DSH Superagent Prototype](https://github.com/ThorStarlord/dsh-superagent-prototype/tree/6337fc823ce20251c8de8085948165c81aaa701e) 已实现中心 Session、持久化 Ticket 和 Assignment、工作者状态报告、重启恢复、事件准入、通知和管理面板。它的 bundle 面向一个配置的 GitHub 仓库，声明依赖 DSH `^0.2.1-alpha.2` 与 Cordis `4.0.5-alpha.1`，会创建自己的工作者 Session，且工作者 preset 中包含 shell 访问。它的 `ready` 报告可以结束原型 Ticket。这些生命周期和权限不能替代所选 DSH Activity、任意现有根 Session、经身份验证的 Client 分发或目标 Session 自有的授权。
+
+在 DSH 的权限所有权结构中复用工作者报告的概念。Activity 责任记录继续作为唯一的分配身份与最终结果记录。目标根 Session 只能为分配给它自己的、已准入或结果未确定的责任追加有界的进展、等待、待审查、受阻或失败自我报告。每份报告都引用目标的 `tool/call` 事件，并保存在单独的版本化侧域中，因此严格的责任版本 1 事实不变。DSH 不会据此推断完成、验证、接受、调度或通知。本实现不复制 Prototype 代码或包依赖；Prototype 使用 MIT 许可证，本记录保留已检查的源版本以便追溯。
+
+此适配只提供目标自我报告的中间进展。Prototype 整体的事件准入、Ticket 审核、工作者创建、并发调度、后台作业监控、注意事项路由、恢复控制器和管理面板仍未集成。不能根据此项针对性使用声称整个 bundle 的兼容性或安全性已获资格认定。此 DSH 行为变更会作为后续 PR 叠加在跨 Session 协调 PR 上；集成仍需通过该 PR 自身的要求和当前有效的独立人工产品/设计审查。
+
 ## 已考虑的替代方案
 
 **只采用以 Session 为中心的协调**可以复用 Session 身份和继续能力，但会让用户意图和跨项目上下文继续散落在不同对话中。Session 应继续作为执行所有者，而不是取代 Activity 的持久化目标。

@@ -22,6 +22,7 @@ import { executeAssociationCommand, renderActivityAssociations } from './associa
 import { executeActivityHandoffCommand, renderActivityHandoffs } from './handoff-command.ts'
 import { executeActivityAnnotationCommand, renderActivityAnnotations } from './annotation-command.ts'
 import { executeActivityReviewCommand, renderActivityReview } from './review-command.ts'
+import { registerActivityResponsibilityStatusTool } from './responsibility-status.ts'
 
 export const name = 'command-home-activity'
 export const inject = [
@@ -37,8 +38,10 @@ export const inject = [
   'homeActivityHandoffs',
   'homeActivityReviews',
   'homeActivityAnnotations',
+  'homeActivityResponsibilities',
   'workspaceRegistry',
   'sessionPersistence',
+  'sessionController',
 ]
 
 const USAGE = 'Usage: /activity create <JSON> | list | open <activity-id> | brief <activity-id> <revision> | assess cancel | assess <activity-id> <workspace-id> <workspace-id> | workspaces | sessions | link/unlink <activity-id> workspace|session <context-id> | artifact add <activity-id> <delegation-id> <workspace-id> <JSON> | handoff add <activity-id> <JSON> | annotate <activity-id> <JSON> | review set <activity-id> <delegation-id> <JSON> | delegate <activity-id> spawn|codex|claude-code <task> | continue <activity-id> spawn|codex|claude-code in-scope:<n> <bounded next step>'
@@ -94,6 +97,7 @@ export function apply(ctx: Context): void {
     handler: invocation => execute(ctx, invocation),
   }))
   ctx.effect(() => registerActivityStrategicBriefTool(ctx), 'Activity Strategic Brief recorder')
+  ctx.effect(() => registerActivityResponsibilityStatusTool(ctx), 'Activity responsibility status reporter')
 }
 
 async function execute(ctx: Context, invocation: CommandInvocation): Promise<CommandResult> {

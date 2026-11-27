@@ -11,6 +11,7 @@ import type {
   ActivityResponsibilityProposal,
   ActivityResponsibilityReportedFact,
   ActivityResponsibilityRequestId,
+  ActivityResponsibilityStatusReport,
 } from './responsibility-types.ts'
 
 /** One explicitly selected Workspace and root Session pair. */
@@ -58,6 +59,8 @@ export interface ActivityCoordinationCatalogItem {
 /** Authorized durable responsibility histories for one Activity. */
 export interface ActivityCoordinationResponsibilityList {
   readonly items: readonly ActivityResponsibilityHistory[]
+  /** Target-authored progress reports scoped to the returned histories. */
+  readonly statusReports?: readonly ActivityResponsibilityStatusReport[]
 }
 
 /** A model recommendation tied to an exact assistant message in the coordinating Session. */
@@ -90,6 +93,7 @@ export interface ActivityCoordinationDispatchResult {
 /** Passive refresh and outcome-recovery result; runtime availability is not completion. */
 export interface ActivityCoordinationReconcileResult {
   readonly history: ActivityResponsibilityHistory
+  readonly statusReports?: readonly ActivityResponsibilityStatusReport[]
   readonly observed: {
     readonly cursor: number
     readonly active: boolean

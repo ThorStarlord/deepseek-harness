@@ -6,6 +6,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { ActivityId } from './types.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   ActivityResponsibilityAcceptanceFact,
   ActivityResponsibilityActor,
@@ -22,6 +23,7 @@ import type {
   ActivityResponsibilityProposedFact,
   ActivityResponsibilityReportedFact,
   ActivityResponsibilityRequestId,
+  ActivityResponsibilityStatusReport,
   ActivityResponsibilityVerificationFact,
   BeginActivityResponsibilityDispatchRequest,
   ConfirmActivityResponsibilityRequest,
@@ -29,6 +31,7 @@ import type {
   RecordActivityResponsibilityAcceptanceRequest,
   RecordActivityResponsibilityObservationRequest,
   RecordActivityResponsibilityReportRequest,
+  RecordActivityResponsibilityStatusReportRequest,
   RecordActivityResponsibilityVerificationRequest,
   SettleActivityResponsibilityDispatchRequest,
 } from './responsibility-types.ts'
@@ -46,6 +49,12 @@ import {
   recordActivityResponsibilityVerificationRequestSchema,
   settleActivityResponsibilityDispatchRequestSchema,
 } from './responsibility-spec.ts'
+import {
+  activityResponsibilityStatusReportSchema,
+  homeActivityResponsibilityStatusReportsDomain,
+  MAX_ACTIVITY_RESPONSIBILITY_STATUS_REPORTS,
+  recordActivityResponsibilityStatusReportRequestSchema,
+} from './responsibility-status-spec.ts'
 import type {} from './index.ts'
 
 export {
@@ -63,6 +72,12 @@ export {
   recordActivityResponsibilityVerificationRequestSchema,
   settleActivityResponsibilityDispatchRequestSchema,
 } from './responsibility-spec.ts'
+export {
+  activityResponsibilityStatusReportSchema,
+  homeActivityResponsibilityStatusReportsDomain,
+  MAX_ACTIVITY_RESPONSIBILITY_STATUS_REPORTS,
+  recordActivityResponsibilityStatusReportRequestSchema,
+} from './responsibility-status-spec.ts'
 
 /** Stable rejection categories for responsibility requests. */
 export type ActivityResponsibilityErrorCode =
@@ -77,6 +92,8 @@ export type ActivityResponsibilityErrorCode =
   | 'dispatch-already-attempted'
   | 'dispatch-not-attempted'
   | 'report-unavailable'
+  | 'status-report-unavailable'
+  | 'status-report-limit'
   | 'fact-limit'
 
 /** Expected Activity, ownership, lifecycle, or idempotency rejection. */
@@ -102,6 +119,7 @@ export class HomeActivityResponsibilityService extends Service {
   static inject = ['storageDomain', 'homeActivities']
 
   private table?: KvTable<ActivityResponsibilityFactId, ActivityResponsibilityFact>
+  private statusReportsTable?: KvTable<string, ActivityResponsibilityStatusReport>
   private operationTail: Promise<void> = Promise.resolve()
 
   constructor(ctx: Context) {
@@ -112,6 +130,9 @@ export class HomeActivityResponsibilityService extends Service {
     const domain = await this.ctx.storageDomain.open(homeActivityResponsibilitiesDomain)
     this.ctx.effect(() => () => domain.close(), 'homeActivityResponsibilities.domainClose')
     this.table = domain.table('facts')
+    const statusReports = await this.ctx.storageDomain.open(homeActivityResponsibilityStatusReportsDomain)
+    this.ctx.effect(() => () => statusReports.close(), 'homeActivityResponsibilities.statusReportsDomainClose')
+    this.statusReportsTable = statusReports.table('reports')
   }
 
   /** Save an immutable recommendation without authorizing or dispatching it.
@@ -319,6 +340,134 @@ export class HomeActivityResponsibilityService extends Service {
       await this.putFact(fact)
       return fact as ActivityResponsibilityReportedFact
     })
+  }
+
+  /** Append a status report from the exact target Session of a confirmed responsibility.
+   * @param request - Activity, responsibility, trusted caller Session and logged tool-call sequence.
+   * @returns The idempotent target-authored report; it does not mark work complete or verified.
+   * @throws {ActivityResponsibilityError} when the caller, dispatch, or report identity is unavailable.
+   * @throws {ActivityResponsibilityStorageError} when persistence cannot be confirmed.
+   */
+  recordTargetStatusReport(request: RecordActivityResponsibilityStatusReportRequest): Promise<ActivityResponsibilityStatusReport> {
+    return this.enqueue(async () => {
+      const parsed = recordActivityResponsibilityStatusReportRequestSchema.safeParse(request)
+      if (!parsed.success) throw invalidRequest(parsed.error.issues.map(issue => issue.message).join('; '))
+      const history = this.requireHistory(parsed.data.activityId, parsed.data.responsibilityId)
+      const targetSessionId = history.proposal.proposal.target.sessionId
+      const attempt = history.facts.find((fact): fact is ActivityResponsibilityDispatchAttemptedFact =>
+        fact.kind === 'dispatch-attempted')
+      const settled = history.facts.find((fact): fact is ActivityResponsibilityDispatchSettledFact =>
+        fact.kind === 'dispatch-settled' && fact.promptRequestId === attempt?.promptRequestId)
+      if (parsed.data.callerSessionId !== targetSessionId || attempt === undefined || settled?.outcome === 'not-admitted'
+        || history.facts.some(fact => fact.kind === 'reported' && fact.promptRequestId === attempt.promptRequestId)) {
+        throw new ActivityResponsibilityError(
+          'status-report-unavailable',
+          'A target Session may report progress only for its own admitted or unresolved assignment before a final report is recorded.',
+        )
+      }
+      const key = statusReportSourceKey(parsed.data.callerSessionId, parsed.data.sourceEventSeq)
+      const table = this.requireStatusReportsTable()
+      let prior: ActivityResponsibilityStatusReport | undefined
+      let activityCount = 0
+      let responsibilityCount = 0
+      try {
+        for (const [existingKey, report] of table.entries()) {
+          if (report.activityId === parsed.data.activityId) activityCount++
+          if (report.responsibilityId === parsed.data.responsibilityId) responsibilityCount++
+          if (existingKey === key) prior = report
+        }
+      } catch (cause: unknown) {
+        throw new ActivityResponsibilityStorageError(cause)
+      }
+      const requested = {
+        activityId: parsed.data.activityId,
+        responsibilityId: parsed.data.responsibilityId,
+        targetSessionId,
+        promptRequestId: attempt.promptRequestId,
+        status: parsed.data.status,
+        summary: parsed.data.summary,
+        sourceEventSeq: parsed.data.sourceEventSeq,
+      }
+      if (prior !== undefined) {
+        const priorPayload = {
+          activityId: prior.activityId,
+          responsibilityId: prior.responsibilityId,
+          targetSessionId: prior.targetSessionId,
+          promptRequestId: prior.promptRequestId,
+          status: prior.status,
+          summary: prior.summary,
+          sourceEventSeq: prior.sourceEventSeq,
+        }
+        if (!isDeepStrictEqual(priorPayload, requested)) throw requestIdReused()
+        return freezeStatusReport(prior)
+      }
+      if (responsibilityCount >= MAX_ACTIVITY_RESPONSIBILITY_STATUS_REPORTS
+        || activityCount >= MAX_HOME_ACTIVITY_RESPONSIBILITY_FACTS_PER_ACTIVITY) {
+        throw new ActivityResponsibilityError('status-report-limit', 'The Activity responsibility progress report limit has been reached.')
+      }
+      const report = parseStatusReport({
+        id: brandString<ActivityResponsibilityStatusReport['id']>(randomUUID()),
+        ...requested,
+        recordedAt: new Date().toISOString(),
+        source: 'target-session-status-tool',
+      })
+      try {
+        await table.put(key, report)
+      } catch (cause: unknown) {
+        throw new ActivityResponsibilityStorageError(cause)
+      }
+      return report
+    })
+  }
+
+  /** Whether one Session has an unresolved or admitted responsibility that can accept a self-report.
+   * @param targetSessionId - Session identity from a live ToolActivationContext Agent.
+   * @returns True only when an existing responsibility is dispatched to this Session and has no final report.
+   */
+  hasReportableTargetSession(targetSessionId: SessionId): boolean {
+    return this.ctx.homeActivities.list().some(activity => this.list(activity.id).some((history) => {
+      const attempt = history.facts.find(fact => fact.kind === 'dispatch-attempted')
+      const settlement = attempt === undefined ? undefined : history.facts.find(
+        (fact): fact is ActivityResponsibilityDispatchSettledFact =>
+          fact.kind === 'dispatch-settled' && fact.promptRequestId === attempt.promptRequestId,
+      )
+      const finalReport = attempt === undefined ? undefined : history.facts.find(fact =>
+        fact.kind === 'reported' && fact.promptRequestId === attempt.promptRequestId)
+      return history.proposal.proposal.target.sessionId === targetSessionId
+        && attempt !== undefined
+        && (settlement === undefined || settlement.outcome !== 'not-admitted')
+        && finalReport === undefined
+    }))
+  }
+
+  /** Read immutable status reports without contacting or resuming the target Session.
+   * @param activityId - Owning Activity identity.
+   * @param responsibilityId - Stable responsibility identity.
+   * @returns Target-authored reports in Session event order.
+   */
+  listTargetStatusReports(
+    activityId: ActivityId,
+    responsibilityId: ActivityResponsibilityId,
+  ): readonly ActivityResponsibilityStatusReport[] {
+    const history = this.requireHistory(activityId, responsibilityId)
+    const attempt = history.facts.find((fact): fact is ActivityResponsibilityDispatchAttemptedFact =>
+      fact.kind === 'dispatch-attempted')
+    if (attempt === undefined) return Object.freeze([])
+    const targetSessionId = history.proposal.proposal.target.sessionId
+    try {
+      return Object.freeze([...this.requireStatusReportsTable().entries()]
+        .filter(([key, report]) => key === statusReportSourceKey(report.targetSessionId, report.sourceEventSeq)
+          && report.activityId === activityId
+          && report.responsibilityId === responsibilityId
+          && report.targetSessionId === targetSessionId
+          && report.promptRequestId === attempt.promptRequestId)
+        .map(([, report]) => report)
+        .sort((left, right) => left.sourceEventSeq - right.sourceEventSeq)
+        .map(freezeStatusReport))
+    } catch (cause: unknown) {
+      if (cause instanceof ActivityResponsibilityError || cause instanceof ActivityResponsibilityStorageError) throw cause
+      throw new ActivityResponsibilityStorageError(cause)
+    }
   }
 
   /** Record separately attributed evidence about one saved target report.
@@ -554,6 +703,11 @@ export class HomeActivityResponsibilityService extends Service {
     return this.table
   }
 
+  private requireStatusReportsTable(): KvTable<string, ActivityResponsibilityStatusReport> {
+    if (this.statusReportsTable === undefined) throw new Error('Home Activity responsibility status report storage is not ready')
+    return this.statusReportsTable
+  }
+
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.operationTail.then(operation)
     this.operationTail = result.then(() => {}, () => {})
@@ -568,6 +722,20 @@ function parseFact(value: unknown): ActivityResponsibilityFact {
   const parsed = activityResponsibilityFactSchema.safeParse(value)
   if (!parsed.success) throw invalidRequest(parsed.error.issues.map(issue => issue.message).join('; '))
   return freezeFact(parsed.data)
+}
+
+function parseStatusReport(value: unknown): ActivityResponsibilityStatusReport {
+  const parsed = activityResponsibilityStatusReportSchema.safeParse(value)
+  if (!parsed.success) throw invalidRequest(parsed.error.issues.map(issue => issue.message).join('; '))
+  return freezeStatusReport(parsed.data)
+}
+
+function freezeStatusReport(report: ActivityResponsibilityStatusReport): ActivityResponsibilityStatusReport {
+  return Object.freeze({ ...report })
+}
+
+function statusReportSourceKey(sessionId: string, sourceEventSeq: number): string {
+  return `${sessionId.length}:${sessionId}:${sourceEventSeq}`
 }
 
 function payloadOf(fact: IdempotentFact): Record<string, unknown> {
@@ -696,7 +864,7 @@ function assertNever(value: never): never {
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** Append-only proposals, confirmation, dispatch, observation, report, verification, and acceptance facts. */
+    /** Durable Activity responsibility history and target-authored progress reports. */
     homeActivityResponsibilities: HomeActivityResponsibilityService
   }
 }
