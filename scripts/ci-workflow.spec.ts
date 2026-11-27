@@ -236,6 +236,7 @@ describe('CI workflow', () => {
 
     expect(groupSuffix('push')).toBe('push')
     expect(groupSuffix('workflow_dispatch', 'sdk-snapshot')).toBe('sdk-snapshot')
+    expect(groupSuffix('workflow_dispatch', 'sdk-snapshot-refresh')).toBe('sdk-snapshot-refresh')
     expect(groupSuffix('workflow_dispatch', 'web-snapshot-refresh')).toBe('web-snapshot-refresh')
     expect(groupSuffix('workflow_dispatch', 'coverage')).toBe('coverage')
   })
@@ -848,7 +849,7 @@ describe('CI workflow', () => {
       || !isRecord(master.jobs)) throw new TypeError('CI master must define manual suites and jobs')
     expect(master.on.workflow_dispatch.inputs.source_sha).toMatchObject({ required: false, type: 'string' })
     expect(master.on.workflow_dispatch.inputs.suite.options).toEqual([
-      'larger-runner-benchmark', 'consolidated-runner-benchmark', 'ssh-helper', 'sdk-snapshot', 'web-snapshot-refresh', 'coverage', 'wine',
+      'larger-runner-benchmark', 'consolidated-runner-benchmark', 'ssh-helper', 'sdk-snapshot', 'sdk-snapshot-refresh', 'web-snapshot-refresh', 'coverage', 'wine',
     ])
     const wine = workflowJob(master, 'windows')
     if (typeof wine.if !== 'string') throw new TypeError('Wine must define a trigger condition')
@@ -926,6 +927,58 @@ describe('CI workflow', () => {
       ['workflow_dispatch', 'wine', false],
       ['pull_request', 'sdk-snapshot', false],
       ['push', 'sdk-snapshot', false],
+    ] as const) {
+      expect(runInNewContext(job.if, { github: { event_name: event }, inputs: { suite } }, { timeout: 1000 })).toBe(expected)
+    }
+  })
+
+  it('refreshes only the selected keyless SDK snapshot from the exact dispatched revision', () => {
+    const workflow = loadWorkflow('.github/workflows/ci-master.yml')
+    const job = workflowJob(workflow, 'sdk-snapshot-refresh')
+    if (!Array.isArray(job.steps) || typeof job.if !== 'string') {
+      throw new TypeError('CI master must define the focused SDK snapshot refresh dispatch')
+    }
+    const steps: unknown[] = job.steps
+    expect(job).toMatchObject({
+      name: 'refresh selected SDK snapshot (manual)',
+      'runs-on': 'ubuntu-24.04',
+      'timeout-minutes': 45,
+      if: "github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot-refresh'",
+    })
+    const sourceCheck = steps.find(step => isRecord(step) && step.name === 'Verify selected source revision and SDK snapshot owner')
+    const checkout = steps.find(step => isRecord(step) && step.uses === 'actions/checkout@v7.0.1')
+    const install = steps.find(step => isRecord(step) && step.name === 'Install (immutable)')
+    const build = steps.find(step => isRecord(step) && step.name === 'Build the selected revision')
+    const refresh = steps.find(step => isRecord(step) && step.name === 'Refresh the Activity responsibility status scenario')
+    const upload = steps.find(step => isRecord(step) && step.name === 'Upload selected SDK refresh outputs for review')
+    if (!isRecord(sourceCheck) || typeof sourceCheck.run !== 'string' || !isRecord(checkout)
+      || !isRecord(install) || !isRecord(build) || !isRecord(refresh) || typeof refresh.run !== 'string'
+      || !isRecord(upload) || !isRecord(upload.with) || typeof upload.with.path !== 'string') {
+      throw new TypeError('SDK snapshot refresh must verify, build, refresh, and publish only the selected scenario')
+    }
+    const stepOrder = [sourceCheck, install, build, refresh, upload].map(step => steps.indexOf(step))
+    expect(stepOrder.every(index => index >= 0)).toBe(true)
+    expect(stepOrder).toEqual([...stepOrder].sort((left, right) => left - right))
+    expect(checkout.with).toMatchObject({ ref: '${{ inputs.source_sha || github.sha }}', 'persist-credentials': false })
+    expect(job.env).toMatchObject({ EXPECTED_SOURCE_SHA: '${{ inputs.source_sha || github.sha }}' })
+    expect(sourceCheck.run).toContain('test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"')
+    expect(sourceCheck.run).toContain('test -f snapshots/sdk/activity-responsibility-status/snapshot.yml')
+    expect(build).toMatchObject({ env: { DSH_BUILD_CLIENT_PROFILE: 'official' }, run: 'pnpm run build' })
+    expect(refresh).toMatchObject({
+      env: { DSH_EXAMPLE_MODE: 'lib', DSH_SNAPSHOT: 'refresh', DSH_SNAPSHOT_MAX_CONCURRENCY: '1' },
+      run: 'pnpm run test:snapshot:refresh snapshots/sdk/sdk.snapshot.ts -t activity-responsibility-status',
+    })
+    expect(upload).toMatchObject({ if: 'always()', uses: 'actions/upload-artifact@v7.0.1' })
+    expect(upload.with).toMatchObject({
+      name: 'sdk-snapshot-refresh-${{ inputs.source_sha || github.sha }}',
+      'if-no-files-found': 'error',
+      path: 'snapshots/sdk/activity-responsibility-status/**',
+    })
+    for (const [event, suite, expected] of [
+      ['workflow_dispatch', 'sdk-snapshot-refresh', true],
+      ['workflow_dispatch', 'sdk-snapshot', false],
+      ['pull_request', 'sdk-snapshot-refresh', false],
+      ['push', 'sdk-snapshot-refresh', false],
     ] as const) {
       expect(runInNewContext(job.if, { github: { event_name: event }, inputs: { suite } }, { timeout: 1000 })).toBe(expected)
     }
@@ -1105,6 +1158,7 @@ describe('CI workflow', () => {
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'consolidated-runner-benchmark'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'ssh-helper'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot'",
+      "github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot-refresh'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'web-snapshot-refresh'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'coverage'",
     ])
