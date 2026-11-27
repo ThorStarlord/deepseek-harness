@@ -171,54 +171,28 @@ export function parseTraceEvents(input: string): TraceEvent[] {
     if (!isTraceEvent(value)) throw new Error(`Trace line ${index + 1} does not match format version ${FORMAT_VERSION}`)
     if (value.event === 'run-started' || value.event === 'run-finished') {
       events.push({
-        version: FORMAT_VERSION,
+        ...traceCommonFields(value),
         event: value.event,
-        timestamp: value.timestamp,
-        processId: value.processId,
-        runId: value.runId,
-        taskId: value.taskId,
-        agentId: value.agentId,
         ...(value.parentRunId === undefined ? {} : { parentRunId: value.parentRunId }),
       })
     } else if (value.event === 'operation-started') {
       events.push({
-        version: FORMAT_VERSION,
+        ...traceCommonFields(value),
+        ...operationCommonFields(value),
         event: value.event,
-        timestamp: value.timestamp,
-        processId: value.processId,
-        runId: value.runId,
-        operationId: value.operationId,
-        taskId: value.taskId,
-        agentId: value.agentId,
-        activity: value.activity,
-        dependsOn: [...value.dependsOn],
         monotonicMs: value.monotonicMs,
       })
     } else if (value.event === 'span-started') {
       events.push({
-        version: FORMAT_VERSION,
+        ...traceCommonFields(value),
+        ...operationCommonFields(value),
         event: value.event,
-        timestamp: value.timestamp,
-        processId: value.processId,
-        runId: value.runId,
-        operationId: value.operationId,
-        taskId: value.taskId,
-        agentId: value.agentId,
-        activity: value.activity,
-        dependsOn: [...value.dependsOn],
       })
     } else if (value.event === 'operation-finished') {
       events.push({
-        version: FORMAT_VERSION,
+        ...traceCommonFields(value),
+        ...operationCommonFields(value),
         event: value.event,
-        timestamp: value.timestamp,
-        processId: value.processId,
-        runId: value.runId,
-        operationId: value.operationId,
-        taskId: value.taskId,
-        agentId: value.agentId,
-        activity: value.activity,
-        dependsOn: [...value.dependsOn],
         durationMs: value.durationMs,
         status: value.status,
         ...(value.failureCode === undefined ? {} : { failureCode: value.failureCode }),
@@ -227,22 +201,34 @@ export function parseTraceEvents(input: string): TraceEvent[] {
       })
     } else {
       events.push({
-        version: FORMAT_VERSION,
+        ...traceCommonFields(value),
+        ...operationCommonFields(value),
         event: value.event,
-        timestamp: value.timestamp,
-        processId: value.processId,
-        runId: value.runId,
-        operationId: value.operationId,
-        taskId: value.taskId,
-        agentId: value.agentId,
-        activity: value.activity,
-        dependsOn: [...value.dependsOn],
         status: value.status,
       })
     }
   }
   assertEventPairs(events)
   return events
+}
+
+function traceCommonFields(value: TraceEvent) {
+  return {
+    version: FORMAT_VERSION,
+    timestamp: value.timestamp,
+    processId: value.processId,
+    runId: value.runId,
+    taskId: value.taskId,
+    agentId: value.agentId,
+  }
+}
+
+function operationCommonFields(value: OperationEvent) {
+  return {
+    operationId: value.operationId,
+    activity: value.activity,
+    dependsOn: [...value.dependsOn],
+  }
 }
 
 function assertEventPairs(events: TraceEvent[]): void {
