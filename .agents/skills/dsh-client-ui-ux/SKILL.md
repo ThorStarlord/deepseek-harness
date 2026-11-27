@@ -135,7 +135,7 @@ Rule changes state applicability, decisions, exceptions and observable verificat
 
 ## Design review escalation
 
-A PR with extensive UI changes, or clearly user-perceivable UI or interaction changes, must receive a qualified independent human product/design review under the current policy. The claim-proportionate evidence policy applies separately. Product/design review does not replace behavioral tests, technical/security assessment, or owner authorization. The risk tiers below are a proposed replacement only; they become operative after explicit owner ratification of the exact revision and its integration.
+Classify product/design review by the highest credible risk introduced. The risk tiers and independent assessment requirements below are operative under the [ratified risk-proportionate review decision](../../notes/implemented/process/2026-11-26-risk-proportionate-product-design-review.md). The claim-proportionate evidence policy applies separately. Product/design review does not replace behavioral tests, technical/security assessment, or owner authorization.
 
 ### Risk tiers
 
@@ -157,8 +157,8 @@ A human reviewer must have relevant product or design responsibility or demonstr
 
 ### One-time PR #53 exception
 
-This section records the one-time exception for PR #53 under the policy that preceded the proposed risk tiers. The [decision record](../../notes/implemented/process/2026-11-23-pr53-agent-assisted-design-review-exception.md) preserves its scope and safeguards. It does not retroactively alter PR #53's review history, revive the expired Stage 1 exception, or create an additional exception. The proposed risk-tier process would apply only to review and integration decisions made after its exact revision is ratified and integrated.
+This section records the one-time exception for PR #53 under the policy that preceded the risk tiers. The [decision record](../../notes/implemented/process/2026-11-23-pr53-agent-assisted-design-review-exception.md) preserves its scope and safeguards. It does not retroactively alter PR #53's review history, revive the expired Stage 1 exception, or create an additional exception. The ratified risk-tier process applies prospectively to review decisions after its exact revision was integrated, as recorded in the [policy decision](../../notes/implemented/process/2026-11-26-risk-proportionate-product-design-review.md).
 
 ### Historical Stage 1 agent-assisted assessment (expired)
 
-The owner-authorized exception applied prospectively only to the Home Harness Stage 1 batch (Issues #17–#30) and expired when Issue #30 integrated. That exception does not authorize agent assessment for other work, change issue acceptance criteria, or retroactively approve an earlier disposition. If the proposed tiers are ratified and integrated, future agent assessments follow those tiers; until then, the current independent-human-review requirement remains in force. The [implemented decision record](../../notes/implemented/process/2026-11-16-stage1-agent-assisted-assurance.md) preserves the expired exception's scope, safeguards, and rationale.
+The owner-authorized exception applied prospectively only to the Home Harness Stage 1 batch (Issues #17–#30) and expired when Issue #30 integrated. That exception does not authorize agent assessment for other work, change issue acceptance criteria, or retroactively approve an earlier disposition. The risk-tier requirements above govern current review decisions; the historical Stage 1 exception remains separate and expired. The [implemented decision record](../../notes/implemented/process/2026-11-16-stage1-agent-assisted-assurance.md) preserves the expired exception's scope, safeguards, and rationale.
