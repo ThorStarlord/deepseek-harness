@@ -12,7 +12,7 @@ import { collectSubprocessResult, readOnlyGitEnvironment } from '@deepseek-ai/ds
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentActivation, SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool, lineNumberedTextRowsSchema } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition, ToolExecution, PreToolDecision, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
 import type { Workspace, WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { AgentPresetRegistry } from '@deepseek-ai/dsh-agent-preset-registry'
@@ -371,15 +371,7 @@ function createWorkingTreeReadTool(
           path: { type: 'string', required: true },
           offset: { type: 'integer', required: true },
           totalLines: { type: 'integer', required: true },
-          lines: {
-            type: 'array', required: true, items: {
-              type: 'object', additionalProperties: false,
-              properties: {
-                number: { type: 'integer', required: true },
-                text: { type: 'string', required: true },
-              },
-            },
-          },
+          lines: lineNumberedTextRowsSchema,
         },
       },
       render: (_args, value) => [{ type: 'text', text: renderWorkingTreeFile(value) }],
