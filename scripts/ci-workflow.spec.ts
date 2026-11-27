@@ -846,7 +846,7 @@ describe('CI workflow', () => {
     if (!Array.isArray(job.steps) || typeof job.if !== 'string') {
       throw new TypeError('CI master must define the focused SDK snapshot dispatch')
     }
-    const steps = job.steps
+    const steps: unknown[] = job.steps
     expect(job).toMatchObject({
       name: 'focused keyless SDK snapshot',
       'runs-on': 'ubuntu-24.04',
@@ -858,7 +858,9 @@ describe('CI workflow', () => {
     const install = steps.find(step => isRecord(step) && step.name === 'Install (immutable)')
     const build = steps.find(step => isRecord(step) && step.name === 'Build the selected revision')
     const replay = steps.find(step => isRecord(step) && step.name === 'Replay the Activity responsibility status scenario')
-    if (!isRecord(scenarioCheck) || typeof scenarioCheck.run !== 'string'
+    if (!isRecord(sourceCheck) || typeof sourceCheck.run !== 'string'
+      || !isRecord(scenarioCheck) || typeof scenarioCheck.run !== 'string'
+      || !isRecord(install) || !isRecord(build)
       || !isRecord(replay) || typeof replay.run !== 'string') {
       throw new TypeError('SDK snapshot dispatch must check its scenario and verify the selected test result')
     }
