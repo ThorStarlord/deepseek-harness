@@ -15,6 +15,7 @@ on:
           - consolidated-runner-benchmark
           - ssh-helper
           - sdk-snapshot
+          - sdk-snapshot-refresh
           - web-snapshot-refresh
           - coverage
           - wine
@@ -114,6 +115,56 @@ jobs:
           NODE
           report_status=$?
           if (( snapshot_status != 0 || report_status != 0 )); then exit 1; fi
+
+  sdk-snapshot-refresh:
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot-refresh'
+    name: refresh selected SDK snapshot (manual)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify selected source revision and SDK snapshot owner
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          test -f snapshots/sdk/activity-responsibility-status/snapshot.yml
+          grep -Fq "'activity-responsibility-status': {" snapshots/sdk/sdk.snapshot.ts
+
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the selected revision
+        env:
+          DSH_BUILD_CLIENT_PROFILE: official
+        run: pnpm run build
+
+      - name: Refresh the Activity responsibility status scenario
+        env:
+          DSH_EXAMPLE_MODE: lib
+          DSH_SNAPSHOT: refresh
+          DSH_SNAPSHOT_MAX_CONCURRENCY: '1'
+        run: pnpm run test:snapshot:refresh snapshots/sdk/sdk.snapshot.ts -t activity-responsibility-status
+
+      - name: Upload selected SDK refresh outputs for review
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: sdk-snapshot-refresh-${{ inputs.source_sha || github.sha }}
+          if-no-files-found: error
+          path: snapshots/sdk/activity-responsibility-status/**
 
   coverage:
     if: github.event_name == 'workflow_dispatch' && inputs.suite == 'coverage'
