@@ -14,6 +14,7 @@ on:
           - larger-runner-benchmark
           - consolidated-runner-benchmark
           - ssh-helper
+          - sdk-snapshot
           - wine
 
 # New master pushes and manual runs replace obsolete checks in this workflow/ref.
@@ -38,6 +39,60 @@ jobs:
     uses: ./.github/workflows/build-exe-for-ssh-helper.yml
     with:
       targets: node24-linux-x64,node24-linux-arm64,node24-macos-arm64,node24-macos-x64
+
+  sdk-snapshot:
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot'
+    name: focused keyless SDK snapshot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify selected source revision
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Verify the selected revision includes the requested SDK scenario
+        run: |
+          test -f snapshots/sdk/activity-responsibility-status/snapshot.yml
+          grep -Fq "'activity-responsibility-status': {" snapshots/sdk/sdk.snapshot.ts
+
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the selected revision
+        env:
+          DSH_BUILD_CLIENT_PROFILE: official
+        run: pnpm run build
+
+      - name: Replay the Activity responsibility status scenario
+        env:
+          DSH_EXAMPLE_MODE: lib
+          DSH_SNAPSHOT_MAX_CONCURRENCY: '1'
+          SNAPSHOT_REPORT: ${{ runner.temp }}/activity-responsibility-status-vitest.json
+        run: |
+          pnpm run test:snapshot snapshots/sdk/sdk.snapshot.ts -t activity-responsibility-status --reporter=json --outputFile="$SNAPSHOT_REPORT"
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+
+          const report = JSON.parse(readFileSync(process.env.SNAPSHOT_REPORT, 'utf8'))
+          const selected = report.testResults.flatMap(result => result.assertionResults)
+            .filter(test => test.fullName.includes('activity-responsibility-status'))
+          if (selected.length !== 1 || selected[0].status !== 'passed'
+            || report.numFailedTests !== 0 || report.numFailedTestSuites !== 0) {
+            throw new Error(`Expected exactly one passing Activity responsibility status test; found ${selected.length}`)
+          }
+          console.log(`Passed: ${selected[0].fullName}`)
+          NODE
 
   # These native runtime carriers are post-merge checks; release keeps all targets.
   python-runtime:
@@ -140,7 +195,7 @@ jobs:
   # persistent pnpm store and tool caches make them redundant (and saving here
   # would poison the hosted cache namespace with self-hosted paths).
   serial-linux-selfhosted:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository != 'ThorStarlord/deepseek-harness'
     name: serial / linux (self-hosted standby)
     runs-on: [self-hosted, linux, x64, vm-backup]
     steps:
@@ -234,7 +289,7 @@ jobs:
   # (and saving here would poison the hosted cache namespace with self-hosted
   # paths).
   serial-windows:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository != 'ThorStarlord/deepseek-harness'
     name: serial / windows (self-hosted standby)
     runs-on: [self-hosted, dsh-win-ci, windows]
     timeout-minutes: 120
