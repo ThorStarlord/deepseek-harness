@@ -1607,7 +1607,25 @@ describe('Issue lifecycle workflow', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
     const policy = loadWorkflow('.github/workflows/issue-policy.yml')
     const lifecycleJob = workflowJob(lifecycle, 'lifecycle')
+    const policyJob = workflowJob(policy, 'policy')
     if (!Array.isArray(lifecycleJob.steps)) throw new TypeError('Issue lifecycle job must define steps')
+    const repositoryCondition = "github.repository == 'deepseek-harness/deepseek-harness'"
+    expect(lifecycleJob.if).toContain(repositoryCondition)
+    expect(policyJob.if).toBe(repositoryCondition)
+    const jobRunsFor = (job: Record<string, unknown>, repository: string): boolean => {
+      if (typeof job.if !== 'string') throw new TypeError('Project-backed issue workflow jobs must declare an upstream repository condition')
+      return runInNewContext(job.if, {
+        github: {
+          repository,
+          event_name: 'pull_request',
+          event: { action: 'opened', changes: { body: 'updated' } },
+        },
+      }, { timeout: 1000 }) === true
+    }
+    expect(jobRunsFor(lifecycleJob, 'deepseek-harness/deepseek-harness')).toBe(true)
+    expect(jobRunsFor(lifecycleJob, 'ThorStarlord/deepseek-harness')).toBe(false)
+    expect(jobRunsFor(policyJob, 'deepseek-harness/deepseek-harness')).toBe(true)
+    expect(jobRunsFor(policyJob, 'ThorStarlord/deepseek-harness')).toBe(false)
 
     expect(lifecycle.on).toHaveProperty('pull_request')
     expect(lifecycle.on).toHaveProperty('pull_request_review')
@@ -1653,7 +1671,7 @@ describe('Issue lifecycle workflow', () => {
     expect(preflightStep?.run).toContain('if [ -f .github/issue-management/selective-preflight.json ]; then')
     expect(preflightStep?.run).toContain('node .github/issue-management/policy.mjs pr-preflight')
     expect(preflightStep?.if).toBeUndefined()
-    expect(policyJob.if).toBeUndefined()
+    expect(policyJob.if).toBe("github.repository == 'deepseek-harness/deepseek-harness'")
     expect(validateStep?.if).toBe("${{ steps.preflight.outputs.legacy-automated != 'true' }}")
 
     expect(tokenStep).toMatchObject({
