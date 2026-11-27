@@ -527,7 +527,8 @@ async function resolveRegisteredSelection(
   const workspace = await findRegisteredWorkspace(fs, registry.list(), root, signal)
   if (workspace === undefined) throw new MultiRepositoryError(`path is not a registered Workspace: ${JSON.stringify(requestedPath)}`, 'WORKSPACE_NOT_SELECTED')
   const hostPath = fs.processPathFromHostPath(workspace.path)
-  if (hostPath === undefined || !samePath(hostPath, root)) {
+  const hostTarget = hostPath === undefined ? undefined : await fs.resolve(hostPath, { signal })
+  if (hostTarget === undefined || !samePath(fs.processPath(hostTarget), root)) {
     throw new MultiRepositoryError('repository workers require a local filesystem shared with the subprocess provider', 'LOCAL_FILESYSTEM_REQUIRED')
   }
   const info = await fs.stat(target, signal)

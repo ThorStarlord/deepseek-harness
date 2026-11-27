@@ -28,7 +28,7 @@ Load this plugin when a user-started conversation needs read-only analysis of on
 
 ### Selection and authorization
 
-Both selected paths must be absolute registered Workspace roots and distinct Git repository identities. Before repository contents are inspected, the existing approval flow asks the user to approve the exact two roots and task for this operation. Registration alone does not authorize access, and read authorization does not grant write permission.
+Both selected paths must resolve to absolute registered Workspace roots and distinct Git repository identities. Filesystem aliases are resolved before comparing the selected root with its host-process mapping. Before repository contents are inspected, the existing approval flow asks the user to approve the exact two roots and task for this operation. Registration alone does not authorize access, and read authorization does not grant write permission.
 
 ### Repository state
 

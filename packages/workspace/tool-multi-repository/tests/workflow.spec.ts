@@ -49,6 +49,8 @@ const REPO_READ_TOOLS = ['read_staged_file', 'repository_list_files', 'repositor
 
 interface WorkflowOptions {
   readonly approval?: ApprovalOutcome
+  readonly skipRepositoryInitialization?: boolean
+  readonly skipPresetValidation?: boolean
   readonly repositories?: readonly [string, string]
   readonly selectThird?: boolean
   readonly betaTitle?: string
@@ -97,9 +99,13 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
   const betaPath = join(workspacesPath, 'beta')
   const thirdPath = join(workspacesPath, 'unselected-third')
   await Promise.all([parentCwd, alphaPath, betaPath, thirdPath].map(path => mkdir(path, { recursive: true })))
-  const alphaHead = await initializeRepository(alphaPath, 'analysis-alpha', 'ALPHA ROOT INSTRUCTIONS')
-  const betaHead = await initializeRepository(betaPath, 'release-beta', 'BETA ROOT INSTRUCTIONS')
-  await initializeRepository(thirdPath, 'main-third', 'THIRD REPOSITORY CONTENT')
+  const alphaHead = options.skipRepositoryInitialization === true
+    ? '' : await initializeRepository(alphaPath, 'analysis-alpha', 'ALPHA ROOT INSTRUCTIONS')
+  const betaHead = options.skipRepositoryInitialization === true
+    ? '' : await initializeRepository(betaPath, 'release-beta', 'BETA ROOT INSTRUCTIONS')
+  if (options.skipRepositoryInitialization !== true) {
+    await initializeRepository(thirdPath, 'main-third', 'THIRD REPOSITORY CONTENT')
+  }
   if (options.noAlphaRootInstructions === true) await rm(join(alphaPath, 'AGENTS.md'))
   if (options.alphaRootMode !== undefined) {
     const rootInstructions = join(alphaPath, 'AGENTS.md')
@@ -291,8 +297,10 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
     plugins: [{ name: '@deepseek-ai/dsh-persona', config: { prefix: 'Analyze selected repositories without changing them.' } }],
   })
   ctx.effect(() => unregisterReadOnlyPreset)
-  const preset = await ctx.agentPresets.resolve('multi-repository-read-only')
-  expect(preset.broken).toBeUndefined()
+  if (options.skipPresetValidation !== true) {
+    const preset = await ctx.agentPresets.resolve('multi-repository-read-only')
+    expect(preset.broken).toBeUndefined()
+  }
   await ctx.plugin(Subagents)
   await ctx.plugin(Spawn, { providerName: 'spawn' })
   await ctx.plugin(ToolBash)
@@ -432,7 +440,7 @@ describe('read-only multi-repository coordination', () => {
   }, 30_000)
 
   it('denies malformed and duplicate selections before asking for repository approval', async () => {
-    const f = await setup()
+    const f = await setup({ skipPresetValidation: true, skipRepositoryInitialization: true })
     const inputCases: unknown[] = [
       null,
       { repositories: 'not-an-array', task: 'inspect' },
@@ -472,6 +480,29 @@ describe('read-only multi-repository coordination', () => {
     expect(f.approvalRequests).toEqual([])
     expect(f.starts).toEqual([])
   }, 30_000)
+
+  it('accepts a registered Workspace path alias after canonicalizing the host mapping', async () => {
+    const f = await setup({ skipPresetValidation: true, skipRepositoryInitialization: true })
+    const aliasPath = join(f.workspaces[0]?.path ?? f.alphaPath, '..', 'alpha-workspace-alias')
+    await symlink(f.alphaPath, aliasPath, 'junction')
+    const original = f.workspaces[0]
+    expect(original).toBeDefined()
+    f.workspaces[0] = workspaceRecord(String(original?.id), original?.title ?? '', aliasPath)
+
+    const decision = await f.parent.ctx.waterfall(
+      'tools/pre-execute',
+      directToolContext('coordinate_repositories', {
+        repositories: [aliasPath, f.betaPath], task: 'inspect registered aliases',
+      }, f.parent),
+      () => Promise.resolve<PreToolDecision>({ kind: 'allow' }),
+    )
+
+    expect(decision).toMatchObject({
+      kind: 'ask', reason: expect.stringContaining(f.alphaPath.replaceAll('\\', '\\\\')),
+    })
+    expect(f.approvalRequests).toEqual([])
+    expect(f.starts).toEqual([])
+  }, 60_000)
 
   it('rejects approval reuse after the task or registered Workspace identity changes', async () => {
     const f = await setup()
@@ -674,6 +705,10 @@ describe('read-only multi-repository coordination', () => {
       expect(errorCodes).toContain('SECRET_PATH_DENIED')
       expect(errorCodes).toContain('STAGED_ENTRY_UNAVAILABLE')
       expect(errorCodes).toContain('STAGED_CONTENT_BINARY')
+      const toolResultFor = (toolCallId: string) => results.find(event => event.type === 'tool/result'
+        && event.data.message.toolCallId === toolCallId)
+      expect(toolResultFor('read-git-alias')).toMatchObject({ data: { error: { code: 'PROTECTED_PATH_DENIED' } } })
+      expect(toolResultFor('read-outside-alias')).toMatchObject({ data: { error: { code: 'OUTSIDE_REPOSITORY' } } })
       const attemptedCallIds = [
         'attempt-write', 'attempt-edit', 'attempt-patch', 'attempt-shell', 'attempt-pwsh',
         'attempt-child', 'attempt-coordination', 'attempt-policy-change', 'attempt-escalation',
@@ -993,6 +1028,24 @@ describe('read-only multi-repository coordination', () => {
     if (descriptor === undefined) throw new Error('process.platform descriptor is unavailable')
     try {
       Object.defineProperty(process, 'platform', { ...descriptor, value: 'linux' })
+      await expect(f.parent.ctx.waterfall(
+        'tools/pre-execute',
+        directToolContext('coordinate_repositories', {
+          repositories: [f.alphaPath, f.alphaPath], task: 'select one root twice',
+        }, f.parent),
+        () => Promise.resolve<PreToolDecision>({ kind: 'allow' }),
+      )).resolves.toMatchObject({ kind: 'deny', reason: 'select two distinct registered Workspace roots' })
+    } finally {
+      Object.defineProperty(process, 'platform', descriptor)
+    }
+  }, 30_000)
+
+  it('compares duplicate roots with Windows path semantics', async () => {
+    const f = await setup({ skipPresetValidation: true, skipRepositoryInitialization: true })
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+    if (descriptor === undefined) throw new Error('process.platform descriptor is unavailable')
+    try {
+      Object.defineProperty(process, 'platform', { ...descriptor, value: 'win32' })
       await expect(f.parent.ctx.waterfall(
         'tools/pre-execute',
         directToolContext('coordinate_repositories', {
