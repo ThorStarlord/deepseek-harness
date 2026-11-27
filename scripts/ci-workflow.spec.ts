@@ -825,7 +825,7 @@ describe('CI workflow', () => {
       || !isRecord(master.on.workflow_dispatch.inputs) || !isRecord(master.on.workflow_dispatch.inputs.suite)
       || !isRecord(master.jobs)) throw new TypeError('CI master must define manual suites and jobs')
     expect(master.on.workflow_dispatch.inputs.suite.options).toEqual([
-      'larger-runner-benchmark', 'consolidated-runner-benchmark', 'ssh-helper', 'sdk-snapshot', 'wine',
+      'larger-runner-benchmark', 'consolidated-runner-benchmark', 'ssh-helper', 'sdk-snapshot', 'web-snapshot-refresh', 'wine',
     ])
     const wine = workflowJob(master, 'windows')
     if (typeof wine.if !== 'string') throw new TypeError('Wine must define a trigger condition')
@@ -901,6 +901,58 @@ describe('CI workflow', () => {
     }
   })
 
+  it('refreshes only the selected keyless Web snapshots from the exact dispatched revision', () => {
+    const workflow = loadWorkflow('.github/workflows/ci-master.yml')
+    const job = workflowJob(workflow, 'web-snapshot-refresh')
+    if (!Array.isArray(job.steps) || typeof job.if !== 'string') {
+      throw new TypeError('CI master must define the focused Web snapshot refresh dispatch')
+    }
+    const steps: unknown[] = job.steps
+    expect(job).toMatchObject({
+      name: 'refresh selected Web snapshots (manual)',
+      'runs-on': 'ubuntu-24.04',
+      'timeout-minutes': 45,
+      if: "github.event_name == 'workflow_dispatch' && inputs.suite == 'web-snapshot-refresh'",
+    })
+    const sourceCheck = steps.find(step => isRecord(step) && step.name === 'Verify selected source revision and snapshot owners')
+    const install = steps.find(step => isRecord(step) && step.name === 'Install (immutable)')
+    const build = steps.find(step => isRecord(step) && step.name === 'Build the selected revision')
+    const refresh = steps.find(step => isRecord(step) && step.name === 'Refresh only the selected keyless Web scenarios')
+    const upload = steps.find(step => isRecord(step) && step.name === 'Upload selected refresh outputs for review')
+    if (!isRecord(sourceCheck) || typeof sourceCheck.run !== 'string'
+      || !isRecord(install) || !isRecord(build) || !isRecord(refresh) || typeof refresh.run !== 'string'
+      || !isRecord(upload)) {
+      throw new TypeError('Web snapshot refresh must verify its selected owners, build, refresh, and publish review outputs')
+    }
+    expect(sourceCheck.run).toContain('test "$(git rev-parse HEAD)" = "$GITHUB_SHA"')
+    for (const file of [
+      'apps/web/tests/minimal-preset.snapshot.ts',
+      'apps/web/tests/code-language.snapshot.ts',
+      'apps/web/tests/subagent-fork-schedule.snapshot.ts',
+    ]) {
+      expect(sourceCheck.run).toContain(`test -f ${file}`)
+      expect(refresh.run).toContain(file)
+      expect(upload.with).toMatchObject({ path: expect.stringContaining(file) })
+    }
+    expect(build).toMatchObject({ env: { DSH_BUILD_CLIENT_PROFILE: 'official' }, run: 'pnpm run build' })
+    expect(refresh).toMatchObject({ env: { DSH_EXAMPLE_MODE: 'lib', DSH_SNAPSHOT: 'refresh' } })
+    expect(refresh.run).toContain('--config vitest.web.config.ts')
+    expect(refresh.run).toContain('--update')
+    expect(upload).toMatchObject({ if: 'always()', uses: 'actions/upload-artifact@v7.0.1' })
+    expect(upload.with).toMatchObject({
+      name: 'web-snapshot-refresh-${{ github.sha }}',
+      'if-no-files-found': 'error',
+    })
+    for (const [event, suite, expected] of [
+      ['workflow_dispatch', 'web-snapshot-refresh', true],
+      ['workflow_dispatch', 'sdk-snapshot', false],
+      ['pull_request', 'web-snapshot-refresh', false],
+      ['push', 'web-snapshot-refresh', false],
+    ] as const) {
+      expect(runInNewContext(job.if, { github: { event_name: event }, inputs: { suite } }, { timeout: 1000 })).toBe(expected)
+    }
+  })
+
   it('cancels superseded master runs without changing the post-merge job inventory', () => {
     const workflow = loadWorkflow('.github/workflows/ci-master.yml')
     const prWorkflow = loadWorkflow('.github/workflows/ci.yml')
@@ -954,6 +1006,7 @@ describe('CI workflow', () => {
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'consolidated-runner-benchmark'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'ssh-helper'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot'",
+      "github.event_name == 'workflow_dispatch' && inputs.suite == 'web-snapshot-refresh'",
     ])
     const pushReachable = Object.entries(workflow.jobs)
       .filter(([, job]) => {
