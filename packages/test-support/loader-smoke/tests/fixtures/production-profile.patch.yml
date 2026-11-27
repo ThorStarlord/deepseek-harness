@@ -1,0 +1,45 @@
+# Isolated overlay fixture for profile package-resolution tests.
+- id: headless-startup
+  disabled: true
+
+- id: headless-runner
+  disabled: true
+
+- id: llm-deepseek
+  disabled: true
+
+- id: agent-loop
+  disabled: true
+
+- insert:
+    - id: nested-package-group
+      name: '@deepseek-ai/dsh-agent'
+      group: true
+      config:
+        - id: nested-scoped-plugin
+          name: '@deepseek-ai/dsh-llm'
+          disabled: true
+
+    - id: empty-package-group
+      name: '@deepseek-ai/dsh-session'
+      group: true
+
+    - id: unscoped-plugin-subpath
+      name: 'tsx/esm'
+      disabled: true
+
+    - id: relative-plugin-path
+      name: './local-plugin.ts'
+      disabled: true
+
+    - id: file-plugin-path
+      name: 'file:./local-plugin.ts'
+      disabled: true
+
+    - id: builtin-plugin-path
+      name: 'node:fs'
+      disabled: true
+
+    - id: duplicate-plugin-package
+      name: '@deepseek-ai/dsh-agent'
+      disabled: true
