@@ -20,16 +20,17 @@ concurrency:
 
 jobs:
 
-  # Three enterprise jobs isolate coverage, static analysis, and the
+  # Four required Linux jobs isolate coverage, static analysis, and the
   # build-backed consumer tail. The consumer job owns the only Linux build so
-  # all three jobs enter runner allocation independently.
+  # all four jobs enter runner allocation independently.
   #
   # FAILOVER (Linux): each Linux enterprise job resolves its pool through the
-  # DSH_CI_FAILOVER_LINUX repository variable. Unset (normal), the expressions
-  # pick the hosted enterprise pools below. Setting the variable to
+  # DSH_CI_FAILOVER_LINUX repository variable. Unset (normal), upstream uses
+  # the hosted enterprise pools below and the personal fork uses public GitHub
+  # hosted runners. Setting the variable to
   # 'selfhosted' (repo Settings → Actions → Variables; writer-manageable
   # repository state — not PR-editable, no merge required) retargets all
-  # three onto the in-house
+  # four onto the in-house
   # vm-backup pool and re-running the failed jobs is the entire switch —
   # see .agents/notes/implemented/process/2026-07-26-ci-failover-runbook.md.
   # Setting the variable to 'blacksmith' instead routes the same jobs onto
@@ -45,6 +46,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
+          || github.repository == 'ThorStarlord/deepseek-harness' && 'ubuntu-24.04'
           || 'dsh-ubuntu-24-04-16core' }}
     name: node 24 / static
     env:
@@ -112,6 +114,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
+          || github.repository == 'ThorStarlord/deepseek-harness' && 'ubuntu-24.04'
           || 'dsh-ubuntu-24-04-16core' }}
     name: node 24 / coverage
     env:
@@ -213,6 +216,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
+          || github.repository == 'ThorStarlord/deepseek-harness' && 'ubuntu-24.04'
           || 'dsh-ubuntu-24-04-16core' }}
     name: node 24 / lint
     env:
@@ -338,6 +342,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
+          || github.repository == 'ThorStarlord/deepseek-harness' && 'ubuntu-24.04'
           || 'dsh-ubuntu-24-04-16core' }}
     name: node 24 / snapshots and artifacts
     env:

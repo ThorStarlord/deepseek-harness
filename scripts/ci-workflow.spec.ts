@@ -389,9 +389,11 @@ describe('CI workflow', () => {
     const windowsCoverage = windowsWorkflow.jobs['windows-coverage']
     const windowsNativeTests = windowsWorkflow.jobs['windows-native-tests']
     const windowsAggregate = windowsWorkflow.jobs['windows-checks-passed']
+    const serialLinux = masterWorkflow.jobs['serial-linux-selfhosted']
     const serialWindows = masterWorkflow.jobs['serial-windows']
     const node24 = workflow.jobs['node-24']
     const node24Coverage = workflow.jobs['node-24-coverage']
+    const node24Lint = workflow.jobs['node-24-lint']
     const node24Bench = workflow.jobs['node-24-bench']
     const node24Consumers = workflow.jobs['node-24-consumers']
     const nodeCompat = workflow.jobs['node-compat']
@@ -511,7 +513,11 @@ describe('CI workflow', () => {
     expect(report?.run).toContain('Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append')
 
     // serial-windows: master-only standby, self-hosted, non-blocking, lives in ci-master.
-    expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+    expect(serialLinux).toMatchObject({
+      if: "github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository != 'ThorStarlord/deepseek-harness'",
+      'runs-on': ['self-hosted', 'linux', 'x64', 'vm-backup'],
+    })
+    expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository != 'ThorStarlord/deepseek-harness'")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
     // Its store must share the ReFS workspace volume for clone; the install
@@ -568,16 +574,18 @@ describe('CI workflow', () => {
     })
     expect(windowsAggregate.needs).not.toContain('serial-windows')
 
-    // Linux failover is a separate switch: the three enterprise Linux workers
+    // Linux failover is a separate switch: the four enterprise Linux workers
     // and the verdict job resolve their pool through DSH_CI_FAILOVER_LINUX,
     // never the Windows switch.
-    for (const [jobName, job] of [['node-24', node24], ['node-24-coverage', node24Coverage], ['node-24-consumers', node24Consumers]] as const) {
+    for (const [jobName, job] of [
+      ['node-24', node24], ['node-24-coverage', node24Coverage], ['node-24-lint', node24Lint], ['node-24-consumers', node24Consumers],
+    ] as const) {
       expect(typeof job['runs-on']).toBe('string')
       expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
       expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
       expect(job['runs-on']).toContain('vm-backup')
       expect(evaluateRunsOn(job['runs-on'], { vars: { DSH_CI_FAILOVER_LINUX: 'blacksmith' } }))
-        .toBe(`blacksmith-${jobName === 'node-24' ? 8 : 16}vcpu-ubuntu-2404`)
+        .toBe(`blacksmith-${jobName === 'node-24' || jobName === 'node-24-lint' ? 8 : 16}vcpu-ubuntu-2404`)
     }
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
@@ -589,8 +597,13 @@ describe('CI workflow', () => {
     // self-hosted pool when the two values are mutually exclusive.
     const selectors = {
       linux: node24['runs-on'] as string,
+      linuxCoverage: node24Coverage['runs-on'] as string,
+      linuxLint: node24Lint['runs-on'] as string,
+      linuxConsumers: node24Consumers['runs-on'] as string,
       linuxAggregate: aggregate['runs-on'] as string,
       windows: windowsBuild['runs-on'] as string,
+      windowsCoverage: windowsCoverage['runs-on'] as string,
+      windowsNative: windowsNativeTests['runs-on'] as string,
     }
     const evaluate = (expression: string, vars: Record<string, string>, login = 'maintainer'): unknown => {
       return evaluateRunsOn(expression, {
@@ -601,8 +614,13 @@ describe('CI workflow', () => {
     }
     for (const [name, selector, variable, pool, hosted] of [
       ['linux gates', selectors.linux, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'dsh-ubuntu-24-04-16core'],
+      ['linux coverage', selectors.linuxCoverage, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'dsh-ubuntu-24-04-16core'],
+      ['linux lint', selectors.linuxLint, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'dsh-ubuntu-24-04-16core'],
+      ['linux consumers', selectors.linuxConsumers, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'dsh-ubuntu-24-04-16core'],
       ['linux aggregate', selectors.linuxAggregate, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'ubuntu-latest'],
       ['windows lanes', selectors.windows, 'DSH_CI_FAILOVER_WINDOWS', ['self-hosted', 'dsh-win-ci', 'windows'], 'dsh-windows-2025-16core'],
+      ['windows coverage', selectors.windowsCoverage, 'DSH_CI_FAILOVER_WINDOWS', ['self-hosted', 'dsh-win-ci', 'windows'], 'dsh-windows-2025-16core'],
+      ['windows native tests', selectors.windowsNative, 'DSH_CI_FAILOVER_WINDOWS', ['self-hosted', 'dsh-win-ci', 'windows'], 'dsh-windows-2025-16core'],
     ] as const) {
       expect(evaluate(selector, { [variable]: 'blacksmith' }), `${name} blacksmith value`).toMatch(/^blacksmith-/)
       expect(evaluate(selector, { [variable]: 'selfhosted' }), `${name} selfhosted value`).toEqual(pool)
@@ -612,6 +630,25 @@ describe('CI workflow', () => {
       for (const mode of ['', 'hosted', 'unexpected']) {
         expect(evaluate(selector, { [variable]: mode }), `${name} default on ${mode}`).toBe(hosted)
       }
+    }
+
+    // The personal fork has no upstream enterprise runner fleet. Its required
+    // PR lanes use standard GitHub-hosted runners while other repositories
+    // retain the enterprise defaults and explicit failover choices.
+    for (const [name, selector, variable, expected] of [
+      ['Linux gates', selectors.linux, 'DSH_CI_FAILOVER_LINUX', 'ubuntu-24.04'],
+      ['Linux coverage', selectors.linuxCoverage, 'DSH_CI_FAILOVER_LINUX', 'ubuntu-24.04'],
+      ['Linux lint', selectors.linuxLint, 'DSH_CI_FAILOVER_LINUX', 'ubuntu-24.04'],
+      ['Linux consumers', selectors.linuxConsumers, 'DSH_CI_FAILOVER_LINUX', 'ubuntu-24.04'],
+      ['Windows build', selectors.windows, 'DSH_CI_FAILOVER_WINDOWS', 'windows-2025'],
+      ['Windows coverage', selectors.windowsCoverage, 'DSH_CI_FAILOVER_WINDOWS', 'windows-2025'],
+      ['Windows native tests', selectors.windowsNative, 'DSH_CI_FAILOVER_WINDOWS', 'windows-2025'],
+    ] as const) {
+      expect(evaluateRunsOn(selector, {
+        vars: { [variable]: '' },
+        github: { repository: 'ThorStarlord/deepseek-harness', event: { pull_request: { user: { login: 'maintainer' } } } },
+        fromJSON: JSON.parse,
+      }), `${name} on the personal fork`).toBe(expected)
     }
 
     // The run-gates aggregate lanes stop at the first blocking gate failure so
@@ -777,7 +814,7 @@ describe('CI workflow', () => {
       || !isRecord(master.on.workflow_dispatch.inputs) || !isRecord(master.on.workflow_dispatch.inputs.suite)
       || !isRecord(master.jobs)) throw new TypeError('CI master must define manual suites and jobs')
     expect(master.on.workflow_dispatch.inputs.suite.options).toEqual([
-      'larger-runner-benchmark', 'consolidated-runner-benchmark', 'ssh-helper', 'wine',
+      'larger-runner-benchmark', 'consolidated-runner-benchmark', 'ssh-helper', 'sdk-snapshot', 'wine',
     ])
     const wine = workflowJob(master, 'windows')
     if (typeof wine.if !== 'string') throw new TypeError('Wine must define a trigger condition')
@@ -790,6 +827,7 @@ describe('CI workflow', () => {
       ['workflow_dispatch', 'refs/heads/topic', 'ssh-helper', false],
       ['workflow_dispatch', 'refs/heads/topic', 'larger-runner-benchmark', false],
       ['workflow_dispatch', 'refs/heads/topic', 'consolidated-runner-benchmark', false],
+      ['workflow_dispatch', 'refs/heads/topic', 'sdk-snapshot', false],
     ] as const) {
       expect(runInNewContext(wine.if, { github: { event_name: event, ref }, inputs: { suite } }, { timeout: 1000 })).toBe(expected)
     }
@@ -800,6 +838,54 @@ describe('CI workflow', () => {
       return runInNewContext(job.if, { github: { event_name: 'workflow_dispatch', ref: 'refs/heads/topic' }, inputs: { suite: 'wine' } }, { timeout: 1000 }) === true
     }).map(([name]) => name)
     expect(enabled).toEqual(['windows'])
+  })
+
+  it('replays the selected SDK responsibility snapshot from the exact dispatched revision', () => {
+    const workflow = loadWorkflow('.github/workflows/ci-master.yml')
+    const job = workflowJob(workflow, 'sdk-snapshot')
+    if (!Array.isArray(job.steps) || typeof job.if !== 'string') {
+      throw new TypeError('CI master must define the focused SDK snapshot dispatch')
+    }
+    const steps = job.steps
+    expect(job).toMatchObject({
+      name: 'focused keyless SDK snapshot',
+      'runs-on': 'ubuntu-24.04',
+      'timeout-minutes': 45,
+      if: "github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot'",
+    })
+    const sourceCheck = steps.find(step => isRecord(step) && step.name === 'Verify selected source revision')
+    const scenarioCheck = steps.find(step => isRecord(step) && step.name === 'Verify the selected revision includes the requested SDK scenario')
+    const install = steps.find(step => isRecord(step) && step.name === 'Install (immutable)')
+    const build = steps.find(step => isRecord(step) && step.name === 'Build the selected revision')
+    const replay = steps.find(step => isRecord(step) && step.name === 'Replay the Activity responsibility status scenario')
+    if (!isRecord(scenarioCheck) || typeof scenarioCheck.run !== 'string'
+      || !isRecord(replay) || typeof replay.run !== 'string') {
+      throw new TypeError('SDK snapshot dispatch must check its scenario and verify the selected test result')
+    }
+    const stepOrder = [sourceCheck, scenarioCheck, install, build, replay].map(step => steps.indexOf(step))
+    expect(stepOrder.every(index => index >= 0)).toBe(true)
+    expect(stepOrder).toEqual([...stepOrder].sort((left, right) => left - right))
+    expect(sourceCheck).toMatchObject({ run: 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' })
+    expect(scenarioCheck.run).toContain('test -f snapshots/sdk/activity-responsibility-status/snapshot.yml')
+    expect(scenarioCheck.run).toContain("'activity-responsibility-status': {")
+    expect(build).toMatchObject({ env: { DSH_BUILD_CLIENT_PROFILE: 'official' }, run: 'pnpm run build' })
+    expect(replay).toMatchObject({
+      env: {
+        DSH_EXAMPLE_MODE: 'lib',
+        DSH_SNAPSHOT_MAX_CONCURRENCY: '1',
+        SNAPSHOT_REPORT: '${{ runner.temp }}/activity-responsibility-status-vitest.json',
+      },
+    })
+    expect(replay.run).toContain('pnpm run test:snapshot snapshots/sdk/sdk.snapshot.ts -t activity-responsibility-status --reporter=json')
+    expect(replay.run).toContain('selected.length !== 1 || selected[0].status !== \'passed\'')
+    for (const [event, suite, expected] of [
+      ['workflow_dispatch', 'sdk-snapshot', true],
+      ['workflow_dispatch', 'wine', false],
+      ['pull_request', 'sdk-snapshot', false],
+      ['push', 'sdk-snapshot', false],
+    ] as const) {
+      expect(runInNewContext(job.if, { github: { event_name: event }, inputs: { suite } }, { timeout: 1000 })).toBe(expected)
+    }
   })
 
   it('cancels superseded master runs without changing the post-merge job inventory', () => {
@@ -846,7 +932,7 @@ describe('CI workflow', () => {
       if (!isRecord(job)) throw new TypeError(`${name} must be defined`)
       expect(job.concurrency).toBeUndefined()
       // Standby drills remain post-merge work, but share run cancellation.
-      expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+      expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository != 'ThorStarlord/deepseek-harness'")
     }
 
     // Pin the post-merge runtime, Wine, and standby inventory.
@@ -854,6 +940,7 @@ describe('CI workflow', () => {
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'larger-runner-benchmark'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'consolidated-runner-benchmark'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'ssh-helper'",
+      "github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot'",
     ])
     const pushReachable = Object.entries(workflow.jobs)
       .filter(([, job]) => {
