@@ -16,6 +16,7 @@ import {
 } from './strategic-episode-spec.ts'
 import type { ActivityStrategicEpisode, ActivityStrategicEpisodeId, RecordActivityStrategicEpisodeRequest } from './strategic-episode-types.ts'
 import type {} from './index.ts'
+import { createActivityOperationQueue } from './operation-queue.ts'
 
 export type {
   ActivityStrategicAlternative,
@@ -63,7 +64,7 @@ export class HomeActivityStrategicEpisodeService extends Service {
   static inject = ['storageDomain', 'homeActivities']
 
   private table?: KvTable<ActivityStrategicEpisodeId, ActivityStrategicEpisode>
-  private operationTail: Promise<void> = Promise.resolve()
+  private readonly enqueue = createActivityOperationQueue()
 
   constructor(ctx: Context) {
     super(ctx, 'homeActivityStrategicEpisodes')
@@ -162,15 +163,8 @@ export class HomeActivityStrategicEpisodeService extends Service {
         .sort((left, right) => left.revision - right.revision || String(left.id).localeCompare(String(right.id)))
         .map(freezeEpisode))
     } catch (cause: unknown) {
-      if (cause instanceof ActivityStrategicEpisodeError) throw cause
       throw new ActivityStrategicEpisodeStorageError(cause)
     }
-  }
-
-  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.operationTail.then(operation)
-    this.operationTail = result.then(() => {}, () => {})
-    return result
   }
 
   private requireTable(): KvTable<ActivityStrategicEpisodeId, ActivityStrategicEpisode> {

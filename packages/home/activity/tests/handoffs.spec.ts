@@ -6,7 +6,11 @@ import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import HomeActivityService, { ActivityId } from '../src/index.ts'
 import { activityHandoffSchema, createActivityHandoffDetailsSchema } from '../src/handoff-spec.ts'
-import HomeActivityHandoffService from '../src/handoffs.ts'
+import HomeActivityHandoffService, {
+  ActivityHandoffError,
+  ActivityHandoffStorageError,
+  MAX_HOME_ACTIVITY_HANDOFFS_PER_ACTIVITY,
+} from '../src/handoffs.ts'
 import type { CreateActivityRequest } from '../src/types.ts'
 
 const contexts: Context[] = []
@@ -65,6 +69,22 @@ it('retains external handoffs and user-supplied artifact references across stora
     right.recordedAt.localeCompare(left.recordedAt) || String(left.id).localeCompare(String(right.id)))
   expect(reopened.ctx.homeActivityHandoffs.list(activity.id)).toEqual(expected)
   expect(reopened.ctx.homeActivities.get(activity.id)).toEqual(activity)
+})
+
+it('accepts an artifact-only external handoff with explicit user attribution', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create(activityRequest)
+  const handoff = await test.ctx.homeActivityHandoffs.create({
+    activityId: activity.id,
+    source: 'External native interface',
+    artifacts: [{ label: 'Review report', location: 'reports/review.md' }],
+    recordedInSessionId: SessionId('dsh-source-session'),
+  })
+  expect(handoff).toMatchObject({
+    activityId: activity.id,
+    origin: 'user-supplied-external',
+    artifacts: [{ label: 'Review report', location: 'reports/review.md' }],
+  })
 })
 
 it('rejects invalid handoffs and preserves prior records after an unconfirmed write failure', async () => {
@@ -149,6 +169,8 @@ it('rejects Unicode line and paragraph separators from handoff fields and durabl
 
 it('rejects a handoff for an unknown Activity', async () => {
   const test = await harness()
+  expect(() => test.ctx.homeActivityHandoffs.list(ActivityId('00000000-0000-4000-8000-000000000099')))
+    .toThrow(ActivityHandoffError)
   await expect(test.ctx.homeActivityHandoffs.create({
     activityId: ActivityId('00000000-0000-4000-8000-000000000099'),
     source: 'External native interface',
@@ -156,4 +178,80 @@ it('rejects a handoff for an unknown Activity', async () => {
     artifacts: [],
     recordedInSessionId: SessionId('dsh-source-session'),
   })).rejects.toMatchObject({ code: 'unknown-activity' })
+})
+
+it('enforces the per-Activity handoff limit', async () => {
+  const test = await harness(new MemoryMediaPool())
+  const activity = await test.ctx.homeActivities.create(activityRequest)
+  for (let index = 0; index < MAX_HOME_ACTIVITY_HANDOFFS_PER_ACTIVITY; index += 1) {
+    await test.ctx.homeActivityHandoffs.create({
+      activityId: activity.id,
+      source: 'External native interface',
+      summary: `Read-only report ${index}.`,
+      artifacts: [],
+      recordedInSessionId: SessionId('dsh-source-session'),
+    })
+  }
+  await expect(test.ctx.homeActivityHandoffs.create({
+    activityId: activity.id,
+    source: 'External native interface',
+    summary: 'The Activity must retain its configured history limit.',
+    artifacts: [],
+    recordedInSessionId: SessionId('dsh-source-session'),
+  })).rejects.toMatchObject({ code: 'handoff-limit' })
+  expect(test.ctx.homeActivityHandoffs.list(activity.id)).toHaveLength(MAX_HOME_ACTIVITY_HANDOFFS_PER_ACTIVITY)
+})
+
+it('reports an uninitialized handoff store instead of returning empty history', () => {
+  const ctx = new Context(); contexts.push(ctx)
+  const activityId = ActivityId('00000000-0000-4000-8000-000000000099')
+  ctx.provide('homeActivities', { get: () => ({ id: activityId }) } as never)
+  const unready = new HomeActivityHandoffService(ctx)
+  expect(() => unready.list(activityId)).toThrow(ActivityHandoffStorageError)
+})
+
+it('accepts a source reference as the sole user-supplied handoff detail', () => {
+  const sourceReferenceOnly = {
+    source: 'External review',
+    sourceReference: 'https://example.invalid/review/42',
+    artifacts: [],
+  }
+  expect(createActivityHandoffDetailsSchema.safeParse(sourceReferenceOnly).success).toBe(true)
+  expect(activityHandoffSchema.safeParse({
+    id: '00000000-0000-4000-8000-000000000001',
+    activityId: '00000000-0000-4000-8000-000000000002',
+    ...sourceReferenceOnly,
+    recordedInSessionId: 'dsh-source-session',
+    origin: 'user-supplied-external',
+    recordedAt: '2026-11-18T00:00:00.000Z',
+  }).success).toBe(true)
+})
+
+it('accepts an artifact as the sole parsed handoff detail', () => {
+  expect(createActivityHandoffDetailsSchema.safeParse({
+    source: 'External review',
+    artifacts: [{ label: 'Review report', location: 'reports/review.md' }],
+  }).success).toBe(true)
+})
+
+it('reports handoff history read failures without returning an empty history', async () => {
+  const ctx = new Context(); contexts.push(ctx)
+  const activityId = ActivityId('00000000-0000-4000-8000-000000000099')
+  ctx.provide('storageDomain', {
+    open: async () => ({
+      close: async () => {},
+      table: () => ({ entries: () => { throw new Error('injected handoff history read failure') } }),
+    }),
+  } as never)
+  ctx.provide('homeActivities', { get: () => ({ id: activityId }) } as never)
+  await ctx.plugin(HomeActivityHandoffService)
+
+  expect(() => ctx.homeActivityHandoffs.list(activityId)).toThrow(ActivityHandoffStorageError)
+  await expect(ctx.homeActivityHandoffs.create({
+    activityId,
+    source: 'External native interface',
+    summary: 'A reported task was handed off for review.',
+    artifacts: [],
+    recordedInSessionId: SessionId('dsh-source-session'),
+  })).rejects.toBeInstanceOf(ActivityHandoffStorageError)
 })

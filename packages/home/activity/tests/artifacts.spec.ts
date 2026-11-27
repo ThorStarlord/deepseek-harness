@@ -10,7 +10,12 @@ import HomeActivityService, { ActivityId } from '../src/index.ts'
 import HomeActivityAssociationService from '../src/associations.ts'
 import HomeActivityDelegationService from '../src/delegations.ts'
 import type { ActivityDelegationId } from '../src/delegations.ts'
-import HomeActivityArtifactService from '../src/artifacts.ts'
+import HomeActivityArtifactService, {
+  ActivityArtifactError,
+  ActivityArtifactStorageError,
+  MAX_HOME_ACTIVITY_ARTIFACTS_PER_ACTIVITY,
+} from '../src/artifacts.ts'
+import { activityDelegationId } from '../src/delegations.ts'
 import type { CreateActivityRequest } from '../src/types.ts'
 
 const contexts: Context[] = []
@@ -198,4 +203,98 @@ it('rejects malformed durable pointer rows and returns detached read-only record
   })
   expect(Object.isFrozen(saved)).toBe(true)
   expect(Object.isFrozen(test.ctx.homeActivityArtifacts.list(activity.id))).toBe(true)
+})
+
+it('rejects missing references, preserves the artifact limit, and wraps storage failures', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create(activityRequest)
+  const workspaceId = WorkspaceId('00000000-0000-4000-8000-000000000011')
+  await test.ctx.homeActivityAssociations.linkWorkspace(activity.id, workspaceId)
+  const delegation = await createDelegation(test.ctx, activity.id, 'Review a repository output.')
+  const request = { activityId: activity.id, delegationId: delegation.id, workspaceId, label: 'Report', location: 'report.md' }
+
+  await expect(test.ctx.homeActivityArtifacts.create({ ...request, activityId: ActivityId('00000000-0000-4000-8000-000000000099') }))
+    .rejects.toMatchObject({ code: 'unknown-activity' })
+  await expect(test.ctx.homeActivityArtifacts.create({ ...request, delegationId: activityDelegationId('00000000-0000-4000-8000-000000000099') }))
+    .rejects.toMatchObject({ code: 'unknown-delegation' })
+
+  const missingWorkspaceId = WorkspaceId('00000000-0000-4000-8000-000000000013')
+  test.workspaces.set(missingWorkspaceId, workspace(String(missingWorkspaceId), 'Temporary repository'))
+  await test.ctx.homeActivityAssociations.linkWorkspace(activity.id, missingWorkspaceId)
+  test.workspaces.delete(missingWorkspaceId)
+  await expect(test.ctx.homeActivityArtifacts.create({ ...request, workspaceId: missingWorkspaceId }))
+    .rejects.toMatchObject({ code: 'unknown-workspace' })
+  expect(() => test.ctx.homeActivityArtifacts.list(ActivityId('00000000-0000-4000-8000-000000000099')))
+    .toThrow(ActivityArtifactError)
+
+  const pool = new MemoryMediaPool()
+  const persistent = await harness(pool)
+  const persistedActivity = await persistent.ctx.homeActivities.create(activityRequest)
+  await persistent.ctx.homeActivityAssociations.linkWorkspace(persistedActivity.id, workspaceId)
+  const persistedDelegation = await createDelegation(persistent.ctx, persistedActivity.id, 'Review the report.')
+  pool.failNextWrites = 1
+  await expect(persistent.ctx.homeActivityArtifacts.create({
+    activityId: persistedActivity.id,
+    delegationId: persistedDelegation.id,
+    workspaceId,
+    label: 'Report',
+    location: 'report.md',
+  })).rejects.toBeInstanceOf(ActivityArtifactStorageError)
+  expect(persistent.ctx.homeActivityArtifacts.list(persistedActivity.id)).toEqual([])
+})
+
+it('enforces the per-Activity artifact reference limit', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create(activityRequest)
+  const workspaceId = WorkspaceId('00000000-0000-4000-8000-000000000011')
+  await test.ctx.homeActivityAssociations.linkWorkspace(activity.id, workspaceId)
+  const delegation = await createDelegation(test.ctx, activity.id, 'Review saved report pointers.')
+  for (let index = 0; index < MAX_HOME_ACTIVITY_ARTIFACTS_PER_ACTIVITY; index += 1) {
+    await test.ctx.homeActivityArtifacts.create({
+      activityId: activity.id,
+      delegationId: delegation.id,
+      workspaceId,
+      label: `Report ${index}`,
+      location: `reports/${index}.md`,
+    })
+  }
+  await expect(test.ctx.homeActivityArtifacts.create({
+    activityId: activity.id,
+    delegationId: delegation.id,
+    workspaceId,
+    label: 'Overflow report',
+    location: 'reports/overflow.md',
+  })).rejects.toMatchObject({ code: 'artifact-limit' })
+  expect(test.ctx.homeActivityArtifacts.list(activity.id)).toHaveLength(MAX_HOME_ACTIVITY_ARTIFACTS_PER_ACTIVITY)
+})
+
+it('does not confuse a failed limit check read with an empty artifact history', async () => {
+  const ctx = new Context(); contexts.push(ctx)
+  const activityId = ActivityId('00000000-0000-4000-8000-000000000011')
+  const workspaceId = WorkspaceId('00000000-0000-4000-8000-000000000012')
+  ctx.provide('storageDomain', {
+    open: async () => ({
+      close: async () => {},
+      table: () => ({ entries: () => { throw new Error('injected artifact history read failure') } }),
+    }),
+  } as never)
+  ctx.provide('homeActivities', { get: () => ({ id: activityId }) } as never)
+  ctx.provide('homeActivityDelegations', { get: () => ({ activityId }) } as never)
+  ctx.provide('homeActivityAssociations', { get: () => ({ workspaceIds: [workspaceId] }) } as never)
+  ctx.provide('workspaceRegistry', { get: () => workspace(String(workspaceId), 'Selected repository') } as never)
+  await ctx.plugin(HomeActivityArtifactService)
+
+  await expect(ctx.homeActivityArtifacts.create({
+    activityId,
+    delegationId: activityDelegationId('00000000-0000-4000-8000-000000000013'),
+    workspaceId,
+    label: 'Report',
+    location: 'reports/result.md',
+  })).rejects.toBeInstanceOf(ActivityArtifactStorageError)
+  expect(() => ctx.homeActivityArtifacts.list(activityId)).toThrow(ActivityArtifactStorageError)
+
+  const unreadyContext = new Context(); contexts.push(unreadyContext)
+  unreadyContext.provide('homeActivities', { get: () => ({ id: activityId }) } as never)
+  const unready = new HomeActivityArtifactService(unreadyContext)
+  expect(() => unready.list(activityId)).toThrow(ActivityArtifactStorageError)
 })

@@ -120,32 +120,24 @@ const skillDigestSchema = z.object({
   digest: z.string().regex(/^[a-f0-9]{64}$/u),
 }).strict()
 
-/** Strict durable record; changed fields require a versioned successor domain. */
-export const activityStrategicEpisodeRecordSchema = z.object({
-  id: episodeIdSchema,
-  activityId: activityIdSchema,
-  revision: z.number().int().positive().max(MAX_HOME_ACTIVITY_STRATEGIC_EPISODES_PER_ACTIVITY),
-  supersedes: episodeIdSchema.optional(),
-  originSessionId: z.string().min(1).max(200),
-  producer: z.literal('dsh-active-agent'),
-  requestId: z.uuid(),
-  objective: textSchema,
+const episodeContentShape = {
   status: z.enum(['complete', 'incomplete']),
   repositories: z.array(repositorySchema).length(2),
-  skillDigests: z.array(skillDigestSchema).length(2),
   evidence: z.array(evidenceSchema).max(256),
   findings: z.array(findingSchema).max(256),
   alternatives: z.array(alternativeSchema).max(32),
   uncertainties: z.array(uncertaintySchema).max(256),
   recommendation: recommendationSchema,
-  requestedAt: z.iso.datetime(),
-  recordedAt: z.iso.datetime(),
-}).strict().superRefine((episode, context) => {
+}
+
+type EpisodeContent = Pick<ActivityStrategicEpisode,
+  'status' | 'repositories' | 'evidence' | 'findings' | 'alternatives' | 'uncertainties' | 'recommendation'
+>
+type IssueContext = { addIssue(issue: { code: 'custom'; message: string }): void }
+
+function validateEpisodeContent(episode: EpisodeContent, context: IssueContext): void {
   const workspaceIds = new Set(episode.repositories.map(repository => repository.workspaceId))
   if (workspaceIds.size !== 2) context.addIssue({ code: 'custom', message: 'the two selected repositories must be distinct' })
-  if (new Set(episode.skillDigests.map(skill => skill.name)).size !== 2) {
-    context.addIssue({ code: 'custom', message: 'the two Sensemaking Skill digests must be distinct' })
-  }
   const evidenceIds = new Set(episode.evidence.map(item => item.id))
   const uncertaintyIds = new Set(episode.uncertainties.map(item => item.id))
   if (evidenceIds.size !== episode.evidence.length) context.addIssue({ code: 'custom', message: 'evidence ids must be unique' })
@@ -178,52 +170,34 @@ export const activityStrategicEpisodeRecordSchema = z.object({
     && episode.status !== 'incomplete') {
     context.addIssue({ code: 'custom', message: 'a brief with unavailable, dirty, or unstable repository observations must remain incomplete' })
   }
+}
+
+/** Strict durable record; changed fields require a versioned successor domain. */
+export const activityStrategicEpisodeRecordSchema = z.object({
+  id: episodeIdSchema,
+  activityId: activityIdSchema,
+  revision: z.number().int().positive().max(MAX_HOME_ACTIVITY_STRATEGIC_EPISODES_PER_ACTIVITY),
+  supersedes: episodeIdSchema.optional(),
+  originSessionId: z.string().min(1).max(200),
+  producer: z.literal('dsh-active-agent'),
+  requestId: z.uuid(),
+  objective: textSchema,
+  ...episodeContentShape,
+  skillDigests: z.array(skillDigestSchema).length(2),
+  requestedAt: z.iso.datetime(),
+  recordedAt: z.iso.datetime(),
+}).strict().superRefine((episode, context) => {
+  validateEpisodeContent(episode, context)
+  if (new Set(episode.skillDigests.map(skill => skill.name)).size !== 2) {
+    context.addIssue({ code: 'custom', message: 'the two Sensemaking Skill digests must be distinct' })
+  }
 }) satisfies z.ZodType<ActivityStrategicEpisode>
 
 /** Validates agent-authored report content before DSH adds trusted episode metadata. */
 export const recordActivityStrategicEpisodeRequestSchema = z.object({
-  status: z.enum(['complete', 'incomplete']),
-  repositories: z.array(repositorySchema).length(2),
-  evidence: z.array(evidenceSchema).max(256),
-  findings: z.array(findingSchema).max(256),
-  alternatives: z.array(alternativeSchema).max(32),
-  uncertainties: z.array(uncertaintySchema).max(256),
-  recommendation: recommendationSchema,
+  ...episodeContentShape,
 }).strict().superRefine((request, context) => {
-  const evidenceIds = new Set(request.evidence.map(item => item.id))
-  const uncertaintyIds = new Set(request.uncertainties.map(item => item.id))
-  if (evidenceIds.size !== request.evidence.length) context.addIssue({ code: 'custom', message: 'evidence ids must be unique' })
-  if (uncertaintyIds.size !== request.uncertainties.length) context.addIssue({ code: 'custom', message: 'uncertainty ids must be unique' })
-  for (const id of [
-    ...request.findings.flatMap(item => item.evidenceIds),
-    ...request.alternatives.flatMap(item => item.evidenceIds),
-    ...request.uncertainties.flatMap(item => item.evidenceIds),
-    ...request.recommendation.evidenceIds,
-  ]) {
-    if (!evidenceIds.has(id)) context.addIssue({ code: 'custom', message: `unknown evidence reference ${id}` })
-  }
-  for (const id of [
-    ...request.alternatives.flatMap(item => item.uncertaintyIds),
-    ...request.recommendation.uncertaintyIds,
-  ]) {
-    if (!uncertaintyIds.has(id)) context.addIssue({ code: 'custom', message: `unknown uncertainty reference ${id}` })
-  }
-  const workspaceIds = new Set(request.repositories.map(repository => repository.workspaceId))
-  if (workspaceIds.size !== 2) context.addIssue({ code: 'custom', message: 'the two selected repositories must be distinct' })
-  for (const reference of request.evidence) {
-    const repository = request.repositories.find(row => row.workspaceId === reference.workspaceId)
-    if (repository?.status !== 'observed' || repository.revision !== reference.revision) {
-      context.addIssue({ code: 'custom', message: 'evidence must cite the observed revision of a selected repository' })
-    }
-  }
-  if (request.repositories.some(repository => repository.status === 'unavailable') && request.status !== 'incomplete') {
-    context.addIssue({ code: 'custom', message: 'an unavailable selected repository makes the brief incomplete' })
-  }
-  if (request.repositories.some(repository => repository.status !== 'observed'
-    || repository.workingTree !== 'clean' || repository.sourceChanged !== false)
-    && request.status !== 'incomplete') {
-    context.addIssue({ code: 'custom', message: 'a brief with unavailable, dirty, or unstable repository observations must remain incomplete' })
-  }
+  validateEpisodeContent(request, context)
   if (request.status === 'complete' && (request.evidence.length === 0 || request.findings.length === 0 || request.alternatives.length < 2)) {
     context.addIssue({ code: 'custom', message: 'a complete brief requires source evidence, findings, and at least two alternatives' })
   }

@@ -6,13 +6,13 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { ActivityId } from './types.ts'
 import {
-  activityAnnotationRecordSchema,
   correctActivityAnnotationRequestSchema,
   homeActivityAnnotationsDomain,
   MAX_HOME_ACTIVITY_ANNOTATIONS_PER_ACTIVITY,
 } from './annotation-spec.ts'
 import type { ActivityAnnotation, ActivityAnnotationId, CorrectActivityAnnotationRequest } from './annotation-types.ts'
 import type {} from './index.ts'
+import { createActivityOperationQueue } from './operation-queue.ts'
 
 export type { ActivityAnnotation, ActivityAnnotationId, CorrectActivityAnnotationRequest } from './annotation-types.ts'
 export {
@@ -48,7 +48,7 @@ export class HomeActivityAnnotationService extends Service {
   static inject = ['storageDomain', 'homeActivities']
 
   private table?: KvTable<ActivityAnnotationId, ActivityAnnotation>
-  private operationTail: Promise<void> = Promise.resolve()
+  private readonly enqueue = createActivityOperationQueue()
 
   constructor(ctx: Context) {
     super(ctx, 'homeActivityAnnotations')
@@ -87,7 +87,7 @@ export class HomeActivityAnnotationService extends Service {
           `Activity annotation is invalid: ${parsed.error.issues.map(issue => issue.message).join('; ')}`,
         )
       }
-      const annotation = activityAnnotationRecordSchema.safeParse({
+      const annotation: ActivityAnnotation = {
         id: brandString<ActivityAnnotationId>(randomUUID()),
         activityId: parsed.data.activityId,
         revision: prior.length + 1,
@@ -95,19 +95,13 @@ export class HomeActivityAnnotationService extends Service {
         ...(current === undefined ? {} : { supersedes: current.id }),
         source: 'user-command',
         recordedAt: new Date().toISOString(),
-      })
-      if (!annotation.success) {
-        throw new ActivityAnnotationError(
-          'invalid-annotation',
-          `Activity annotation is invalid: ${annotation.error.issues.map(issue => issue.message).join('; ')}`,
-        )
       }
       try {
-        await this.requireTable().put(annotation.data.id, annotation.data)
+        await this.requireTable().put(annotation.id, annotation)
       } catch (cause: unknown) {
         throw new ActivityAnnotationStorageError(cause)
       }
-      return freezeAnnotation(annotation.data)
+      return freezeAnnotation(annotation)
     })
   }
 
@@ -129,15 +123,8 @@ export class HomeActivityAnnotationService extends Service {
         .sort((left, right) => left.revision - right.revision || String(left.id).localeCompare(String(right.id)))
         .map(freezeAnnotation))
     } catch (cause: unknown) {
-      if (cause instanceof ActivityAnnotationError) throw cause
       throw new ActivityAnnotationStorageError(cause)
     }
-  }
-
-  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.operationTail.then(operation)
-    this.operationTail = result.then(() => {}, () => {})
-    return result
   }
 
   private requireTable(): KvTable<ActivityAnnotationId, ActivityAnnotation> {

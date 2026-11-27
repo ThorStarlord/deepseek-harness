@@ -9,6 +9,7 @@ import type { ActivityId } from './types.ts'
 import type { ActivityReview, ActivityReviewEvidence, RecordActivityReviewRequest } from './review-types.ts'
 import { homeActivityReviewsDomain, MAX_HOME_ACTIVITY_REVIEW_EVIDENCE } from './review-spec.ts'
 import type {} from './delegations.ts'
+import { createActivityOperationQueue } from './operation-queue.ts'
 
 export type {
   ActivityReview,
@@ -51,7 +52,7 @@ export class HomeActivityReviewService extends Service {
   static inject = ['storageDomain', 'homeActivities', 'homeActivityDelegations']
 
   private table?: KvTable<ActivityDelegationId, ActivityReview>
-  private operationTail: Promise<void> = Promise.resolve()
+  private readonly enqueue = createActivityOperationQueue()
 
   constructor(ctx: Context) {
     super(ctx, 'homeActivityReviews')
@@ -167,12 +168,6 @@ export class HomeActivityReviewService extends Service {
     } catch (cause: unknown) {
       throw new ActivityReviewStorageError(cause)
     }
-  }
-
-  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.operationTail.then(operation)
-    this.operationTail = result.then(() => {}, () => {})
-    return result
   }
 
   private requireTable(): KvTable<ActivityDelegationId, ActivityReview> {

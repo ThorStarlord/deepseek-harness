@@ -14,6 +14,7 @@ import {
   homeActivityAssociationsDomain,
   MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND,
 } from './association-spec.ts'
+import { createActivityOperationQueue } from './operation-queue.ts'
 
 /** Stable rejection categories for association requests. */
 export type HomeActivityAssociationErrorCode = 'unknown-activity' | 'unknown-workspace' | 'unknown-session' | 'association-limit'
@@ -41,7 +42,7 @@ export class HomeActivityAssociationService extends Service {
   static inject = ['storageDomain', 'homeActivities', 'workspaceRegistry', 'sessionPersistence']
 
   private table?: KvTable<ActivityId, HomeActivityAssociationRecord>
-  private operationTail: Promise<void> = Promise.resolve()
+  private readonly enqueue = createActivityOperationQueue()
 
   constructor(ctx: Context) {
     super(ctx, 'homeActivityAssociations')
@@ -172,12 +173,6 @@ export class HomeActivityAssociationService extends Service {
       updatedAt: new Date().toISOString(),
     }))
     return true
-  }
-
-  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.operationTail.then(operation)
-    this.operationTail = result.then(() => {}, () => {})
-    return result
   }
 
   private readRecord(activityId: ActivityId): HomeActivityAssociationRecord | undefined {

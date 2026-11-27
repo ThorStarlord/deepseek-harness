@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -11,7 +12,12 @@ import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import HomeActivityService, { ActivityId } from '../src/index.ts'
 import HomeActivityDelegationService from '../src/delegations.ts'
-import HomeActivityAnnotationService from '../src/annotations.ts'
+import HomeActivityAnnotationService, {
+  ActivityAnnotationError,
+  ActivityAnnotationStorageError,
+  MAX_HOME_ACTIVITY_ANNOTATIONS_PER_ACTIVITY,
+} from '../src/annotations.ts'
+import type { ActivityAnnotation, ActivityAnnotationId } from '../src/annotation-types.ts'
 import type { CreateActivityRequest } from '../src/types.ts'
 
 const contexts: Context[] = []
@@ -92,6 +98,7 @@ it('retains correction history across restart without changing provider-reported
     activityId: activity.id,
     text: 'Current coordination note: release appears ready.',
   })
+  expect(Object.isFrozen(initial)).toBe(true)
   const correction = await first.homeActivityAnnotations.correct({
     activityId: activity.id,
     text: 'Correction: release remains blocked because the migration test failed.',
@@ -216,4 +223,53 @@ it('retains annotations and provider reports across an Activity-only application
   expect(forward.homeActivities.get(activity.id)).toEqual(activity)
   expect(forward.homeActivityAnnotations.list(activity.id)).toEqual([annotation])
   expect(forward.homeActivityDelegations.get(delegation.id)).toEqual(providerFact)
+})
+
+it('enforces the immutable annotation history limit', async () => {
+  const ctx = await memoryHarness(new MemoryMediaPool())
+  const activity = await ctx.homeActivities.create(request)
+  for (let revision = 1; revision <= MAX_HOME_ACTIVITY_ANNOTATIONS_PER_ACTIVITY; revision += 1) {
+    await ctx.homeActivityAnnotations.correct({ activityId: activity.id, text: `Release review note ${revision}.` })
+  }
+  await expect(ctx.homeActivityAnnotations.correct({ activityId: activity.id, text: 'The limit must remain enforced.' }))
+    .rejects.toMatchObject({ code: 'annotation-limit' })
+  expect(ctx.homeActivityAnnotations.list(activity.id)).toHaveLength(MAX_HOME_ACTIVITY_ANNOTATIONS_PER_ACTIVITY)
+})
+
+it('orders duplicate persisted revisions by stable identity and reports an uninitialized store', async () => {
+  const ctx = await memoryHarness(new MemoryMediaPool())
+  const activity = await ctx.homeActivities.create(request)
+  const first = await ctx.homeActivityAnnotations.correct({ activityId: activity.id, text: 'First saved note.' })
+  const second = await ctx.homeActivityAnnotations.correct({ activityId: activity.id, text: 'Second saved note.' })
+  const table = Reflect.get(ctx.homeActivityAnnotations, 'table') as KvTable<ActivityAnnotationId, ActivityAnnotation>
+  await table.put(second.id, { ...second, revision: first.revision })
+
+  expect(ctx.homeActivityAnnotations.list(activity.id).map(annotation => annotation.id)).toEqual(
+    [first.id, second.id].sort((left, right) => String(left).localeCompare(String(right))),
+  )
+
+  const unreadyContext = new Context()
+  contexts.push(unreadyContext)
+  unreadyContext.provide('homeActivities', { get: () => activity } as never)
+  const unready = new HomeActivityAnnotationService(unreadyContext)
+  expect(() => unready.list(activity.id)).toThrow(ActivityAnnotationStorageError)
+})
+
+it('surfaces annotation history read failures and missing Activities', async () => {
+  const ctx = new Context(); contexts.push(ctx)
+  const activityId = ActivityId('00000000-0000-4000-8000-000000000099')
+  ctx.provide('storageDomain', {
+    open: async () => ({
+      close: async () => {},
+      table: () => ({ entries: () => { throw new Error('injected annotation history read failure') } }),
+    }),
+  } as never)
+  ctx.provide('homeActivities', { get: (id: ActivityId) => id === activityId ? { id } : undefined } as never)
+  await ctx.plugin(HomeActivityAnnotationService)
+
+  expect(() => ctx.homeActivityAnnotations.list(activityId)).toThrow(ActivityAnnotationStorageError)
+  await expect(ctx.homeActivityAnnotations.correct({ activityId, text: 'A correction must not be lost.' }))
+    .rejects.toBeInstanceOf(ActivityAnnotationStorageError)
+  expect(() => ctx.homeActivityAnnotations.list(ActivityId('00000000-0000-4000-8000-000000000098')))
+    .toThrow(ActivityAnnotationError)
 })

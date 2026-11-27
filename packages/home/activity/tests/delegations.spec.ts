@@ -904,6 +904,70 @@ it('rejects selection whose provider or classification source does not match its
       },
     },
   }).success).toBe(false)
+
+  const experimentalProfile = {
+    status: 'available',
+    name: 'review',
+    startedBundles: ['@deepseek-ai/dsh-base'],
+    classification: 'experimental',
+    classificationSource: 'experimental-package-metadata',
+  } as const
+  const unavailableProfile = {
+    status: 'available',
+    name: 'web',
+    startedBundles: null,
+    classification: 'unavailable',
+    classificationSource: 'unavailable',
+  } as const
+  const unavailablePreset = {
+    status: 'selected',
+    id: 'review',
+    activeModules: null,
+    classification: 'unavailable',
+    classificationSource: 'unavailable',
+  } as const
+  for (const profileSelection of [experimentalProfile, unavailableProfile]) {
+    expect(activityDelegationRecordSchema.safeParse({
+      ...facts,
+      request: {
+        ...spawnRequest,
+        executionSelection: { provider: 'spawn', profile: profileSelection, preset: unavailablePreset },
+      },
+    }).success).toBe(true)
+  }
+  expect(activityDelegationRecordSchema.safeParse({
+    ...facts,
+    request: {
+      ...spawnRequest,
+      executionSelection: {
+        provider: 'spawn', profile: experimentalProfile,
+        preset: { ...unavailablePreset, classification: 'experimental', classificationSource: 'unavailable' },
+      },
+    },
+  }).success).toBe(false)
+  expect(activityDelegationRecordSchema.safeParse({
+    ...facts,
+    request: {
+      ...spawnRequest,
+      executionSelection: {
+        provider: 'spawn', profile: experimentalProfile,
+        preset: { ...unavailablePreset, activeModules: null, classification: 'experimental', classificationSource: 'experimental-package-metadata' },
+      },
+    },
+  }).success).toBe(false)
+
+  expect(activityDelegationRecordSchema.safeParse({
+    ...facts,
+    request: spawnRequest,
+    status: 'admitted',
+    admission: {
+      provider: 'spawn',
+      childSessionId: 'child-session',
+      activationName: 'activity-spawn-explicit',
+      admittedAt: '2026-11-15T12:00:01.000Z',
+      source: 'subagents.startActivation',
+    },
+  }).success).toBe(true)
 })
 
 it('keeps persistence-write uncertainty visible until a later durable fact succeeds', async () => {

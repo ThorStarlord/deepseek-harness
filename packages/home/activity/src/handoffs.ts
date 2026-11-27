@@ -7,6 +7,7 @@ import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { homeActivityHandoffsDomain, activityHandoffSchema, MAX_HOME_ACTIVITY_HANDOFFS_PER_ACTIVITY } from './handoff-spec.ts'
 import type { ActivityHandoff, ActivityHandoffId, CreateActivityHandoffRequest } from './handoff-types.ts'
 import type { ActivityId } from './types.ts'
+import { createActivityOperationQueue } from './operation-queue.ts'
 
 export type { ActivityHandoff, ActivityHandoffArtifact, ActivityHandoffId, CreateActivityHandoffRequest } from './handoff-types.ts'
 export {
@@ -43,7 +44,7 @@ export class HomeActivityHandoffService extends Service {
   static inject = ['storageDomain', 'homeActivities']
 
   private table?: KvTable<ActivityHandoffId, ActivityHandoff>
-  private operationTail: Promise<void> = Promise.resolve()
+  private readonly enqueue = createActivityOperationQueue()
 
   constructor(ctx: Context) {
     super(ctx, 'homeActivityHandoffs')
@@ -114,15 +115,8 @@ export class HomeActivityHandoffService extends Service {
         .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt) || String(left.id).localeCompare(String(right.id)))
         .map(freezeHandoff))
     } catch (cause: unknown) {
-      if (cause instanceof ActivityHandoffError) throw cause
       throw new ActivityHandoffStorageError(cause)
     }
-  }
-
-  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.operationTail.then(operation)
-    this.operationTail = result.then(() => {}, () => {})
-    return result
   }
 
   private requireTable(): KvTable<ActivityHandoffId, ActivityHandoff> {

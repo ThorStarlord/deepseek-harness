@@ -126,6 +126,7 @@ it('keeps references idempotent, removes stale ids, and supports explicit correc
   const firstSession = SessionId('session-one')
   const secondSession = SessionId('session-two')
   const correctedSession = SessionId('session-three')
+  await expect(test.ctx.homeActivityAssociations.unlinkWorkspace(test.activity.id, firstWorkspace)).resolves.toBe(false)
   await test.ctx.homeActivityAssociations.linkWorkspace(test.activity.id, firstWorkspace)
   await expect(test.ctx.homeActivityAssociations.linkWorkspace(test.activity.id, firstWorkspace)).resolves.toBe(false)
   await test.ctx.homeActivityAssociations.linkWorkspace(test.activity.id, secondWorkspace)
@@ -151,6 +152,15 @@ it('keeps references idempotent, removes stale ids, and supports explicit correc
   })
   expect(test.ctx.homeActivities.get(test.activity.id)).toEqual(test.activity)
   expect(test.persistence.open).not.toHaveBeenCalled()
+})
+
+it('removes the sidecar only after the Activity loses its final association', async () => {
+  const test = await harness()
+  const workspaceId = WorkspaceId('00000000-0000-4000-8000-000000000011')
+  await test.ctx.homeActivityAssociations.linkWorkspace(test.activity.id, workspaceId)
+
+  await expect(test.ctx.homeActivityAssociations.unlinkWorkspace(test.activity.id, workspaceId)).resolves.toBe(true)
+  expect(test.ctx.homeActivityAssociations.get(test.activity.id)).toEqual({ workspaceIds: [], sessionIds: [] })
 })
 
 it('rejects unknown Activity, Workspace, and Session identities without writing', async () => {

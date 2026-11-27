@@ -4,10 +4,23 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
+import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
+import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
+import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import HomeActivityService, { ActivityId } from '../src/index.ts'
-import HomeActivityStrategicEpisodeService from '../src/strategic-episodes.ts'
+import HomeActivityStrategicEpisodeService, {
+  ActivityStrategicEpisodeError,
+  ActivityStrategicEpisodeStorageError,
+  MAX_HOME_ACTIVITY_STRATEGIC_EPISODE_BYTES,
+  MAX_HOME_ACTIVITY_STRATEGIC_EPISODES_PER_ACTIVITY,
+} from '../src/strategic-episodes.ts'
+import type { ActivityStrategicEpisode, ActivityStrategicEpisodeId } from '../src/strategic-episode-types.ts'
+import {
+  activityStrategicEpisodeRecordSchema,
+  recordActivityStrategicEpisodeRequestSchema,
+} from '../src/strategic-episode-spec.ts'
 import type { ActivityId as ActivityIdType } from '../src/types.ts'
 import type { CreateActivityRequest } from '../src/types.ts'
 
@@ -30,6 +43,31 @@ async function harness(root: string) {
   await ctx.plugin(StorageJson, { root })
   await ctx.plugin(StorageDomain, { backend: 'json' })
   await ctx.plugin(HomeActivityService)
+  await ctx.plugin(HomeActivityStrategicEpisodeService)
+  return ctx
+}
+
+async function memoryHarness(pool = new MemoryMediaPool()) {
+  const ctx = new Context(); contexts.push(ctx)
+  await ctx.plugin(Storage)
+  ctx.storage.backend.register('memory', new MemoryStorageBackend(pool))
+  const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
+  ctx.storage.mount('domain', facility)
+  ctx.provide('storageDomain', facility)
+  await ctx.plugin(HomeActivityService)
+  await ctx.plugin(HomeActivityStrategicEpisodeService)
+  return { ctx, pool }
+}
+
+async function failingReadHarness() {
+  const ctx = new Context(); contexts.push(ctx)
+  ctx.provide('storageDomain', {
+    open: async () => ({
+      close: async () => {},
+      table: () => ({ entries: () => { throw new Error('injected read failure') } }),
+    }),
+  } as never)
+  ctx.provide('homeActivities', { get: () => ({ objective: activityRequest.objective }) } as never)
   await ctx.plugin(HomeActivityStrategicEpisodeService)
   return ctx
 }
@@ -72,6 +110,11 @@ function brief(activityId: ActivityIdType) {
     },
     requestedAt: '2026-11-22T09:59:00.000Z',
   }
+}
+
+function requestContent(value: ReturnType<typeof brief>) {
+  const { status, repositories, evidence, findings, alternatives, uncertainties, recommendation } = value
+  return { status, repositories, evidence, findings, alternatives, uncertainties, recommendation }
 }
 
 it('retains source-attributed episodes across restart and never rewrites earlier recommendations', async () => {
@@ -191,4 +234,166 @@ it('requires an unavailable repository to remain explicitly incomplete', async (
     },
   })
   expect(incomplete.status).toBe('incomplete')
+})
+
+it('validates source observation order, source paths, recommendations, and repository identity', () => {
+  const valid = brief(ActivityId('00000000-0000-4000-8000-000000000099'))
+  const firstRepository = valid.repositories[0]
+  const secondRepository = valid.repositories[1]
+  const firstEvidence = valid.evidence[0]
+  const invalidRequests = [
+    { ...valid, repositories: [{ ...firstRepository, revision: null }, secondRepository] },
+    { ...valid, repositories: [{ ...firstRepository, observedAtStart: null }, secondRepository] },
+    { ...valid, repositories: [{ ...firstRepository, observedAtStart: '2026-11-22T10:00:10.000Z', observedAtEnd: '2026-11-22T10:00:09.000Z' }, secondRepository] },
+    { ...valid, repositories: [firstRepository, { ...secondRepository, workspaceId: firstRepository.workspaceId }] },
+    { ...valid, evidence: [{ ...firstEvidence, path: 'packages/../secrets.txt' }, valid.evidence[1]] },
+    { ...valid, evidence: [{ ...firstEvidence, lineStart: 12, lineEnd: 11 }, valid.evidence[1]] },
+    { ...valid, recommendation: { ...valid.recommendation, disposition: 'NO_CHANGE' as const, responsibility: 'Continue implementation.' } },
+    { ...valid, recommendation: { ...valid.recommendation, disposition: 'DEFER' as const, responsibility: null } },
+  ]
+
+  for (const invalid of invalidRequests) {
+    expect(recordActivityStrategicEpisodeRequestSchema.safeParse(requestContent(invalid)).success).toBe(false)
+  }
+
+  const unavailable = {
+    ...firstRepository,
+    status: 'unavailable' as const,
+    revision: null,
+    workingTree: 'unknown' as const,
+    sourceChanged: null,
+    observedAtStart: null,
+    observedAtEnd: null,
+  }
+  for (const invalidRepository of [
+    { ...unavailable, revision: firstRepository.revision },
+    { ...unavailable, workingTree: 'clean' as const },
+    { ...unavailable, sourceChanged: false },
+  ]) {
+    expect(recordActivityStrategicEpisodeRequestSchema.safeParse(requestContent({
+      ...valid,
+      repositories: [invalidRepository, secondRepository],
+    })).success).toBe(false)
+  }
+  expect(recordActivityStrategicEpisodeRequestSchema.safeParse(requestContent({
+    ...valid,
+    status: 'incomplete',
+    repositories: [{ ...firstRepository, workingTree: 'dirty' as const, sourceChanged: true }, secondRepository],
+  })).success).toBe(true)
+})
+
+it('rejects repeated or unresolved strategic evidence references in both request and stored records', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-home-activity-strategic-references-')); roots.push(root)
+  const ctx = await harness(root)
+  const activity = await ctx.homeActivities.create(activityRequest)
+  const valid = brief(activity.id)
+  const duplicateEvidence = { ...valid, evidence: [valid.evidence[0], { ...valid.evidence[1], id: valid.evidence[0].id }] }
+  const duplicateUncertainty = { ...valid, uncertainties: [valid.uncertainties[0], { ...valid.uncertainties[0] }] }
+  const missingEvidence = { ...valid, findings: [{ ...valid.findings[0], evidenceIds: ['E9'] }] }
+  const missingUncertainty = { ...valid, recommendation: { ...valid.recommendation, uncertaintyIds: ['U9'] } }
+  const incompleteComplete = {
+    ...valid,
+    evidence: [],
+    findings: [],
+    alternatives: [],
+    uncertainties: [],
+    recommendation: { ...valid.recommendation, evidenceIds: [], uncertaintyIds: [] },
+  }
+
+  for (const invalid of [duplicateEvidence, duplicateUncertainty, missingEvidence, missingUncertainty, incompleteComplete]) {
+    expect(recordActivityStrategicEpisodeRequestSchema.safeParse(requestContent(invalid)).success).toBe(false)
+  }
+
+  const episode = await ctx.homeActivityStrategicEpisodes.record(valid)
+  const storedInvalid = [
+    {
+      ...episode,
+      repositories: [episode.repositories[0], { ...episode.repositories[1], workspaceId: episode.repositories[0].workspaceId }],
+    },
+    { ...episode, skillDigests: [episode.skillDigests[0], episode.skillDigests[0]] },
+    { ...episode, evidence: [episode.evidence[0], episode.evidence[0]] },
+    { ...episode, uncertainties: [episode.uncertainties[0], episode.uncertainties[0]] },
+    { ...episode, findings: [{ ...episode.findings[0], evidenceIds: ['E9'] }] },
+    { ...episode, recommendation: { ...episode.recommendation, uncertaintyIds: ['U9'] } },
+  ]
+  for (const invalid of storedInvalid) {
+    expect(activityStrategicEpisodeRecordSchema.safeParse(invalid).success).toBe(false)
+  }
+  await expect(ctx.homeActivityStrategicEpisodes.record({
+    ...valid,
+    requestId: '00000000-0000-4000-8000-000000000026',
+    skillDigests: [valid.skillDigests[0], valid.skillDigests[0]],
+  })).rejects.toMatchObject({ code: 'invalid-episode' })
+  expect(ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([episode])
+})
+
+it('rejects oversized episodes and preserves the per-Activity history limit', async () => {
+  const { ctx } = await memoryHarness()
+  const activity = await ctx.homeActivities.create(activityRequest)
+  const valid = brief(activity.id)
+  const oversized = {
+    ...valid,
+    findings: Array.from({ length: Math.ceil(MAX_HOME_ACTIVITY_STRATEGIC_EPISODE_BYTES / 4_000) }, () => ({
+      ...valid.findings[0],
+      statement: 'x'.repeat(4_000),
+    })),
+  }
+  await expect(ctx.homeActivityStrategicEpisodes.record(oversized))
+    .rejects.toMatchObject({ code: 'invalid-episode' })
+  expect(ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
+
+  for (let index = 1; index <= MAX_HOME_ACTIVITY_STRATEGIC_EPISODES_PER_ACTIVITY; index += 1) {
+    const suffix = index.toString(16).padStart(12, '0')
+    await ctx.homeActivityStrategicEpisodes.record({
+      ...valid,
+      requestId: `00000000-0000-4000-8000-${suffix}`,
+      status: 'incomplete',
+    })
+  }
+  await expect(ctx.homeActivityStrategicEpisodes.record({
+    ...valid,
+    requestId: '00000000-0000-4000-8000-0000000000ff',
+  })).rejects.toMatchObject({ code: 'episode-limit' })
+  expect(ctx.homeActivityStrategicEpisodes.list(activity.id)).toHaveLength(MAX_HOME_ACTIVITY_STRATEGIC_EPISODES_PER_ACTIVITY)
+  expect(() => ctx.homeActivityStrategicEpisodes.list(ActivityId('00000000-0000-4000-8000-000000000099')))
+    .toThrow(ActivityStrategicEpisodeError)
+})
+
+it('reports write failures without claiming a brief was saved', async () => {
+  const { ctx, pool } = await memoryHarness()
+  const activity = await ctx.homeActivities.create(activityRequest)
+  const request = { ...brief(activity.id), requestId: '00000000-0000-4000-8000-000000000027' }
+  pool.failNextWrites = 1
+  await expect(ctx.homeActivityStrategicEpisodes.record(request))
+    .rejects.toBeInstanceOf(ActivityStrategicEpisodeStorageError)
+  expect(ctx.homeActivityStrategicEpisodes.list(activity.id)).toEqual([])
+  await expect(ctx.homeActivityStrategicEpisodes.record(request)).resolves.toMatchObject({ revision: 1 })
+})
+
+it('wraps a failed history read without inventing an empty history', async () => {
+  const ctx = await failingReadHarness()
+  expect(() => ctx.homeActivityStrategicEpisodes.list(ActivityId('00000000-0000-4000-8000-000000000099')))
+    .toThrow(ActivityStrategicEpisodeStorageError)
+})
+
+it('orders duplicate persisted revisions by stable identity and reports an uninitialized store', async () => {
+  const { ctx } = await memoryHarness()
+  const activity = await ctx.homeActivities.create(activityRequest)
+  const first = await ctx.homeActivityStrategicEpisodes.record(brief(activity.id))
+  const second = await ctx.homeActivityStrategicEpisodes.record({
+    ...brief(activity.id),
+    requestId: '00000000-0000-4000-8000-000000000028',
+  })
+  const table = Reflect.get(ctx.homeActivityStrategicEpisodes, 'table') as KvTable<ActivityStrategicEpisodeId, ActivityStrategicEpisode>
+  await table.put(second.id, { ...second, revision: first.revision })
+
+  expect(ctx.homeActivityStrategicEpisodes.list(activity.id).map(episode => episode.id)).toEqual(
+    [first.id, second.id].sort((left, right) => String(left).localeCompare(String(right))),
+  )
+
+  const unreadyContext = new Context()
+  contexts.push(unreadyContext)
+  unreadyContext.provide('homeActivities', { get: () => activity } as never)
+  const unready = new HomeActivityStrategicEpisodeService(unreadyContext)
+  expect(() => unready.list(activity.id)).toThrow(ActivityStrategicEpisodeStorageError)
 })
