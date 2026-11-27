@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 // Synthetic fixture facts exercise replay attribution; they are not evidence of authenticated dispatch.
 export const name = 'activity-responsibility-status-seed'
-export const inject = ['storageDomain', 'homeActivities', 'homeActivityResponsibilities']
+export const inject = ['storageDomain', 'homeActivities', 'homeActivityResponsibilities', 'agents']
 
 const ACTIVITY_ID = '15000000-0000-4000-8000-000000000001'
 const RESPONSIBILITY_ID = '15000000-0000-4000-8000-000000000002'
@@ -93,6 +93,10 @@ export async function apply(ctx) {
       outcome: 'accepted',
       source: 'session-controller.prompt',
     })
+    if (ctx.agents.get(agent.id) !== agent
+      || !ctx.homeActivityResponsibilities.hasReportableTargetSession(targetSessionId)) {
+      throw new Error('The seeded target Session is not eligible for Activity status reporting')
+    }
     agent.session.append('user/message', {
       id: randomUUID(),
       role: 'user',
