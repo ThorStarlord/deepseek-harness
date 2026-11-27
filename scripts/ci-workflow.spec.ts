@@ -980,6 +980,9 @@ describe('CI workflow', () => {
       || !isRecord(upload)) {
       throw new TypeError('Web snapshot refresh must verify its selected owners, build, refresh, and publish review outputs')
     }
+    if (!isRecord(upload.with) || typeof upload.with.path !== 'string') {
+      throw new TypeError('Web snapshot refresh must publish a string artifact path')
+    }
     expect(checkout.with).toMatchObject({ ref: '${{ inputs.source_sha || github.sha }}' })
     expect(job.env).toMatchObject({ EXPECTED_SOURCE_SHA: '${{ inputs.source_sha || github.sha }}' })
     expect(sourceCheck.run).toContain('test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"')
