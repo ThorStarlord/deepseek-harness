@@ -212,7 +212,7 @@ describe('CI workflow', () => {
     expect(steps[preparation]).not.toHaveProperty('continue-on-error', true)
   })
 
-  it.each(['ci.yml', 'ci-master.yml', 'e2e.yml', 'release.yml', 'release-vendor.yml'])(
+  it.each(['ci.yml', 'e2e.yml', 'release.yml', 'release-vendor.yml'])(
     '%s cancels superseded validation runs without crossing workflow or ref boundaries', (name) => {
       const workflow = loadWorkflow('.github/workflows/' + name)
       expect(workflow.concurrency).toEqual({
@@ -221,6 +221,24 @@ describe('CI workflow', () => {
       })
     },
   )
+
+  it('cancels only superseded runs of the same manually selected CI suite', () => {
+    const workflow = loadWorkflow('.github/workflows/ci-master.yml')
+    expect(workflow.concurrency).toEqual({
+      group: "${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.suite || 'push' }}",
+      'cancel-in-progress': true,
+    })
+    const suiteExpression = "github.event_name == 'workflow_dispatch' && inputs.suite || 'push'"
+    const groupSuffix = (event: string, suite?: string): unknown => runInNewContext(suiteExpression, {
+      github: { event_name: event },
+      inputs: suite === undefined ? {} : { suite },
+    }, { timeout: 1000 })
+
+    expect(groupSuffix('push')).toBe('push')
+    expect(groupSuffix('workflow_dispatch', 'sdk-snapshot')).toBe('sdk-snapshot')
+    expect(groupSuffix('workflow_dispatch', 'web-snapshot-refresh')).toBe('web-snapshot-refresh')
+    expect(groupSuffix('workflow_dispatch', 'coverage')).toBe('coverage')
+  })
 
   it('cancels reusable CI builds without cancelling release-owned builds', () => {
     const workflow = loadWorkflow('.github/workflows/build-exe-for-python-sdk.yml')
@@ -1042,10 +1060,13 @@ describe('CI workflow', () => {
     }
 
     expect(workflow.concurrency).toEqual({
+      group: "${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.suite || 'push' }}",
+      'cancel-in-progress': true,
+    })
+    expect(prWorkflow.concurrency).toEqual({
       group: '${{ github.workflow }}-${{ github.ref }}',
       'cancel-in-progress': true,
     })
-    expect(prWorkflow.concurrency).toEqual(workflow.concurrency)
 
     // The exact event sets are what keep master-only jobs out of the PR check
     // panel: ci-master triggers only on push(master) + workflow_dispatch and
@@ -1059,14 +1080,14 @@ describe('CI workflow', () => {
     const windowsWorkflow = loadWorkflow('.github/workflows/ci-windows.yml')
     if (!isRecord(windowsWorkflow.on)) throw new TypeError('CI Windows workflow must define on')
     expect(Object.keys(windowsWorkflow.on)).toEqual(['pull_request'])
-    expect(windowsWorkflow.concurrency).toEqual(workflow.concurrency)
+    expect(windowsWorkflow.concurrency).toEqual(prWorkflow.concurrency)
     // Duplicated env must not drift: a Node bump on one lane only would run
     // Linux and Windows against different versions.
     expect(windowsWorkflow.env).toEqual(prWorkflow.env)
     const pythonWorkflow = loadWorkflow('.github/workflows/ci-python.yml')
     if (!isRecord(pythonWorkflow.on)) throw new TypeError('CI Python workflow must define on')
     expect(Object.keys(pythonWorkflow.on)).toEqual(['pull_request'])
-    expect(pythonWorkflow.concurrency).toEqual(workflow.concurrency)
+    expect(pythonWorkflow.concurrency).toEqual(prWorkflow.concurrency)
     expect(pythonWorkflow.env).toEqual(prWorkflow.env)
 
     // Drills share the parent run’s supersession policy.

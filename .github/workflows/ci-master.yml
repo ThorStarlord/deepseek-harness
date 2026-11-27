@@ -23,10 +23,10 @@ on:
         required: false
         type: string
 
-# New master pushes and manual runs replace obsolete checks in this workflow/ref.
-# Standby drills share cancellation; use completed runs as readiness evidence.
+# Master pushes replace older master validation; a newer dispatch replaces only the same suite.
+# Separate exact-revision evidence suites may run concurrently without cancelling each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.suite || 'push' }}
   cancel-in-progress: true
 
 permissions:
