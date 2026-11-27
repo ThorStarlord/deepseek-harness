@@ -181,7 +181,7 @@ describe('SubagentRuntime', () => {
     await expect(start(subagents, 'external', baseRequest()))
       .rejects.toMatchObject({
         code: 'NOT_DISPATCHED',
-        cause: expect.objectContaining({ message: 'directory unavailable' }),
+        cause: { message: 'directory unavailable' },
       })
     expect(provider.startCount).toBe(0)
   })
@@ -312,9 +312,47 @@ describe('SubagentRuntime', () => {
       delivery: 'caller',
     })).rejects.toMatchObject({
       code: 'NOT_DISPATCHED',
-      cause: expect.objectContaining({ code: 'CONTINUATION_UNAVAILABLE' }),
+      cause: { code: 'CONTINUATION_UNAVAILABLE' },
     })
     expect(provider.startCount).toBe(0)
+  })
+
+  it('preserves the local continuation-unavailable error before the Agent service is mounted', async () => {
+    const { subagents } = await service(false)
+    const prepare = vi.fn(async () => ({}))
+    subagents.registerProvider({
+      name: 'local',
+      inheritsParentContext: false,
+      capabilities: ALL_CAPS,
+      prepareContinuable: prepare,
+    })
+
+    await expect(subagents.startActivation({
+      ...baseRequest(),
+      provider: 'local',
+      label: 'Local child',
+      delivery: 'caller',
+    })).rejects.toMatchObject({ code: 'CONTINUATION_UNAVAILABLE' })
+    expect(prepare).not.toHaveBeenCalled()
+  })
+
+  it('rejects a local activation when its parent is not the exact live Agent', async () => {
+    const { subagents } = await service()
+    const prepare = vi.fn(async () => ({}))
+    subagents.registerProvider({
+      name: 'local',
+      inheritsParentContext: false,
+      capabilities: ALL_CAPS,
+      prepareContinuable: prepare,
+    })
+
+    await expect(subagents.startActivation({
+      ...baseRequest({ parent: fakeParent('replaced-parent') }),
+      provider: 'local',
+      label: 'Local child',
+      delivery: 'caller',
+    })).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+    expect(prepare).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -740,7 +778,7 @@ it('rejects a disposed parent before starting provider execution', async () => {
     parent: handle.agent, prompt: [],
   })).rejects.toMatchObject({
     code: 'NOT_DISPATCHED',
-    cause: expect.objectContaining({ code: 'UNAUTHORIZED' }),
+    cause: { code: 'UNAUTHORIZED' },
   })
   expect(provider.startCount).toBe(0)
 })
