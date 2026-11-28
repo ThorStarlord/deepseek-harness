@@ -228,6 +228,7 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
           { id: 'read-large', name: 'repository_read_file', args: { path: 'large.bin' } },
           { id: 'read-offset', name: 'repository_read_file', args: { path: 'src/core.ts', offset: 0 } },
           { id: 'read-limit', name: 'repository_read_file', args: { path: 'src/core.ts', limit: 401 } },
+          { id: 'read-git-direct', name: 'repository_read_file', args: { path: '.git/config' } },
           { id: 'read-git-alias', name: 'repository_read_file', args: { path: 'git-link/config' } },
           { id: 'read-outside-alias', name: 'repository_read_file', args: { path: 'outside-link/AGENTS.md' } },
         ] : [],
@@ -238,6 +239,7 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
       expect(transcript).not.toContain('THIRD REPOSITORY CONTENT')
       if (options.attemptForbiddenTools === true) {
         expect(transcript).toContain('git-link/config')
+        expect(transcript).toContain('.git/config')
         expect(transcript).toContain('outside-link/AGENTS.md')
         return toolCallsResponse([
           { id: 'staged-ignored', name: 'read_staged_file', args: { path: 'cache.ignored' } },
@@ -698,11 +700,14 @@ describe('read-only multi-repository coordination', () => {
     for (const request of childRequests) expect(request.tools?.map(tool => tool.name).sort()).toEqual(REPO_READ_TOOLS)
     for (const child of f.childAgents.values()) {
       const results = child.session.snapshotEvents().filter(event => event.type === 'tool/result')
-      expect(results).toHaveLength(30)
+      expect(results).toHaveLength(31)
       const errorCodes = results.flatMap(event => event.type === 'tool/result' && event.data.error !== undefined
         ? [event.data.error.code] : [])
       const largeReadResult = results.find(event => event.type === 'tool/result' && event.data.message.toolCallId === 'read-large')
+      const directGitConfigResult = results.find(event => event.type === 'tool/result'
+        && event.data.message.toolCallId === 'read-git-direct')
       expect(largeReadResult).toMatchObject({ data: { error: { code: 'FILE_TOO_LARGE' } } })
+      expect(directGitConfigResult).toMatchObject({ data: { error: { code: 'PROTECTED_PATH_DENIED' } } })
       expect(errorCodes).toContain('INVALID_PATH')
       expect(errorCodes).toContain('FILE_NOT_FOUND')
       expect(errorCodes).toContain('FILE_TOO_LARGE')
@@ -733,6 +738,7 @@ describe('read-only multi-repository coordination', () => {
       .filter(argv => argv.includes('check-ignore'))
       .map(argv => argv.at(-1))
     expect(checkedPaths).toContain('cache.ignored')
+    expect(checkedPaths).not.toContain('.git/config')
     expect(checkedPaths).not.toContain('git-link/config')
     expect(checkedPaths).not.toContain('outside-link/AGENTS.md')
     expect(await Promise.all([f.alphaPath, f.betaPath, f.thirdPath].map(snapshotRepository))).toEqual(before)
