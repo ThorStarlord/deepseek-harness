@@ -11,8 +11,9 @@ import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import { collectSubprocessResult, readOnlyGitEnvironment } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentActivation, SubagentResult } from '@deepseek-ai/dsh-subagent'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type { ToolDefinition, ToolExecution, JsonSchemaNode, PreToolDecision } from '@deepseek-ai/dsh-tools'
+import { SessionId, type SessionId as SessionIdValue } from '@deepseek-ai/dsh-session'
+import { defineTool, lineNumberedTextRowsSchema } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition, ToolExecution, PreToolDecision, ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
 import type { Workspace, WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { AgentPresetRegistry } from '@deepseek-ai/dsh-agent-preset-registry'
 import { assertReadOnlyGitCommand } from './read-only-git-command.ts'
@@ -53,12 +54,16 @@ interface RegisteredSelection {
 }
 
 interface ApprovedSelection {
+  readonly coordinatorSessionId: SessionIdValue
   readonly repositories: readonly [
     { readonly workspaceId: string; readonly root: string; readonly title: string },
     { readonly workspaceId: string; readonly root: string; readonly title: string },
   ]
   readonly task: string
 }
+
+type ApprovalAgent = NonNullable<ToolExecution['agent']>
+type PendingApprovals = Map<ApprovalAgent, Map<ToolCallId, ApprovedSelection>>
 
 interface GitCommandResult {
   readonly stdout: string
@@ -96,9 +101,9 @@ interface RepositoryResult {
   readonly gitIdentity: string
   readonly head: string
   readonly branch: string | null
-  readonly stagedPaths: readonly string[]
-  readonly unstagedPaths: readonly string[]
-  readonly untrackedPaths: readonly string[]
+  readonly stagedPaths: string[]
+  readonly unstagedPaths: string[]
+  readonly untrackedPaths: string[]
   readonly stagedCount: number
   readonly unstagedCount: number
   readonly untrackedCount: number
@@ -126,69 +131,62 @@ class MultiRepositoryError extends HarnessError {
   }
 }
 
-const resultSchema: JsonSchemaNode = {
+const resultSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['repositories'],
   properties: {
     repositories: {
       type: 'array',
+      required: true,
       items: {
         type: 'object',
         additionalProperties: false,
-        required: [
-          'execution', 'gitCommandEnforcement', 'workspaceId', 'workspaceTitle', 'root', 'gitIdentity', 'head', 'branch',
-          'stagedPaths', 'unstagedPaths', 'untrackedPaths', 'ignoredPathCount', 'childSessionId',
-          'stagedCount', 'unstagedCount', 'untrackedCount',
-          'runId', 'stopReason', 'assistantOutput', 'sourceChanged', 'observedAtStart',
-          'observedAtEnd', 'observationError',
-        ],
         properties: {
-          execution: { type: 'string', enum: ['result', 'startup-error', 'result-error'] },
-          gitCommandEnforcement: { type: 'string', enum: ['full', 'partial'] },
-          workspaceId: { type: 'string' },
-          workspaceTitle: { type: 'string' },
-          root: { type: 'string' },
-          gitIdentity: { type: 'string' },
-          head: { type: 'string' },
-          branch: nullableStringSchema(),
-          stagedPaths: stringArraySchema(),
-          unstagedPaths: stringArraySchema(),
-          untrackedPaths: stringArraySchema(),
-          stagedCount: { type: 'integer' },
-          unstagedCount: { type: 'integer' },
-          untrackedCount: { type: 'integer' },
-          ignoredPathCount: { type: 'integer' },
-          childSessionId: nullableStringSchema(),
-          runId: nullableStringSchema(),
-          stopReason: { type: 'string' },
-          assistantOutput: { type: 'string' },
-          sourceChanged: { oneOf: [{ type: 'boolean' }, { type: 'null' }] },
-          observedAtStart: { type: 'string' },
-          observedAtEnd: nullableStringSchema(),
-          observationError: nullableStringSchema(),
+          execution: { type: 'string', required: true, enum: ['result', 'startup-error', 'result-error'] },
+          gitCommandEnforcement: { type: 'string', required: true, enum: ['full', 'partial'] },
+          workspaceId: { type: 'string', required: true },
+          workspaceTitle: { type: 'string', required: true },
+          root: { type: 'string', required: true },
+          gitIdentity: { type: 'string', required: true },
+          head: { type: 'string', required: true },
+          branch: { ...nullableStringSchema(), required: true },
+          stagedPaths: { ...stringArraySchema(), required: true },
+          unstagedPaths: { ...stringArraySchema(), required: true },
+          untrackedPaths: { ...stringArraySchema(), required: true },
+          stagedCount: { type: 'integer', required: true },
+          unstagedCount: { type: 'integer', required: true },
+          untrackedCount: { type: 'integer', required: true },
+          ignoredPathCount: { type: 'integer', required: true },
+          childSessionId: { ...nullableStringSchema(), required: true },
+          runId: { ...nullableStringSchema(), required: true },
+          stopReason: { type: 'string', required: true },
+          assistantOutput: { type: 'string', required: true },
+          sourceChanged: { oneOf: [{ type: 'boolean' }, { type: 'null' }], required: true },
+          observedAtStart: { type: 'string', required: true },
+          observedAtEnd: { ...nullableStringSchema(), required: true },
+          observationError: { ...nullableStringSchema(), required: true },
         },
       },
     },
   },
+} as const satisfies ValueSchemaSpec
+
+function nullableStringSchema() {
+  return { oneOf: [{ type: 'string' }, { type: 'null' }] as const } as const
 }
 
-function nullableStringSchema(): JsonSchemaNode {
-  return { oneOf: [{ type: 'string' }, { type: 'null' }] }
-}
-
-function stringArraySchema(): JsonSchemaNode {
-  return { type: 'array', items: { type: 'string' } }
+function stringArraySchema() {
+  return { type: 'array', items: { type: 'string' } } as const
 }
 
 function createCoordinationTool(
   ctx: Context,
   config: Config,
-  approvals: Map<ToolCallId, ApprovedSelection>,
+  approvals: PendingApprovals,
   workerRoots: Map<string, string>,
   workerRunIds: Map<string, string>,
 ): ToolDefinition {
-  return {
+  return defineTool({
     name: TOOL_NAME,
     description: [
       'Coordinate one read-only analysis across exactly two explicitly selected registered local Git Workspaces.',
@@ -199,7 +197,7 @@ function createCoordinationTool(
     ].join(' '),
     parameters: {
       repositories: {
-        type: 'array', required: true, minItems: 2, maxItems: 2,
+        type: 'array', required: true,
         items: { type: 'string', description: 'Absolute root path of one registered Workspace.' },
         description: 'Exactly two absolute registered Workspace roots, in result order.',
       },
@@ -228,8 +226,10 @@ function createCoordinationTool(
         })),
       }),
     },
-    async execute(rawArgs, exec) {
-      const args = rawArgs as ToolArgs
+    async execute(args, exec) {
+      if (args.repositories.length !== 2) {
+        throw new MultiRepositoryError('repository coordination requires exactly two selected Workspaces', 'REPOSITORY_COUNT_INVALID')
+      }
       const parent = exec.agent
       if (parent === undefined || ctx.agents.get(parent.id) !== parent || parent.ctx.fiber.state !== FiberState.ACTIVE) {
         throw new MultiRepositoryError('repository coordination requires a live parent Agent', 'PARENT_UNAVAILABLE')
@@ -237,9 +237,8 @@ function createCoordinationTool(
       if (parent.session.header.parentSession !== undefined) {
         throw new MultiRepositoryError('repository coordination is available only to a user-started conversation', 'DELEGATED_COORDINATION_DENIED')
       }
-      const approved = approvals.get(exec.callId)
-      approvals.delete(exec.callId)
-      if (approved === undefined || approved.task !== args.task) {
+      const approved = takePendingApproval(approvals, parent, exec.callId)
+      if (approved === undefined || approved.coordinatorSessionId !== parent.session.id || approved.task !== args.task) {
         throw new MultiRepositoryError('repository coordination requires one-shot approval for this task and repository selection', 'READ_AUTHORIZATION_REQUIRED')
       }
       assertSafeReadOnlyPreset(ctx.agentPresets, config.readOnlyAgentPreset)
@@ -278,31 +277,35 @@ function createCoordinationTool(
       exec.signal.throwIfAborted()
       return { repositories: results }
     },
-  }
+  })
 }
 
 function createStagedReadTool(
   ctx: Context,
   workerRoots: Map<string, string>,
 ): ToolDefinition {
-  return {
+  return defineTool({
     name: STAGED_READ_TOOL,
-    description: 'Read the staged Git index version of one file without changing the index or working tree.',
+    description: 'Read a bounded, line-numbered page of the staged Git index version of one file. Use offset to retrieve later pages; the result reports the total line count. This does not change the index or working tree.',
     parameters: {
       path: { type: 'string', required: true, description: 'One repository-relative file path.' },
+      offset: { type: 'number', description: '1-based first line to return; defaults to 1.' },
+      limit: { type: 'number', description: `Maximum lines to return; defaults to ${MAX_READ_LINES}.` },
     },
     output: {
       schema: {
         type: 'object', additionalProperties: false,
-        required: ['path', 'stage', 'content'],
         properties: {
-          path: { type: 'string' }, stage: { type: 'integer' }, content: { type: 'string' },
+          path: { type: 'string', required: true },
+          stage: { type: 'integer', required: true },
+          offset: { type: 'integer', required: true },
+          totalLines: { type: 'integer', required: true },
+          lines: lineNumberedTextRowsSchema,
         },
       },
       render: (_args, value) => [{ type: 'text', text: renderStagedContent(value) }],
     },
-    async execute(rawArgs, exec) {
-      const args = rawArgs as { readonly path: string }
+    async execute(args, exec) {
       const root = exec.agent === undefined ? undefined : repositoryWorkerRoot(exec.agent, workerRoots)
       if (root === undefined) throw new MultiRepositoryError('staged file reads are available only to an active repository worker', 'REPOSITORY_WORKER_REQUIRED')
       const gitPath = normalizeRepositoryRelativePath(root, args.path)
@@ -314,30 +317,34 @@ function createStagedReadTool(
       if (entry === undefined || parsed.length !== 1 || normalizeGitPath(entry.path) !== normalizeGitPath(gitPath)) {
         throw new MultiRepositoryError('the requested path does not identify one staged index entry', 'STAGED_ENTRY_UNAVAILABLE')
       }
-      const blob = await runGit(ctx, root, ['cat-file', 'blob', entry.objectId], exec.signal, { maxStdoutBytes: 128 * 1024 })
+      const blob = await runGit(ctx, root, ['cat-file', 'blob', entry.objectId], exec.signal)
       if (blob.stdout.includes('\0')) throw new MultiRepositoryError('binary staged content cannot be returned as text', 'STAGED_CONTENT_BINARY')
-      const lines = blob.stdout.split(/\r?\n/u).slice(0, 400).map((line, index) => `${index + 1}: ${line}`)
-      return { path: gitPath, stage: entry.stage, content: lines.join('\n') }
+      const offset = positiveLineNumber(args.offset, 1, 'offset')
+      const limit = positiveLineNumber(args.limit, MAX_READ_LINES, 'limit')
+      if (limit > MAX_READ_LINES) throw new MultiRepositoryError(`limit must be at most ${MAX_READ_LINES}`, 'INVALID_READ_LIMIT')
+      const allLines = splitTextLines(blob.stdout)
+      const lines = allLines.slice(offset - 1, offset - 1 + limit).map((text, index) => ({ number: offset + index, text }))
+      return { path: gitPath, stage: entry.stage, offset, lines, totalLines: allLines.length }
     },
-  }
+  })
 }
 
 function createListFilesTool(
   ctx: Context,
   workerRoots: Map<string, string>,
 ): ToolDefinition {
-  return {
+  return defineTool({
     name: 'repository_list_files',
     description: 'List tracked and unignored untracked paths in this selected repository; ignored files are omitted.',
     parameters: {},
     output: {
       schema: {
         type: 'object', additionalProperties: false,
-        required: ['paths', 'totalFiles', 'omittedSensitiveFiles'],
         properties: {
-          paths: stringArraySchema(),
-          totalFiles: { type: 'integer' },
-          omittedSensitiveFiles: { type: 'integer' },
+          paths: { ...stringArraySchema(), required: true },
+          totalFiles: { type: 'integer', required: true },
+          omittedSensitiveFiles: { type: 'integer', required: true },
+          omittedPaths: { type: 'integer', required: true },
         },
       },
       render: (_args, value) => [{ type: 'text', text: renderFileList(value) }],
@@ -352,16 +359,17 @@ function createListFilesTool(
         paths: safe.slice(0, 500),
         totalFiles: safe.length,
         omittedSensitiveFiles: paths.length - safe.length,
+        omittedPaths: Math.max(0, safe.length - 500),
       }
     },
-  }
+  })
 }
 
 function createWorkingTreeReadTool(
   ctx: Context,
   workerRoots: Map<string, string>,
 ): ToolDefinition {
-  return {
+  return defineTool({
     name: 'repository_read_file',
     description: 'Read one bounded file from this selected repository working tree.',
     parameters: {
@@ -372,32 +380,21 @@ function createWorkingTreeReadTool(
     output: {
       schema: {
         type: 'object', additionalProperties: false,
-        required: ['path', 'offset', 'lines', 'totalLines'],
         properties: {
-          path: { type: 'string' },
-          offset: { type: 'integer' },
-          totalLines: { type: 'integer' },
-          lines: {
-            type: 'array', items: {
-              type: 'object', additionalProperties: false,
-              required: ['number', 'text'],
-              properties: { number: { type: 'integer' }, text: { type: 'string' } },
-            },
-          },
+          path: { type: 'string', required: true },
+          offset: { type: 'integer', required: true },
+          totalLines: { type: 'integer', required: true },
+          lines: lineNumberedTextRowsSchema,
         },
       },
       render: (_args, value) => [{ type: 'text', text: renderWorkingTreeFile(value) }],
     },
-    async execute(rawArgs, exec) {
-      const args = rawArgs as { readonly path: string; readonly offset?: number; readonly limit?: number }
+    async execute(args, exec) {
       const root = exec.agent === undefined ? undefined : repositoryWorkerRoot(exec.agent, workerRoots)
       if (root === undefined) throw new MultiRepositoryError('file reads are available only to a repository worker', 'REPOSITORY_WORKER_REQUIRED')
       const requested = normalizeRepositoryRelativePath(root, args.path)
       if (isSensitivePath(requested) || isGitMetadataPath(requested)) {
         throw new MultiRepositoryError('secret files and Git metadata are excluded from repository analysis', 'PROTECTED_PATH_DENIED')
-      }
-      if (await isIgnoredPath(ctx, root, requested, exec.signal)) {
-        throw new MultiRepositoryError('ignored files are excluded from repository analysis', 'IGNORED_PATH_DENIED')
       }
       const target = await ctx.fs.resolve(requested, { cwd: root, signal: exec.signal })
       const rootTarget = await ctx.fs.resolve(root, { signal: exec.signal })
@@ -406,23 +403,42 @@ function createWorkingTreeReadTool(
       if (isSensitivePath(canonicalPath) || isGitMetadataPath(canonicalPath)) {
         throw new MultiRepositoryError('secret files and Git metadata are excluded from repository analysis', 'PROTECTED_PATH_DENIED')
       }
+      if (await isIgnoredPath(ctx, root, normalizeGitPath(canonicalPath), exec.signal)) {
+        throw new MultiRepositoryError('ignored files are excluded from repository analysis', 'IGNORED_PATH_DENIED')
+      }
       const info = await ctx.fs.stat(target, exec.signal)
       if (info?.type !== 'file') throw new MultiRepositoryError('repository read requires one regular file', 'FILE_NOT_FOUND')
       if (info.size !== undefined && info.size > MAX_READ_FILE_BYTES) throw new MultiRepositoryError('file exceeds the repository analysis read limit', 'FILE_TOO_LARGE')
       const offset = positiveLineNumber(args.offset, 1, 'offset')
       const limit = positiveLineNumber(args.limit, MAX_READ_LINES, 'limit')
       if (limit > MAX_READ_LINES) throw new MultiRepositoryError(`limit must be at most ${MAX_READ_LINES}`, 'INVALID_READ_LIMIT')
-      const content = await ctx.fs.readText(target, exec.signal)
-      const allLines = content.split(/\r?\n/u)
+      let bytes: Uint8Array
+      try {
+        bytes = await ctx.fs.readBytes(target, exec.signal, MAX_READ_FILE_BYTES)
+      } catch (error: unknown) {
+        if (error instanceof HarnessError && error.code === 'FS_TOO_LARGE') {
+          throw new MultiRepositoryError('file exceeds the repository analysis read limit', 'FILE_TOO_LARGE', { cause: error })
+        }
+        throw error
+      }
+      if (bytes.includes(0)) throw new MultiRepositoryError('binary files cannot be returned as repository text', 'FILE_NOT_TEXT')
+      let content: string
+      try {
+        content = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+      } catch (error: unknown) {
+        if (!(error instanceof TypeError)) throw error
+        throw new MultiRepositoryError('file is not valid UTF-8 text', 'FILE_NOT_TEXT', { cause: error })
+      }
+      const allLines = splitTextLines(content)
       const lines = allLines.slice(offset - 1, offset - 1 + limit).map((text, index) => ({ number: offset + index, text }))
       return { path: normalizeGitPath(canonicalPath), offset, lines, totalLines: allLines.length }
     },
-  }
+  })
 }
 
 /** Register model tools and enforce selected-root reads for every worker tool call. */
 export function apply(ctx: Context, config: Config): void {
-  const approvals = new Map<ToolCallId, ApprovedSelection>()
+  const approvals: PendingApprovals = new Map()
   const workerRoots = new Map<string, string>()
   const workerRunIds = new Map<string, string>()
   ctx.effect(() => ctx.tools.register(createCoordinationTool(ctx, config, approvals, workerRoots, workerRunIds)))
@@ -443,7 +459,9 @@ export function apply(ctx: Context, config: Config): void {
       return enforceWorkerTool(execution)
     })
     const stopAfterResult = ctx.on('tools/result', (execution) => {
-      if (execution.name === TOOL_NAME) approvals.delete(execution.callId)
+      if (execution.name === TOOL_NAME && execution.agent !== undefined) {
+        deletePendingApproval(approvals, execution.agent, execution.callId)
+      }
     })
     const stopOnChildStart = ctx.on('subagent/start', ({ id, runId }) => {
       if (workerRoots.has(String(id))) workerRunIds.set(String(id), String(runId))
@@ -462,8 +480,10 @@ export function apply(ctx: Context, config: Config): void {
 async function repositoryReadApprovalDecision(
   ctx: Context,
   execution: ToolExecution,
-  approvals: Map<ToolCallId, ApprovedSelection>,
+  approvals: PendingApprovals,
 ): Promise<PreToolDecision> {
+  const coordinator = execution.agent
+  if (coordinator === undefined) return { kind: 'deny', reason: 'repository coordination requires a live coordinator Session' }
   const args = readToolArgs(execution.arguments)
   if (args === undefined) return { kind: 'deny', reason: 'select exactly two registered Workspace roots and provide one analysis task' }
   const selections = await Promise.all(args.repositories.map(path => resolveRegisteredSelection(
@@ -472,13 +492,14 @@ async function repositoryReadApprovalDecision(
   const [first, second] = selections as [RegisteredSelection, RegisteredSelection]
   if (samePath(first.root, second.root)) return { kind: 'deny', reason: 'select two distinct registered Workspace roots' }
   const approved: ApprovedSelection = {
+    coordinatorSessionId: coordinator.session.id,
     repositories: [
       { workspaceId: String(first.workspace.id), root: first.root, title: first.workspace.title },
       { workspaceId: String(second.workspace.id), root: second.root, title: second.workspace.title },
     ],
     task: args.task,
   }
-  approvals.set(execution.callId, approved)
+  setPendingApproval(approvals, coordinator, execution.callId, approved)
   const selection = approved.repositories.map(repository => `${repository.title} (${repository.workspaceId}; ${repository.root})`)
   const reason = `Read-only analysis of selected repositories ${JSON.stringify(selection)} for task ${JSON.stringify(args.task)}`
   return {
@@ -487,20 +508,56 @@ async function repositoryReadApprovalDecision(
     displayReason: {
       en: [
         'Allow one read-only analysis of these two repositories?',
+        'Important: If sandbox restrictions are only partial, the app runs Git in a host process outside the operating-system sandbox.',
         `Repository 1: ${selection[0]}`,
         `Repository 2: ${selection[1]}`,
         `Task: ${args.task}`,
-        'After approval, this starts one read-only DSH child Session per repository. These Sessions have no write, shell, process, further delegation, or sandbox-mode-change capability.',
+        'After approval, one read-only DSH child Session starts per repository. The children cannot write files, run shell or process commands, delegate further work, or change sandbox settings.',
       ].join('\n'),
       zh: [
         '是否允许只读分析以下两个仓库？',
+        '重要：如果沙箱仅部分限制访问，应用会在操作系统沙箱之外的主机进程中运行 Git。',
         `仓库 1：${selection[0]}`,
         `仓库 2：${selection[1]}`,
         `任务：${args.task}`,
-        '批准后，每个仓库会启动一个只读 DSH 子级 Session。这些 Session 不具备写入、Shell、进程、进一步委派或更改沙箱模式的能力。',
+        '批准后，每个仓库会启动一个只读 DSH 子级 Session。子级不能写入文件、运行 Shell 或进程命令、继续委派或更改沙箱设置。',
       ].join('\n'),
     },
   }
+}
+
+function setPendingApproval(
+  pending: PendingApprovals,
+  agent: ApprovalAgent,
+  callId: ToolCallId,
+  approval: ApprovedSelection,
+): void {
+  let calls = pending.get(agent)
+  if (calls === undefined) {
+    calls = new Map()
+    pending.set(agent, calls)
+  }
+  calls.set(callId, approval)
+}
+
+function takePendingApproval(
+  pending: PendingApprovals,
+  agent: ApprovalAgent,
+  callId: ToolCallId,
+): ApprovedSelection | undefined {
+  const calls = pending.get(agent)
+  if (calls === undefined) return undefined
+  const approval = calls.get(callId)
+  calls.delete(callId)
+  if (calls.size === 0) pending.delete(agent)
+  return approval
+}
+
+function deletePendingApproval(pending: PendingApprovals, agent: ApprovalAgent, callId: ToolCallId): void {
+  const calls = pending.get(agent)
+  if (calls === undefined) return
+  calls.delete(callId)
+  if (calls.size === 0) pending.delete(agent)
 }
 
 function readToolArgs(value: unknown): ToolArgs | undefined {
@@ -780,9 +837,9 @@ async function runRepositoryWorker(
     gitIdentity: source.commonGitDirectory,
     head: source.state.head,
     branch: source.state.branch,
-    stagedPaths: source.state.stagedPaths,
-    unstagedPaths: source.state.unstagedPaths,
-    untrackedPaths: source.state.untrackedPaths,
+    stagedPaths: [...source.state.stagedPaths],
+    unstagedPaths: [...source.state.unstagedPaths],
+    untrackedPaths: [...source.state.untrackedPaths],
     stagedCount: source.state.stagedCount,
     unstagedCount: source.state.unstagedCount,
     untrackedCount: source.state.untrackedCount,
@@ -834,11 +891,25 @@ function enforceWorkerTool(execution: ToolExecution): PreToolDecision {
   return { kind: 'allow' }
 }
 
+function splitTextLines(text: string): string[] {
+  const lines = text.split(/\r?\n/u)
+  if (lines.at(-1) === '') lines.pop()
+  return lines
+}
+
 function renderStagedContent(value: unknown): string {
-  if (!isRecord(value) || typeof value.path !== 'string' || typeof value.stage !== 'number' || typeof value.content !== 'string') {
+  if (!isRecord(value) || typeof value.path !== 'string' || typeof value.stage !== 'number'
+    || typeof value.offset !== 'number' || !Array.isArray(value.lines) || typeof value.totalLines !== 'number') {
     return 'Staged index content is unavailable.'
   }
-  return `Staged index content for ${value.path} (stage ${value.stage}):\n${value.content}`
+  const lines = value.lines.flatMap((line) => {
+    if (!isRecord(line) || typeof line.number !== 'number' || typeof line.text !== 'string') return []
+    return [`${line.number}: ${line.text}`]
+  })
+  const page = lines.length === 0
+    ? `no lines returned at offset ${value.offset} of ${value.totalLines}`
+    : `lines ${value.offset}–${value.offset + lines.length - 1} of ${value.totalLines}`
+  return `Staged index content for ${value.path} (stage ${value.stage}; ${page}):\n${lines.join('\n')}`
 }
 
 function renderFileList(value: unknown): string {
@@ -847,7 +918,8 @@ function renderFileList(value: unknown): string {
   }
   const paths = value.paths.filter((path): path is string => typeof path === 'string')
   const omitted = typeof value.omittedSensitiveFiles === 'number' ? value.omittedSensitiveFiles : 0
-  return `Repository files (${value.totalFiles}; ${omitted} secret-like or Git metadata paths omitted):\n${paths.join('\n')}`
+  const omittedPaths = typeof value.omittedPaths === 'number' ? value.omittedPaths : 0
+  return `Repository files (${paths.length} of ${value.totalFiles}; ${omittedPaths} additional safe paths omitted; ${omitted} secret-like or Git metadata paths omitted):\n${paths.join('\n')}`
 }
 
 function renderWorkingTreeFile(value: unknown): string {
@@ -912,9 +984,9 @@ async function runGit(
   assertReadOnlyGitCommand(args)
   const policy: SandboxPolicy = { mode: 'read-only', workspaceRoot: root }
   const confined = await ctx.sandbox.confine(['git', ...args], policy, signal)
-  // Windows' restricted token cannot read ordinary user-owned repository files.
-  // Keep Git internal: only fixed read verbs run on the host process, and no
-  // arbitrary subprocess tool is exposed to the delegated worker.
+  // Partial sandbox enforcement is not sufficient for these repository reads.
+  // Keep Git internal: only fixed read verbs run through the host subprocess
+  // provider, and no arbitrary subprocess tool is exposed to the worker.
   const argv = confined.enforcement === 'full' ? confined.argv : ['git', ...args]
   const handle = ctx.subprocess.spawn({
     argv,

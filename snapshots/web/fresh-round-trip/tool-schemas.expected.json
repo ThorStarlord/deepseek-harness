@@ -140,22 +140,25 @@
       "name": "coordinate_repositories",
       "description": "Coordinate one read-only analysis across exactly two explicitly selected registered local Git Workspaces. DSH starts one fresh read-only child Session per repository and returns separate findings with repository identity, branch, committed revision, staged, unstaged, untracked and ignored state, child Session and run attribution. Workers inspect the live working trees; the result reports if source state changed during analysis. A user must approve the exact repository selection and task before repository contents are inspected.",
       "parameters": {
-        "repositories": {
-          "type": "array",
-          "required": true,
-          "minItems": 2,
-          "maxItems": 2,
-          "items": {
-            "type": "string",
-            "description": "Absolute root path of one registered Workspace."
+        "type": "object",
+        "properties": {
+          "repositories": {
+            "type": "array",
+            "description": "Exactly two absolute registered Workspace roots, in result order.",
+            "items": {
+              "type": "string",
+              "description": "Absolute root path of one registered Workspace."
+            }
           },
-          "description": "Exactly two absolute registered Workspace roots, in result order."
+          "task": {
+            "type": "string",
+            "description": "One analysis task to perform independently in each repository."
+          }
         },
-        "task": {
-          "type": "string",
-          "required": true,
-          "description": "One analysis task to perform independently in each repository."
-        }
+        "required": [
+          "repositories",
+          "task"
+        ]
       }
     },
     {

@@ -106,6 +106,20 @@ export type ParameterSchemaSpec = {
   [key: symbol]: never
 }
 
+/** Required output property for line-numbered text rows returned by file-reading tools. */
+export const lineNumberedTextRowsSchema = {
+  type: 'array',
+  required: true,
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      number: { type: 'integer', required: true },
+      text: { type: 'string', required: true },
+    },
+  },
+} as const satisfies ParameterPropertySpec
+
 /** Raw JSON Schema projection of the implicit parameter object. */
 export interface ParameterJsonSchema extends ObjectJsonSchema {
   properties: Record<string, JsonSchemaNode>

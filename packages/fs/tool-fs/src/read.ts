@@ -5,7 +5,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool, lineNumberedTextRowsSchema } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, ReadResultView, ToolResult } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-fs'
 import { buildWindow, formatReadOutput, langFromPath, readMetaFromMeta } from './read-render.ts'
@@ -89,18 +89,7 @@ export function applyReadTool(ctx: Context, caps: ReadToolCaps): void {
         properties: {
           path: { type: 'string', required: true, description: 'Canonical absolute path in the filesystem execution world.' },
           offset: { type: 'integer', required: true },
-          lines: {
-            type: 'array',
-            required: true,
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                number: { type: 'integer', required: true },
-                text: { type: 'string', required: true },
-              },
-            },
-          },
+          lines: lineNumberedTextRowsSchema,
           totalLines: { type: 'integer', required: true },
         },
       },

@@ -32,7 +32,7 @@ Both selected paths must resolve to absolute registered Workspace roots and dist
 
 ### Repository state
 
-Each child receives one repository's root instructions, current branch and committed `HEAD`, staged paths, unstaged paths, untracked non-ignored paths, and an ignored-file count. Working-tree reads observe live file contents; staged reads use the Git index. DSH does not create an immutable snapshot, stash changes, or copy, commit, reset, or clean the source repositories.
+Each child receives one repository's root instructions, current branch and committed `HEAD`, staged paths, unstaged paths, untracked non-ignored paths, and an ignored-file count. Working-tree reads observe live file contents; staged reads use the Git index. Both file readers return line-numbered pages of at most 400 lines and include the total line count. File listings return at most 500 safe paths and report how many additional safe paths were omitted. DSH does not create an immutable snapshot, stash changes, or copy, commit, reset, or clean the source repositories.
 
 The result identifies each Workspace and Git directory, child Session, run, stop reason, and findings. It reports the observation interval and whether a final Git and filesystem check detected a source-state change. Treat findings as potentially stale when the source changed or could not be rechecked.
 
@@ -64,11 +64,11 @@ The Web application profile supplies the read-only preset and this tool. Other c
 <details>
 <summary>Implementation details</summary>
 
-The parent tool call uses the existing one-shot approval path before repository inspection. The coordinator then validates both Workspace identities and runs one child Session per root. Each child is pinned to the DSH `read-only` sandbox policy and receives only `repository_list_files`, `repository_read_file`, and `read_staged_file`. It has no generic filesystem, shell, subprocess, write, child-delegation, or sandbox-policy tool.
+The parent tool call uses the existing one-shot approval path before repository inspection. The coordinator then validates both Workspace identities and runs one child Session per root. Each child is pinned to the DSH `read-only` sandbox policy and receives only `repository_list_files`, `repository_read_file`, and `read_staged_file`. It has no model-facing generic filesystem, shell, process, write, child-delegation, or sandbox-policy tool.
 
 The repository read tools check every requested path against that child's selected root, omit ignored and secret-like paths, and bound returned file content. The coordinator reports Git state independently for each root and returns both worker outcomes to the same parent Session.
 
-On Windows, the ACL sandbox reports partial enforcement and its restricted token cannot read ordinary user-owned repository files. Fixed, internally constructed Git read commands therefore run through the host subprocess provider; the child still receives no subprocess tool or caller-controlled command. These Git reads are not OS-confined on Windows. Tool-level file reads remain rooted at the selected Workspace, but this is not process-level read confinement.
+When the sandbox reports partial enforcement, fixed, internally constructed Git read commands run through the host subprocess provider; the child still receives no subprocess tool or caller-controlled command. These Git reads are not OS-confined. Tool-level file reads remain rooted at the selected Workspace, but this is not process-level read confinement.
 
 | File | Role |
 |---|---|
@@ -122,7 +122,7 @@ The schema remains a stable request prefix while the plugin registration is unch
 - **Live source** — workers read the current working tree and index over time, not an immutable snapshot. Concurrent edits can make findings stale; the returned state check is best-effort.
 - **Ignored and secret-like files** — ignored file contents are not automatically included. Secret-like paths and `.git` metadata are excluded from file reads.
 - **Path-based read containment** — the filesystem checks resolved paths inside each selected root, but its metadata does not detect hard-link aliases. A selected tree can contain an in-root hard link to data stored elsewhere, which DSH cannot identify as an external file.
-- **Windows OS confinement** — fixed Git inspection commands run as the host process because Windows ACL enforcement is partial. The child has no model-facing process tool, but Windows does not confine these internal Git reads at the process level. DSH file-read tools check containment within the selected root.
+- **OS confinement** — when a sandbox reports partial enforcement, fixed Git inspection commands run through the host subprocess provider. The child has no model-facing process tool, but the operating system does not confine these internal Git reads at the process level. DSH file-read tools check containment within the selected root.
 - **No write workflow** — this capability does not create clones or modify source files, the index, or Git state. Write-capable coordination remains unavailable pending separate security qualification.
 
 <a id="dev-note"></a>

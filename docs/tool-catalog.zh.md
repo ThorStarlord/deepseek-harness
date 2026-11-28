@@ -53,7 +53,7 @@
 | `@deepseek-ai/dsh-experimental-tool-worktree` | `create_worktree` | `ctx.tools`, `ctx.worktrees`, `a calling Agent` | `tool/call`, `Git branch and checkout`, `working-directory/change`, `tool/result` | - | 在 Web 和 Desktop 上通过变更请求与工作树组合包启用；其他 profile 可以选择独立组合包。在现有写权限下从固定的本地提交创建新分支与检出目录，再改变 Session 工作目录。离开时保留分支与检出目录。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
-| `@deepseek-ai/dsh-tool-multi-repository` | `coordinate_repositories`、`read_staged_file`、`repository_list_files`、`repository_read_file` | `ctx.tools`、`ctx.agents`、`ctx.workspaceRegistry`、`ctx.subagents`、`ctx.sandbox`、`ctx.subprocess`、`ctx.fs`、`ctx.agentPresets` | `tool/call`、`tool/result`、每个所选仓库一个只读子 Session | - | 此工具要求进程内 DSH 提供方支持只读策略固定和可信工具限制。它不提供写入流程；在 Windows 上，固定 Git 读取会在主机进程中运行，因为 ACL 强制执行不完整，但子级没有 subprocess 工具。 |
+| `@deepseek-ai/dsh-tool-multi-repository` | `coordinate_repositories`、`read_staged_file`、`repository_list_files`、`repository_read_file` | `ctx.tools`、`ctx.agents`、`ctx.workspaceRegistry`、`ctx.subagents`、`ctx.sandbox`、`ctx.subprocess`、`ctx.fs`、`ctx.agentPresets` | `tool/call`、`tool/result`、每个所选仓库一个只读子 Session | - | 此工具要求进程内 DSH 提供方支持只读策略固定和可信工具限制。它不提供写入流程；当沙箱仅部分强制执行时，固定且由内部构造的 Git 只读命令会通过主机进程运行，操作系统沙箱不会对这些读取施加进程级限制，但子级没有 subprocess 工具。 |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
 
 <a id="deepseek-aidsh-plugin-manager"></a>
@@ -2665,22 +2665,25 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 ```json
 {
-  "repositories": {
-    "type": "array",
-    "required": true,
-    "minItems": 2,
-    "maxItems": 2,
-    "items": {
-      "type": "string",
-      "description": "Absolute root path of one registered Workspace."
+  "type": "object",
+  "properties": {
+    "repositories": {
+      "type": "array",
+      "description": "Exactly two absolute registered Workspace roots, in result order.",
+      "items": {
+        "type": "string",
+        "description": "Absolute root path of one registered Workspace."
+      }
     },
-    "description": "Exactly two absolute registered Workspace roots, in result order."
+    "task": {
+      "type": "string",
+      "description": "One analysis task to perform independently in each repository."
+    }
   },
-  "task": {
-    "type": "string",
-    "required": true,
-    "description": "One analysis task to perform independently in each repository."
-  }
+  "required": [
+    "repositories",
+    "task"
+  ]
 }
 ```
 
@@ -2688,15 +2691,28 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 ### `read_staged_file`
 
-读取一个文件在 Git 暂存索引中的版本，不更改索引或工作树。
+读取一个文件在 Git 暂存索引中的有界分页内容，每页附行号。使用 `offset` 获取后续页；结果会报告总行数。此操作不会更改索引或工作树。
 
 ```json
 {
-  "path": {
-    "type": "string",
-    "required": true,
-    "description": "One repository-relative file path."
-  }
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "One repository-relative file path."
+    },
+    "offset": {
+      "type": "number",
+      "description": "1-based first line to return; defaults to 1."
+    },
+    "limit": {
+      "type": "number",
+      "description": "Maximum lines to return; defaults to 400."
+    }
+  },
+  "required": [
+    "path"
+  ]
 }
 ```
 
@@ -2707,7 +2723,10 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 列出此所选仓库中已跟踪且未被忽略的未跟踪路径；忽略文件会被排除。
 
 ```json
-{}
+{
+  "type": "object",
+  "properties": {}
+}
 ```
 
 来源：[`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
@@ -2718,25 +2737,30 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 ```json
 {
-  "path": {
-    "type": "string",
-    "required": true,
-    "description": "One path relative to the selected repository root."
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "One path relative to the selected repository root."
+    },
+    "offset": {
+      "type": "number",
+      "description": "1-based first line to return; defaults to 1."
+    },
+    "limit": {
+      "type": "number",
+      "description": "Maximum lines to return; defaults to 400."
+    }
   },
-  "offset": {
-    "type": "number",
-    "description": "1-based first line to return; defaults to 1."
-  },
-  "limit": {
-    "type": "number",
-    "description": "Maximum lines to return; defaults to 400."
-  }
+  "required": [
+    "path"
+  ]
 }
 ```
 
 来源：[`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
 
-此工具要求进程内 DSH 提供方支持只读策略固定和可信工具限制。它不提供写入流程；在 Windows 上，固定 Git 读取会在主机进程中运行，因为 ACL 强制执行不完整，但子级没有 subprocess 工具。
+此工具要求进程内 DSH 提供方支持只读策略固定和可信工具限制。它不提供写入流程；当沙箱仅部分强制执行时，固定且由内部构造的 Git 只读命令会通过主机进程运行，操作系统沙箱不会对这些读取施加进程级限制，但子级没有 subprocess 工具。
 
 <a id="deepseek-aidsh-tool-web"></a>
 

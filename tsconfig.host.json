@@ -28,6 +28,7 @@
     "apps/web/tests/home-activity-delegation.e2e.ts",
     "apps/web/tests/home-activity-artifacts.e2e.ts",
     "apps/web/tests/home-activity-claude-delegation.e2e.ts",
+    "apps/web/tests/home-activity-artifacts.e2e.ts",
     "apps/web/tests/home-activity-review.e2e.ts",
     "apps/web/tests/home-activity-annotations.e2e.ts",
     "apps/web/tests/home-activity-next-actions.e2e.ts",

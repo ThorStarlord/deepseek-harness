@@ -212,7 +212,7 @@ describe('CI workflow', () => {
     expect(steps[preparation]).not.toHaveProperty('continue-on-error', true)
   })
 
-  it.each(['ci.yml', 'ci-master.yml', 'e2e.yml', 'release.yml', 'release-vendor.yml'])(
+  it.each(['ci.yml', 'e2e.yml', 'release.yml', 'release-vendor.yml'])(
     '%s cancels superseded validation runs without crossing workflow or ref boundaries', (name) => {
       const workflow = loadWorkflow('.github/workflows/' + name)
       expect(workflow.concurrency).toEqual({
@@ -221,6 +221,25 @@ describe('CI workflow', () => {
       })
     },
   )
+
+  it('cancels only superseded runs of the same manually selected CI suite', () => {
+    const workflow = loadWorkflow('.github/workflows/ci-master.yml')
+    expect(workflow.concurrency).toEqual({
+      group: "${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.suite || 'push' }}",
+      'cancel-in-progress': true,
+    })
+    const suiteExpression = "github.event_name == 'workflow_dispatch' && inputs.suite || 'push'"
+    const groupSuffix = (event: string, suite?: string): unknown => runInNewContext(suiteExpression, {
+      github: { event_name: event },
+      inputs: suite === undefined ? {} : { suite },
+    }, { timeout: 1000 })
+
+    expect(groupSuffix('push')).toBe('push')
+    expect(groupSuffix('workflow_dispatch', 'sdk-snapshot')).toBe('sdk-snapshot')
+    expect(groupSuffix('workflow_dispatch', 'sdk-snapshot-refresh')).toBe('sdk-snapshot-refresh')
+    expect(groupSuffix('workflow_dispatch', 'web-snapshot-refresh')).toBe('web-snapshot-refresh')
+    expect(groupSuffix('workflow_dispatch', 'coverage')).toBe('coverage')
+  })
 
   it('cancels reusable CI builds without cancelling release-owned builds', () => {
     const workflow = loadWorkflow('.github/workflows/build-exe-for-python-sdk.yml')
@@ -275,6 +294,20 @@ describe('CI workflow', () => {
       if: '${{ !cancelled() }}',
       with: { path: '.coverage-times.json', key },
     })
+  })
+
+  it.each([
+    ['Linux', '.github/workflows/ci.yml', 'node-24-coverage'],
+    ['Windows', '.github/workflows/ci-windows.yml', 'windows-coverage'],
+  ])('builds profile artifacts before %s coverage process tests', (_platform, file, jobName) => {
+    const job = workflowJob(loadWorkflow(file), jobName)
+    if (!Array.isArray(job.steps)) throw new TypeError('coverage job must define steps')
+    const steps = job.steps.filter(isRecord)
+    const artifacts = steps.findIndex(step => step.run === 'pnpm run build:artifacts')
+    const coverage = steps.findIndex(step => step.run === 'pnpm run check:ci:coverage')
+
+    expect(artifacts).toBeGreaterThanOrEqual(0)
+    expect(coverage).toBeGreaterThan(artifacts)
   })
 
   it('isolates every pnpm action setup destination per runner', () => {
@@ -389,9 +422,11 @@ describe('CI workflow', () => {
     const windowsCoverage = windowsWorkflow.jobs['windows-coverage']
     const windowsNativeTests = windowsWorkflow.jobs['windows-native-tests']
     const windowsAggregate = windowsWorkflow.jobs['windows-checks-passed']
+    const serialLinux = masterWorkflow.jobs['serial-linux-selfhosted']
     const serialWindows = masterWorkflow.jobs['serial-windows']
     const node24 = workflow.jobs['node-24']
     const node24Coverage = workflow.jobs['node-24-coverage']
+    const node24Lint = workflow.jobs['node-24-lint']
     const node24Bench = workflow.jobs['node-24-bench']
     const node24Consumers = workflow.jobs['node-24-consumers']
     const nodeCompat = workflow.jobs['node-compat']
@@ -511,7 +546,11 @@ describe('CI workflow', () => {
     expect(report?.run).toContain('Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append')
 
     // serial-windows: master-only standby, self-hosted, non-blocking, lives in ci-master.
-    expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+    expect(serialLinux).toMatchObject({
+      if: "github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository != 'ThorStarlord/deepseek-harness'",
+      'runs-on': ['self-hosted', 'linux', 'x64', 'vm-backup'],
+    })
+    expect(serialWindows.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository != 'ThorStarlord/deepseek-harness'")
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
     // Its store must share the ReFS workspace volume for clone; the install
@@ -568,16 +607,18 @@ describe('CI workflow', () => {
     })
     expect(windowsAggregate.needs).not.toContain('serial-windows')
 
-    // Linux failover is a separate switch: the three enterprise Linux workers
+    // Linux failover is a separate switch: the four enterprise Linux workers
     // and the verdict job resolve their pool through DSH_CI_FAILOVER_LINUX,
     // never the Windows switch.
-    for (const [jobName, job] of [['node-24', node24], ['node-24-coverage', node24Coverage], ['node-24-consumers', node24Consumers]] as const) {
+    for (const [jobName, job] of [
+      ['node-24', node24], ['node-24-coverage', node24Coverage], ['node-24-lint', node24Lint], ['node-24-consumers', node24Consumers],
+    ] as const) {
       expect(typeof job['runs-on']).toBe('string')
       expect(job['runs-on'], `${jobName} runs-on must use the Linux failover switch`).toContain('DSH_CI_FAILOVER_LINUX')
       expect(job['runs-on'], `${jobName} runs-on must not use the Windows failover switch`).not.toContain('DSH_CI_FAILOVER_WINDOWS')
       expect(job['runs-on']).toContain('vm-backup')
       expect(evaluateRunsOn(job['runs-on'], { vars: { DSH_CI_FAILOVER_LINUX: 'blacksmith' } }))
-        .toBe(`blacksmith-${jobName === 'node-24' ? 8 : 16}vcpu-ubuntu-2404`)
+        .toBe(`blacksmith-${jobName === 'node-24' || jobName === 'node-24-lint' ? 8 : 16}vcpu-ubuntu-2404`)
     }
     expect(aggregate['runs-on']).toContain('DSH_CI_FAILOVER_LINUX')
     expect(aggregate['runs-on']).not.toContain('DSH_CI_FAILOVER_WINDOWS')
@@ -589,8 +630,13 @@ describe('CI workflow', () => {
     // self-hosted pool when the two values are mutually exclusive.
     const selectors = {
       linux: node24['runs-on'] as string,
+      linuxCoverage: node24Coverage['runs-on'] as string,
+      linuxLint: node24Lint['runs-on'] as string,
+      linuxConsumers: node24Consumers['runs-on'] as string,
       linuxAggregate: aggregate['runs-on'] as string,
       windows: windowsBuild['runs-on'] as string,
+      windowsCoverage: windowsCoverage['runs-on'] as string,
+      windowsNative: windowsNativeTests['runs-on'] as string,
     }
     const evaluate = (expression: string, vars: Record<string, string>, login = 'maintainer'): unknown => {
       return evaluateRunsOn(expression, {
@@ -601,8 +647,13 @@ describe('CI workflow', () => {
     }
     for (const [name, selector, variable, pool, hosted] of [
       ['linux gates', selectors.linux, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'dsh-ubuntu-24-04-16core'],
+      ['linux coverage', selectors.linuxCoverage, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'dsh-ubuntu-24-04-16core'],
+      ['linux lint', selectors.linuxLint, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'dsh-ubuntu-24-04-16core'],
+      ['linux consumers', selectors.linuxConsumers, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'dsh-ubuntu-24-04-16core'],
       ['linux aggregate', selectors.linuxAggregate, 'DSH_CI_FAILOVER_LINUX', ['self-hosted', 'linux', 'x64', 'vm-backup'], 'ubuntu-latest'],
       ['windows lanes', selectors.windows, 'DSH_CI_FAILOVER_WINDOWS', ['self-hosted', 'dsh-win-ci', 'windows'], 'dsh-windows-2025-16core'],
+      ['windows coverage', selectors.windowsCoverage, 'DSH_CI_FAILOVER_WINDOWS', ['self-hosted', 'dsh-win-ci', 'windows'], 'dsh-windows-2025-16core'],
+      ['windows native tests', selectors.windowsNative, 'DSH_CI_FAILOVER_WINDOWS', ['self-hosted', 'dsh-win-ci', 'windows'], 'dsh-windows-2025-16core'],
     ] as const) {
       expect(evaluate(selector, { [variable]: 'blacksmith' }), `${name} blacksmith value`).toMatch(/^blacksmith-/)
       expect(evaluate(selector, { [variable]: 'selfhosted' }), `${name} selfhosted value`).toEqual(pool)
@@ -612,6 +663,25 @@ describe('CI workflow', () => {
       for (const mode of ['', 'hosted', 'unexpected']) {
         expect(evaluate(selector, { [variable]: mode }), `${name} default on ${mode}`).toBe(hosted)
       }
+    }
+
+    // The personal fork has no upstream enterprise runner fleet. Its required
+    // PR lanes use standard GitHub-hosted runners while other repositories
+    // retain the enterprise defaults and explicit failover choices.
+    for (const [name, selector, variable, expected] of [
+      ['Linux gates', selectors.linux, 'DSH_CI_FAILOVER_LINUX', 'ubuntu-24.04'],
+      ['Linux coverage', selectors.linuxCoverage, 'DSH_CI_FAILOVER_LINUX', 'ubuntu-24.04'],
+      ['Linux lint', selectors.linuxLint, 'DSH_CI_FAILOVER_LINUX', 'ubuntu-24.04'],
+      ['Linux consumers', selectors.linuxConsumers, 'DSH_CI_FAILOVER_LINUX', 'ubuntu-24.04'],
+      ['Windows build', selectors.windows, 'DSH_CI_FAILOVER_WINDOWS', 'windows-2025'],
+      ['Windows coverage', selectors.windowsCoverage, 'DSH_CI_FAILOVER_WINDOWS', 'windows-2025'],
+      ['Windows native tests', selectors.windowsNative, 'DSH_CI_FAILOVER_WINDOWS', 'windows-2025'],
+    ] as const) {
+      expect(evaluateRunsOn(selector, {
+        vars: { [variable]: '' },
+        github: { repository: 'ThorStarlord/deepseek-harness', event: { pull_request: { user: { login: 'maintainer' } } } },
+        fromJSON: JSON.parse,
+      }), `${name} on the personal fork`).toBe(expected)
     }
 
     // The run-gates aggregate lanes stop at the first blocking gate failure so
@@ -775,9 +845,11 @@ describe('CI workflow', () => {
     const master = loadWorkflow('.github/workflows/ci-master.yml')
     if (!isRecord(master.on) || !isRecord(master.on.workflow_dispatch)
       || !isRecord(master.on.workflow_dispatch.inputs) || !isRecord(master.on.workflow_dispatch.inputs.suite)
+      || !isRecord(master.on.workflow_dispatch.inputs.source_sha)
       || !isRecord(master.jobs)) throw new TypeError('CI master must define manual suites and jobs')
+    expect(master.on.workflow_dispatch.inputs.source_sha).toMatchObject({ required: false, type: 'string' })
     expect(master.on.workflow_dispatch.inputs.suite.options).toEqual([
-      'larger-runner-benchmark', 'consolidated-runner-benchmark', 'ssh-helper', 'wine',
+      'larger-runner-benchmark', 'consolidated-runner-benchmark', 'ssh-helper', 'sdk-snapshot', 'sdk-snapshot-refresh', 'web-snapshot-refresh', 'coverage', 'wine',
     ])
     const wine = workflowJob(master, 'windows')
     if (typeof wine.if !== 'string') throw new TypeError('Wine must define a trigger condition')
@@ -790,6 +862,7 @@ describe('CI workflow', () => {
       ['workflow_dispatch', 'refs/heads/topic', 'ssh-helper', false],
       ['workflow_dispatch', 'refs/heads/topic', 'larger-runner-benchmark', false],
       ['workflow_dispatch', 'refs/heads/topic', 'consolidated-runner-benchmark', false],
+      ['workflow_dispatch', 'refs/heads/topic', 'sdk-snapshot', false],
     ] as const) {
       expect(runInNewContext(wine.if, { github: { event_name: event, ref }, inputs: { suite } }, { timeout: 1000 })).toBe(expected)
     }
@@ -800,6 +873,252 @@ describe('CI workflow', () => {
       return runInNewContext(job.if, { github: { event_name: 'workflow_dispatch', ref: 'refs/heads/topic' }, inputs: { suite: 'wine' } }, { timeout: 1000 }) === true
     }).map(([name]) => name)
     expect(enabled).toEqual(['windows'])
+  })
+
+  it('replays the selected SDK responsibility snapshot from the exact dispatched revision', () => {
+    const workflow = loadWorkflow('.github/workflows/ci-master.yml')
+    const job = workflowJob(workflow, 'sdk-snapshot')
+    if (!Array.isArray(job.steps) || typeof job.if !== 'string') {
+      throw new TypeError('CI master must define the focused SDK snapshot dispatch')
+    }
+    const steps: unknown[] = job.steps
+    expect(job).toMatchObject({
+      name: 'focused keyless SDK snapshot',
+      'runs-on': 'ubuntu-24.04',
+      'timeout-minutes': 45,
+      if: "github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot'",
+    })
+    const sourceCheck = steps.find(step => isRecord(step) && step.name === 'Verify selected source revision')
+    const checkout = steps.find(step => isRecord(step) && step.uses === 'actions/checkout@v7.0.1')
+    const scenarioCheck = steps.find(step => isRecord(step) && step.name === 'Verify the selected revision includes the requested SDK scenario')
+    const install = steps.find(step => isRecord(step) && step.name === 'Install (immutable)')
+    const build = steps.find(step => isRecord(step) && step.name === 'Build the selected revision')
+    const replay = steps.find(step => isRecord(step) && step.name === 'Replay the Activity responsibility status scenario')
+    if (!isRecord(sourceCheck) || typeof sourceCheck.run !== 'string' || !isRecord(checkout)
+      || !isRecord(scenarioCheck) || typeof scenarioCheck.run !== 'string'
+      || !isRecord(install) || !isRecord(build)
+      || !isRecord(replay) || typeof replay.run !== 'string') {
+      throw new TypeError('SDK snapshot dispatch must check its scenario and verify the selected test result')
+    }
+    const stepOrder = [sourceCheck, scenarioCheck, install, build, replay].map(step => steps.indexOf(step))
+    expect(stepOrder.every(index => index >= 0)).toBe(true)
+    expect(stepOrder).toEqual([...stepOrder].sort((left, right) => left - right))
+    expect(checkout.with).toMatchObject({ ref: '${{ inputs.source_sha || github.sha }}' })
+    expect(job.env).toMatchObject({ EXPECTED_SOURCE_SHA: '${{ inputs.source_sha || github.sha }}' })
+    expect(sourceCheck.run).toBe('test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"')
+    expect(scenarioCheck.run).toContain('test -f snapshots/sdk/activity-responsibility-status/snapshot.yml')
+    expect(scenarioCheck.run).toContain("'activity-responsibility-status': {")
+    expect(build).toMatchObject({ env: { DSH_BUILD_CLIENT_PROFILE: 'official' }, run: 'pnpm run build' })
+    expect(replay).toMatchObject({
+      env: {
+        DSH_EXAMPLE_MODE: 'lib',
+        DSH_SNAPSHOT_MAX_CONCURRENCY: '1',
+        SNAPSHOT_REPORT: '${{ runner.temp }}/activity-responsibility-status-vitest.json',
+      },
+    })
+    expect(replay.run).toContain('pnpm run test:snapshot snapshots/sdk/sdk.snapshot.ts -t activity-responsibility-status --reporter=json')
+    expect(replay.run).toContain('set +e')
+    expect(replay.run).toContain('snapshot_status=$?')
+    expect(replay.run).toContain('console.log(`${test.status}: ${test.fullName}`)')
+    expect(replay.run).toContain('if (( snapshot_status != 0 || report_status != 0 )); then exit 1; fi')
+    expect(replay.run).toContain('selected.length !== 1 || selected[0].status !== \'passed\'')
+    for (const [event, suite, expected] of [
+      ['workflow_dispatch', 'sdk-snapshot', true],
+      ['workflow_dispatch', 'wine', false],
+      ['pull_request', 'sdk-snapshot', false],
+      ['push', 'sdk-snapshot', false],
+    ] as const) {
+      expect(runInNewContext(job.if, { github: { event_name: event }, inputs: { suite } }, { timeout: 1000 })).toBe(expected)
+    }
+  })
+
+  it('refreshes only the selected keyless SDK snapshot from the exact dispatched revision', () => {
+    const workflow = loadWorkflow('.github/workflows/ci-master.yml')
+    const job = workflowJob(workflow, 'sdk-snapshot-refresh')
+    if (!Array.isArray(job.steps) || typeof job.if !== 'string') {
+      throw new TypeError('CI master must define the focused SDK snapshot refresh dispatch')
+    }
+    const steps: unknown[] = job.steps
+    expect(job).toMatchObject({
+      name: 'refresh selected SDK snapshot (manual)',
+      'runs-on': 'ubuntu-24.04',
+      'timeout-minutes': 45,
+      if: "github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot-refresh'",
+    })
+    const sourceCheck = steps.find(step => isRecord(step) && step.name === 'Verify selected source revision and SDK snapshot owner')
+    const checkout = steps.find(step => isRecord(step) && step.uses === 'actions/checkout@v7.0.1')
+    const install = steps.find(step => isRecord(step) && step.name === 'Install (immutable)')
+    const build = steps.find(step => isRecord(step) && step.name === 'Build the selected revision')
+    const refresh = steps.find(step => isRecord(step) && step.name === 'Refresh the Activity responsibility status scenario')
+    const upload = steps.find(step => isRecord(step) && step.name === 'Upload selected SDK refresh outputs for review')
+    if (!isRecord(sourceCheck) || typeof sourceCheck.run !== 'string' || !isRecord(checkout)
+      || !isRecord(install) || !isRecord(build) || !isRecord(refresh) || typeof refresh.run !== 'string'
+      || !isRecord(upload) || !isRecord(upload.with) || typeof upload.with.path !== 'string') {
+      throw new TypeError('SDK snapshot refresh must verify, build, refresh, and publish only the selected scenario')
+    }
+    const stepOrder = [sourceCheck, install, build, refresh, upload].map(step => steps.indexOf(step))
+    expect(stepOrder.every(index => index >= 0)).toBe(true)
+    expect(stepOrder).toEqual([...stepOrder].sort((left, right) => left - right))
+    expect(checkout.with).toMatchObject({ ref: '${{ inputs.source_sha || github.sha }}', 'persist-credentials': false })
+    expect(job.env).toMatchObject({ EXPECTED_SOURCE_SHA: '${{ inputs.source_sha || github.sha }}' })
+    expect(sourceCheck.run).toContain('test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"')
+    expect(sourceCheck.run).toContain('test -f snapshots/sdk/activity-responsibility-status/snapshot.yml')
+    expect(build).toMatchObject({ env: { DSH_BUILD_CLIENT_PROFILE: 'official' }, run: 'pnpm run build' })
+    expect(refresh).toMatchObject({
+      env: { DSH_EXAMPLE_MODE: 'lib', DSH_SNAPSHOT: 'refresh', DSH_SNAPSHOT_MAX_CONCURRENCY: '1' },
+    })
+    expect(refresh.env).toMatchObject({ SNAPSHOT_REPORT: '${{ runner.temp }}/activity-responsibility-status-refresh-vitest.json' })
+    expect(refresh.run).toContain('pnpm run test:snapshot:refresh snapshots/sdk/sdk.snapshot.ts -t activity-responsibility-status --reporter=json')
+    expect(refresh.run).toContain('report.testResults.flatMap(result => result.assertionResults)')
+    expect(refresh.run).toContain('selected.length !== 1 || selected[0].status !== \'passed\'')
+    expect(refresh.run).toContain('snapshot_status != 0 || report_status != 0')
+    expect(upload).toMatchObject({ if: 'always()', uses: 'actions/upload-artifact@v7.0.1' })
+    expect(upload.with).toMatchObject({
+      name: 'sdk-snapshot-refresh-${{ inputs.source_sha || github.sha }}',
+      'if-no-files-found': 'error',
+      path: 'snapshots/sdk/activity-responsibility-status/**',
+    })
+    for (const [event, suite, expected] of [
+      ['workflow_dispatch', 'sdk-snapshot-refresh', true],
+      ['workflow_dispatch', 'sdk-snapshot', false],
+      ['pull_request', 'sdk-snapshot-refresh', false],
+      ['push', 'sdk-snapshot-refresh', false],
+    ] as const) {
+      expect(runInNewContext(job.if, { github: { event_name: event }, inputs: { suite } }, { timeout: 1000 })).toBe(expected)
+    }
+  })
+
+  it('runs exact-revision coverage from a manual fork workflow dispatch', () => {
+    const workflow = loadWorkflow('.github/workflows/ci-master.yml')
+    const job = workflowJob(workflow, 'coverage')
+    if (!Array.isArray(job.steps) || typeof job.if !== 'string') {
+      throw new TypeError('CI master must define the exact-revision coverage dispatch')
+    }
+    const steps: unknown[] = job.steps
+    const checkout = steps.find(step => isRecord(step) && step.uses === 'actions/checkout@v7.0.1')
+    const sourceCheck = steps.find(step => isRecord(step) && step.name === 'Verify selected source revision')
+    const install = steps.find(step => isRecord(step) && step.name === 'Install dependencies and prepare bubblewrap')
+    const build = steps.find(step => isRecord(step) && step.name === 'Build artifacts for profile process tests')
+    const coverage = steps.find(step => isRecord(step) && step.name === 'Run exhaustive coverage')
+    if (!isRecord(checkout) || !isRecord(sourceCheck) || typeof sourceCheck.run !== 'string'
+      || !isRecord(install) || typeof install.run !== 'string' || !isRecord(build) || !isRecord(coverage)) {
+      throw new TypeError('Coverage dispatch must install the selected revision, prepare its sandbox, and run its gate')
+    }
+    expect(job).toMatchObject({
+      name: 'exact-revision coverage (manual)',
+      'runs-on': 'ubuntu-24.04',
+      'timeout-minutes': 60,
+      if: "github.event_name == 'workflow_dispatch' && inputs.suite == 'coverage'",
+    })
+    expect(checkout.with).toMatchObject({ ref: '${{ inputs.source_sha || github.sha }}', 'persist-credentials': false })
+    expect(job.env).toMatchObject({ EXPECTED_SOURCE_SHA: '${{ inputs.source_sha || github.sha }}' })
+    expect(sourceCheck.run).toBe('test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"')
+    expect(install.run).toContain('bash scripts/prepare-ci-bubblewrap.sh')
+    expect(build.run).toBe('pnpm run build:artifacts')
+    expect(coverage.run).toBe('pnpm run check:ci:coverage')
+    for (const [event, suite, expected] of [
+      ['workflow_dispatch', 'coverage', true],
+      ['workflow_dispatch', 'sdk-snapshot', false],
+      ['pull_request', 'coverage', false],
+      ['push', 'coverage', false],
+    ] as const) {
+      expect(runInNewContext(job.if, { github: { event_name: event }, inputs: { suite } }, { timeout: 1000 })).toBe(expected)
+    }
+  })
+
+  it('refreshes only the selected keyless Web snapshots from the exact dispatched revision', () => {
+    const workflow = loadWorkflow('.github/workflows/ci-master.yml')
+    const job = workflowJob(workflow, 'web-snapshot-refresh')
+    if (!Array.isArray(job.steps) || typeof job.if !== 'string') {
+      throw new TypeError('CI master must define the focused Web snapshot refresh dispatch')
+    }
+    const steps: unknown[] = job.steps
+    expect(job).toMatchObject({
+      name: 'refresh selected Web snapshots (manual)',
+      'runs-on': 'ubuntu-24.04',
+      'timeout-minutes': 45,
+      if: "github.event_name == 'workflow_dispatch' && inputs.suite == 'web-snapshot-refresh'",
+    })
+    const sourceCheck = steps.find(step => isRecord(step) && step.name === 'Verify selected source revision and snapshot owners')
+    const checkout = steps.find(step => isRecord(step) && step.uses === 'actions/checkout@v7.0.1')
+    const install = steps.find(step => isRecord(step) && step.name === 'Install (immutable)')
+    const sandbox = steps.find(step => isRecord(step) && step.name === 'Prepare bubblewrap (unrestrict userns)')
+    const browser = steps.find(step => isRecord(step) && step.name === 'Install Playwright Chromium and hosted dependencies')
+    const build = steps.find(step => isRecord(step) && step.name === 'Build the selected revision')
+    const ownerRefresh = steps.find(step => isRecord(step) && step.name === 'Refresh the shared tool-schema owner')
+    const refresh = steps.find(step => isRecord(step) && step.name === 'Refresh only the selected keyless Web scenarios')
+    const upload = steps.find(step => isRecord(step) && step.name === 'Upload selected refresh outputs for review')
+    if (!isRecord(sourceCheck) || typeof sourceCheck.run !== 'string' || !isRecord(checkout)
+      || !isRecord(install) || !isRecord(sandbox) || !isRecord(browser) || !isRecord(build)
+      || !isRecord(ownerRefresh) || typeof ownerRefresh.run !== 'string'
+      || !isRecord(refresh) || typeof refresh.run !== 'string'
+      || !isRecord(upload)) {
+      throw new TypeError('Web snapshot refresh must verify its selected owners, build, refresh, and publish review outputs')
+    }
+    if (!isRecord(upload.with) || typeof upload.with.path !== 'string') {
+      throw new TypeError('Web snapshot refresh must publish a string artifact path')
+    }
+    expect(checkout.with).toMatchObject({ ref: '${{ inputs.source_sha || github.sha }}' })
+    expect(job.env).toMatchObject({ EXPECTED_SOURCE_SHA: '${{ inputs.source_sha || github.sha }}' })
+    expect(sourceCheck.run).toContain('test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"')
+    for (const file of [
+      'apps/web/tests/minimal-preset.snapshot.ts',
+      'apps/web/tests/code-language.snapshot.ts',
+      'apps/web/tests/replay-round-trip.e2e.ts',
+      'apps/web/tests/subagent-fork-schedule.snapshot.ts',
+    ]) {
+      expect(sourceCheck.run).toContain(`test -f ${file}`)
+    }
+    expect(browser).toMatchObject({
+      run: 'pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install --with-deps chromium',
+    })
+    expect(sandbox).toMatchObject({ run: 'bash scripts/prepare-ci-bubblewrap.sh' })
+    expect(build).toMatchObject({ env: { DSH_BUILD_CLIENT_PROFILE: 'official' }, run: 'pnpm run build' })
+    expect(ownerRefresh).toMatchObject({
+      env: {
+        DSH_EXAMPLE_MODE: 'lib',
+        DSH_SNAPSHOT: 'refresh',
+        SNAPSHOT_REPORT: '${{ runner.temp }}/web-tool-schema-refresh-vitest.json',
+      },
+    })
+    expect(ownerRefresh.run).toContain('apps/web/tests/replay-round-trip.e2e.ts')
+    expect(ownerRefresh.run).toContain('-t "drives the recorded prompt to a settled turn"')
+    expect(ownerRefresh.run).toContain('--reporter=json --outputFile="$SNAPSHOT_REPORT"')
+    expect(ownerRefresh.run).toContain('selected.length !== 1 || selected[0].status !== \'passed\'')
+    expect(ownerRefresh.run).toContain('snapshot_status != 0 || report_status != 0')
+    expect(refresh).toMatchObject({ env: { DSH_EXAMPLE_MODE: 'lib', DSH_SNAPSHOT: 'refresh' } })
+    expect(refresh.env).toMatchObject({ SNAPSHOT_REPORT: '${{ runner.temp }}/web-selected-snapshots-vitest.json' })
+    for (const file of [
+      'apps/web/tests/minimal-preset.snapshot.ts',
+      'apps/web/tests/code-language.snapshot.ts',
+      'apps/web/tests/subagent-fork-schedule.snapshot.ts',
+    ]) {
+      expect(refresh.run).toContain(file)
+      expect(upload.with.path).toContain(file)
+    }
+    expect(refresh.run).toContain('--config vitest.web.config.ts')
+    expect(refresh.run).toContain('--update')
+    expect(refresh.run).toContain('--reporter=json --outputFile="$SNAPSHOT_REPORT"')
+    expect(refresh.run).toContain("'minimal-preset.snapshot.ts'")
+    expect(refresh.run).toContain("'code-language.snapshot.ts'")
+    expect(refresh.run).toContain("'subagent-fork-schedule.snapshot.ts'")
+    expect(refresh.run).toContain('if (missing.length > 0 || failed.length > 0')
+    expect(refresh.run).toContain('snapshot_status != 0 || report_status != 0')
+    expect(upload).toMatchObject({ if: 'always()', uses: 'actions/upload-artifact@v7.0.1' })
+    expect(upload.with).toMatchObject({
+      name: 'web-snapshot-refresh-${{ inputs.source_sha || github.sha }}',
+      'if-no-files-found': 'error',
+    })
+    expect(upload.with.path).toContain('snapshots/web/fresh-round-trip/**')
+    expect(upload.with.path).toContain('snapshots/web/minimal-compact/**')
+    for (const [event, suite, expected] of [
+      ['workflow_dispatch', 'web-snapshot-refresh', true],
+      ['workflow_dispatch', 'sdk-snapshot', false],
+      ['pull_request', 'web-snapshot-refresh', false],
+      ['push', 'web-snapshot-refresh', false],
+    ] as const) {
+      expect(runInNewContext(job.if, { github: { event_name: event }, inputs: { suite } }, { timeout: 1000 })).toBe(expected)
+    }
   })
 
   it('cancels superseded master runs without changing the post-merge job inventory', () => {
@@ -813,10 +1132,13 @@ describe('CI workflow', () => {
     }
 
     expect(workflow.concurrency).toEqual({
+      group: "${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.suite || 'push' }}",
+      'cancel-in-progress': true,
+    })
+    expect(prWorkflow.concurrency).toEqual({
       group: '${{ github.workflow }}-${{ github.ref }}',
       'cancel-in-progress': true,
     })
-    expect(prWorkflow.concurrency).toEqual(workflow.concurrency)
 
     // The exact event sets are what keep master-only jobs out of the PR check
     // panel: ci-master triggers only on push(master) + workflow_dispatch and
@@ -830,14 +1152,14 @@ describe('CI workflow', () => {
     const windowsWorkflow = loadWorkflow('.github/workflows/ci-windows.yml')
     if (!isRecord(windowsWorkflow.on)) throw new TypeError('CI Windows workflow must define on')
     expect(Object.keys(windowsWorkflow.on)).toEqual(['pull_request'])
-    expect(windowsWorkflow.concurrency).toEqual(workflow.concurrency)
+    expect(windowsWorkflow.concurrency).toEqual(prWorkflow.concurrency)
     // Duplicated env must not drift: a Node bump on one lane only would run
     // Linux and Windows against different versions.
     expect(windowsWorkflow.env).toEqual(prWorkflow.env)
     const pythonWorkflow = loadWorkflow('.github/workflows/ci-python.yml')
     if (!isRecord(pythonWorkflow.on)) throw new TypeError('CI Python workflow must define on')
     expect(Object.keys(pythonWorkflow.on)).toEqual(['pull_request'])
-    expect(pythonWorkflow.concurrency).toEqual(workflow.concurrency)
+    expect(pythonWorkflow.concurrency).toEqual(prWorkflow.concurrency)
     expect(pythonWorkflow.env).toEqual(prWorkflow.env)
 
     // Drills share the parent run’s supersession policy.
@@ -846,7 +1168,7 @@ describe('CI workflow', () => {
       if (!isRecord(job)) throw new TypeError(`${name} must be defined`)
       expect(job.concurrency).toBeUndefined()
       // Standby drills remain post-merge work, but share run cancellation.
-      expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
+      expect(job.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository != 'ThorStarlord/deepseek-harness'")
     }
 
     // Pin the post-merge runtime, Wine, and standby inventory.
@@ -854,6 +1176,10 @@ describe('CI workflow', () => {
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'larger-runner-benchmark'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'consolidated-runner-benchmark'",
       "github.event_name == 'workflow_dispatch' && inputs.suite == 'ssh-helper'",
+      "github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot'",
+      "github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot-refresh'",
+      "github.event_name == 'workflow_dispatch' && inputs.suite == 'web-snapshot-refresh'",
+      "github.event_name == 'workflow_dispatch' && inputs.suite == 'coverage'",
     ])
     const pushReachable = Object.entries(workflow.jobs)
       .filter(([, job]) => {
@@ -1520,7 +1846,25 @@ describe('Issue lifecycle workflow', () => {
     const lifecycle = loadWorkflow('.github/workflows/issue-lifecycle.yml')
     const policy = loadWorkflow('.github/workflows/issue-policy.yml')
     const lifecycleJob = workflowJob(lifecycle, 'lifecycle')
+    const policyJob = workflowJob(policy, 'policy')
     if (!Array.isArray(lifecycleJob.steps)) throw new TypeError('Issue lifecycle job must define steps')
+    const repositoryCondition = "github.repository == 'deepseek-harness/deepseek-harness'"
+    expect(lifecycleJob.if).toContain(repositoryCondition)
+    expect(policyJob.if).toBe(repositoryCondition)
+    const jobRunsFor = (job: Record<string, unknown>, repository: string): boolean => {
+      if (typeof job.if !== 'string') throw new TypeError('Project-backed issue workflow jobs must declare an upstream repository condition')
+      return runInNewContext(job.if, {
+        github: {
+          repository,
+          event_name: 'pull_request',
+          event: { action: 'opened', changes: { body: 'updated' } },
+        },
+      }, { timeout: 1000 }) === true
+    }
+    expect(jobRunsFor(lifecycleJob, 'deepseek-harness/deepseek-harness')).toBe(true)
+    expect(jobRunsFor(lifecycleJob, 'ThorStarlord/deepseek-harness')).toBe(false)
+    expect(jobRunsFor(policyJob, 'deepseek-harness/deepseek-harness')).toBe(true)
+    expect(jobRunsFor(policyJob, 'ThorStarlord/deepseek-harness')).toBe(false)
 
     expect(lifecycle.on).toHaveProperty('pull_request')
     expect(lifecycle.on).toHaveProperty('pull_request_review')
@@ -1566,7 +1910,7 @@ describe('Issue lifecycle workflow', () => {
     expect(preflightStep?.run).toContain('if [ -f .github/issue-management/selective-preflight.json ]; then')
     expect(preflightStep?.run).toContain('node .github/issue-management/policy.mjs pr-preflight')
     expect(preflightStep?.if).toBeUndefined()
-    expect(policyJob.if).toBeUndefined()
+    expect(policyJob.if).toBe("github.repository == 'deepseek-harness/deepseek-harness'")
     expect(validateStep?.if).toBe("${{ steps.preflight.outputs.legacy-automated != 'true' }}")
 
     expect(tokenStep).toMatchObject({

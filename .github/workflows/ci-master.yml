@@ -14,12 +14,20 @@ on:
           - larger-runner-benchmark
           - consolidated-runner-benchmark
           - ssh-helper
+          - sdk-snapshot
+          - sdk-snapshot-refresh
+          - web-snapshot-refresh
+          - coverage
           - wine
+      source_sha:
+        description: Exact commit to qualify for snapshot or coverage suites (defaults to this workflow revision)
+        required: false
+        type: string
 
-# New master pushes and manual runs replace obsolete checks in this workflow/ref.
-# Standby drills share cancellation; use completed runs as readiness evidence.
+# Master pushes replace older master validation; a newer dispatch replaces only the same suite.
+# Separate exact-revision evidence suites may run concurrently without cancelling each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.suite || 'push' }}
   cancel-in-progress: true
 
 permissions:
@@ -38,6 +46,307 @@ jobs:
     uses: ./.github/workflows/build-exe-for-ssh-helper.yml
     with:
       targets: node24-linux-x64,node24-linux-arm64,node24-macos-arm64,node24-macos-x64
+
+  sdk-snapshot:
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot'
+    name: focused keyless SDK snapshot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify selected source revision
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+
+      - name: Verify the selected revision includes the requested SDK scenario
+        run: |
+          test -f snapshots/sdk/activity-responsibility-status/snapshot.yml
+          grep -Fq "'activity-responsibility-status': {" snapshots/sdk/sdk.snapshot.ts
+
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the selected revision
+        env:
+          DSH_BUILD_CLIENT_PROFILE: official
+        run: pnpm run build
+
+      - name: Replay the Activity responsibility status scenario
+        env:
+          DSH_EXAMPLE_MODE: lib
+          DSH_SNAPSHOT_MAX_CONCURRENCY: '1'
+          SNAPSHOT_REPORT: ${{ runner.temp }}/activity-responsibility-status-vitest.json
+        run: |
+          set +e
+          pnpm run test:snapshot snapshots/sdk/sdk.snapshot.ts -t activity-responsibility-status --reporter=json --outputFile="$SNAPSHOT_REPORT"
+          snapshot_status=$?
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+
+          const report = JSON.parse(readFileSync(process.env.SNAPSHOT_REPORT, 'utf8'))
+          const selected = report.testResults.flatMap(result => result.assertionResults)
+            .filter(test => test.fullName.includes('activity-responsibility-status'))
+          console.log(`Selected snapshot tests: ${selected.length}`)
+          for (const test of selected) {
+            console.log(`${test.status}: ${test.fullName}`)
+            if (test.status !== 'passed') {
+              const firstError = test.failureMessages?.[0]?.split('\n').find(line => line.trim() !== '')
+              if (firstError) console.log(`Failure: ${firstError.trim()}`)
+            }
+          }
+          if (selected.length !== 1 || selected[0].status !== 'passed'
+            || report.numFailedTests !== 0 || report.numFailedTestSuites !== 0) {
+            throw new Error(`Expected exactly one passing Activity responsibility status test; found ${selected.length}`)
+          }
+          console.log(`Passed: ${selected[0].fullName}`)
+          NODE
+          report_status=$?
+          if (( snapshot_status != 0 || report_status != 0 )); then exit 1; fi
+
+  sdk-snapshot-refresh:
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'sdk-snapshot-refresh'
+    name: refresh selected SDK snapshot (manual)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify selected source revision and SDK snapshot owner
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          test -f snapshots/sdk/activity-responsibility-status/snapshot.yml
+          grep -Fq "'activity-responsibility-status': {" snapshots/sdk/sdk.snapshot.ts
+
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the selected revision
+        env:
+          DSH_BUILD_CLIENT_PROFILE: official
+        run: pnpm run build
+
+      - name: Refresh the Activity responsibility status scenario
+        env:
+          DSH_EXAMPLE_MODE: lib
+          DSH_SNAPSHOT: refresh
+          DSH_SNAPSHOT_MAX_CONCURRENCY: '1'
+          SNAPSHOT_REPORT: ${{ runner.temp }}/activity-responsibility-status-refresh-vitest.json
+        run: |
+          set +e
+          pnpm run test:snapshot:refresh snapshots/sdk/sdk.snapshot.ts -t activity-responsibility-status --reporter=json --outputFile="$SNAPSHOT_REPORT"
+          snapshot_status=$?
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+
+          const report = JSON.parse(readFileSync(process.env.SNAPSHOT_REPORT, 'utf8'))
+          const selected = report.testResults.flatMap(result => result.assertionResults)
+            .filter(test => test.fullName.includes('activity-responsibility-status'))
+          console.log(`Selected snapshot tests: ${selected.length}`)
+          for (const test of selected) console.log(`${test.status}: ${test.fullName}`)
+          if (selected.length !== 1 || selected[0].status !== 'passed'
+            || report.numFailedTests !== 0 || report.numFailedTestSuites !== 0) {
+            throw new Error(`Expected exactly one passing Activity responsibility status refresh test; found ${selected.length}`)
+          }
+          NODE
+          report_status=$?
+          if (( snapshot_status != 0 || report_status != 0 )); then exit 1; fi
+
+      - name: Upload selected SDK refresh outputs for review
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: sdk-snapshot-refresh-${{ inputs.source_sha || github.sha }}
+          if-no-files-found: error
+          path: snapshots/sdk/activity-responsibility-status/**
+
+  coverage:
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'coverage'
+    name: exact-revision coverage (manual)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
+      DSH_GATE_FAIL_FAST: '1'
+    steps:
+      - name: Use runner-owned temporary storage
+        run: echo "TMPDIR=${{ runner.temp }}" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify selected source revision
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install dependencies and prepare bubblewrap
+        run: |
+          pnpm install --frozen-lockfile &
+          install_pid=$!
+          bash scripts/prepare-ci-bubblewrap.sh &
+          sandbox_pid=$!
+          install_status=0
+          wait "$install_pid" || install_status=$?
+          sandbox_status=0
+          wait "$sandbox_pid" || sandbox_status=$?
+          if (( install_status != 0 )); then exit "$install_status"; fi
+          exit "$sandbox_status"
+
+      - name: Build artifacts for profile process tests
+        run: pnpm run build:artifacts
+
+      - name: Run exhaustive coverage
+        run: pnpm run check:ci:coverage
+
+  web-snapshot-refresh:
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'web-snapshot-refresh'
+    name: refresh selected Web snapshots (manual)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify selected source revision and snapshot owners
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          test -f apps/web/tests/minimal-preset.snapshot.ts
+          test -f apps/web/tests/code-language.snapshot.ts
+          test -f apps/web/tests/replay-round-trip.e2e.ts
+          test -f apps/web/tests/subagent-fork-schedule.snapshot.ts
+
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare bubblewrap (unrestrict userns)
+        run: bash scripts/prepare-ci-bubblewrap.sh
+
+      - name: Install Playwright Chromium and hosted dependencies
+        run: pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install --with-deps chromium
+
+      - name: Build the selected revision
+        env:
+          DSH_BUILD_CLIENT_PROFILE: official
+        run: pnpm run build
+
+      - name: Refresh the shared tool-schema owner
+        env:
+          DSH_EXAMPLE_MODE: lib
+          DSH_SNAPSHOT: refresh
+          SNAPSHOT_REPORT: ${{ runner.temp }}/web-tool-schema-refresh-vitest.json
+        run: |
+          set +e
+          pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/replay-round-trip.e2e.ts -t "drives the recorded prompt to a settled turn" --reporter=json --outputFile="$SNAPSHOT_REPORT"
+          snapshot_status=$?
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+
+          const report = JSON.parse(readFileSync(process.env.SNAPSHOT_REPORT, 'utf8'))
+          const selected = report.testResults.flatMap(result => result.assertionResults)
+            .filter(test => test.fullName.includes('drives the recorded prompt to a settled turn'))
+          console.log(`Selected Web owner tests: ${selected.length}`)
+          for (const test of selected) console.log(`${test.status}: ${test.fullName}`)
+          if (selected.length !== 1 || selected[0].status !== 'passed'
+            || report.numFailedTests !== 0 || report.numFailedTestSuites !== 0) {
+            throw new Error(`Expected exactly one passing Web tool-schema owner test; found ${selected.length}`)
+          }
+          NODE
+          report_status=$?
+          if (( snapshot_status != 0 || report_status != 0 )); then exit 1; fi
+
+      - name: Refresh only the selected keyless Web scenarios
+        env:
+          DSH_EXAMPLE_MODE: lib
+          DSH_SNAPSHOT: refresh
+          SNAPSHOT_REPORT: ${{ runner.temp }}/web-selected-snapshots-vitest.json
+        run: |
+          set +e
+          pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/minimal-preset.snapshot.ts apps/web/tests/code-language.snapshot.ts apps/web/tests/subagent-fork-schedule.snapshot.ts --update --reporter=json --outputFile="$SNAPSHOT_REPORT"
+          snapshot_status=$?
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs'
+
+          const report = JSON.parse(readFileSync(process.env.SNAPSHOT_REPORT, 'utf8'))
+          const expected = [
+            'minimal-preset.snapshot.ts',
+            'code-language.snapshot.ts',
+            'subagent-fork-schedule.snapshot.ts',
+          ]
+          const results = report.testResults.filter(result => expected.some(file => result.name.endsWith(file)))
+          const missing = expected.filter(file => !results.some(result => result.name.endsWith(file)
+            && result.assertionResults.length > 0))
+          const failed = results.flatMap(result => result.assertionResults).filter(test => test.status !== 'passed')
+          console.log(`Selected Web snapshot files: ${results.length}; tests: ${results.reduce((count, result) => count + result.assertionResults.length, 0)}`)
+          if (missing.length > 0 || failed.length > 0 || report.numFailedTests !== 0 || report.numFailedTestSuites !== 0) {
+            throw new Error(`Expected passing tests in each selected Web snapshot file; missing: ${missing.join(', ')}`)
+          }
+          NODE
+          report_status=$?
+          if (( snapshot_status != 0 || report_status != 0 )); then exit 1; fi
+
+      - name: Upload selected refresh outputs for review
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: web-snapshot-refresh-${{ inputs.source_sha || github.sha }}
+          if-no-files-found: error
+          path: |
+            apps/web/tests/minimal-preset.snapshot.ts
+            snapshots/web/minimal-preset/**
+            snapshots/web/minimal-read-image/**
+            snapshots/web/minimal-compact/**
+            apps/web/tests/code-language.snapshot.ts
+            snapshots/web/code-language/**
+            snapshots/web/fresh-round-trip/**
+            apps/web/tests/subagent-fork-schedule.snapshot.ts
+            snapshots/web/subagent-fork-schedule/**
 
   # These native runtime carriers are post-merge checks; release keeps all targets.
   python-runtime:
@@ -140,7 +449,7 @@ jobs:
   # persistent pnpm store and tool caches make them redundant (and saving here
   # would poison the hosted cache namespace with self-hosted paths).
   serial-linux-selfhosted:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository != 'ThorStarlord/deepseek-harness'
     name: serial / linux (self-hosted standby)
     runs-on: [self-hosted, linux, x64, vm-backup]
     steps:
@@ -234,7 +543,7 @@ jobs:
   # (and saving here would poison the hosted cache namespace with self-hosted
   # paths).
   serial-windows:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master' && github.repository != 'ThorStarlord/deepseek-harness'
     name: serial / windows (self-hosted standby)
     runs-on: [self-hosted, dsh-win-ci, windows]
     timeout-minutes: 120

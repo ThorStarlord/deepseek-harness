@@ -1154,6 +1154,7 @@ test('allocates lifecycle runners only for relevant reviews and PR body edits', 
   const job = source.slice(source.indexOf('  lifecycle:'))
   const beforeSteps = job.slice(0, job.indexOf('    steps:'))
   assert.ok(beforeSteps.includes('    if: >-'))
+  assert.ok(beforeSteps.includes("github.repository == 'deepseek-harness/deepseek-harness' &&"))
   assert.ok(beforeSteps.includes("(github.event_name != 'pull_request_review' || github.event.review.state == 'changes_requested') &&"))
   assert.ok(beforeSteps.includes("(github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.body != null)"))
   assert.ok(source.includes('ref: ${{ github.event.repository.default_branch }}'))

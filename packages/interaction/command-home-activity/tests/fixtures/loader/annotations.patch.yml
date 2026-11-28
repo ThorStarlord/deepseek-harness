@@ -34,11 +34,17 @@
     - id: home-activity-artifacts
       name: '@deepseek-ai/dsh-home-activity/artifacts'
 
+    - id: home-activity-handoffs
+      name: '@deepseek-ai/dsh-home-activity/handoffs'
+
     - id: home-activity-reviews
       name: '@deepseek-ai/dsh-home-activity/reviews'
 
     - id: home-activity-annotations
       name: '@deepseek-ai/dsh-home-activity/annotations'
+
+    - id: home-activity-strategic-episodes
+      name: '@deepseek-ai/dsh-home-activity/strategic-episodes'
 
     - id: command-home-activity
       name: '@deepseek-ai/dsh-command-home-activity'

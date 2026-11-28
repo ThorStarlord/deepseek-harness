@@ -744,7 +744,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(LocalSubprocessRuntime)
       await ctx.plugin(ToolMultiRepository)
     },
-    note: 'The tool requires an in-process DSH provider that supports a read-only policy pin and trusted tool restriction. It provides no write workflow; on Windows, fixed Git reads use the host process because ACL enforcement is partial, while the child has no subprocess tool.',
+    note: 'The tool requires an in-process DSH provider that supports a read-only policy pin and trusted tool restriction. It provides no write workflow; when sandbox enforcement is partial, fixed, internally constructed Git reads run through the host process without OS-level process isolation; the child has no subprocess tool.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-web',

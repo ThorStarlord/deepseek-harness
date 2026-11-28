@@ -1,0 +1,7 @@
+version: 1
+scenario: multi-repository-worker-tools
+profile: web
+composition: web-default
+recording: authored
+header:
+  class: web-default

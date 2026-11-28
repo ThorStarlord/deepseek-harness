@@ -61,6 +61,8 @@ interface WorkflowOptions {
   readonly noAlphaRootInstructions?: boolean
   readonly alphaRootMode?: 'ignored' | 'directory' | 'oversized' | 'outside-link' | 'claude'
   readonly malformedStagedIndex?: 'missing-separator' | 'missing-stage'
+  readonly stagedPagination?: boolean
+  readonly fileListOverflow?: boolean
   readonly hangChildren?: boolean
 }
 
@@ -200,7 +202,9 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
         { id: 'list-files', name: 'repository_list_files', args: {} },
         { id: 'read-nested-instructions', name: 'repository_read_file', args: { path: 'src/AGENTS.md' } },
         { id: 'read-live-tree', name: 'repository_read_file', args: { path: 'src/core.ts', offset: 1, limit: 10 } },
-        { id: 'read-staged-index', name: 'read_staged_file', args: { path: 'src/core.ts' } },
+        { id: 'read-staged-index', name: 'read_staged_file', args: options.stagedPagination === true
+          ? { path: 'src/long.ts', offset: 401, limit: 2 }
+          : { path: 'src/core.ts' } },
         { id: 'read-untracked', name: 'repository_read_file', args: { path: 'src/draft.ts' } },
       ])
     }
@@ -211,6 +215,16 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
       expect(transcript).toContain(options.changeAlphaDuringRead === true && repo === 'alpha'
         ? 'changed during analysis' : `working-${repo}`)
       expect(transcript).toContain(`staged-${repo}`)
+      expect(transcript).toContain('src/core.ts (working tree; lines 1–1 of 1)')
+      expect(transcript).toContain('Staged index content for src/core.ts (stage 0; lines 1–1 of 1)')
+      if (options.stagedPagination === true) {
+        expect(transcript).toContain(`401: staged-${repo}-401`)
+        expect(transcript).toContain(`402: staged-${repo}-402`)
+        expect(transcript).toContain('lines 401–402 of 405')
+      }
+      if (options.fileListOverflow === true && repo === 'alpha') {
+        expect(transcript).toContain('1 additional safe paths omitted')
+      }
       expect(transcript).toContain(`draft-${repo}`)
       expect(transcript).toContain(`${instruction} ROOT INSTRUCTIONS NESTED`)
       expect(transcript).toContain('src/draft.ts')
@@ -228,6 +242,7 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
           { id: 'read-large', name: 'repository_read_file', args: { path: 'large.bin' } },
           { id: 'read-offset', name: 'repository_read_file', args: { path: 'src/core.ts', offset: 0 } },
           { id: 'read-limit', name: 'repository_read_file', args: { path: 'src/core.ts', limit: 401 } },
+          { id: 'read-git-direct', name: 'repository_read_file', args: { path: '.git/config' } },
           { id: 'read-git-alias', name: 'repository_read_file', args: { path: 'git-link/config' } },
           { id: 'read-outside-alias', name: 'repository_read_file', args: { path: 'outside-link/AGENTS.md' } },
         ] : [],
@@ -238,12 +253,15 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
       expect(transcript).not.toContain('THIRD REPOSITORY CONTENT')
       if (options.attemptForbiddenTools === true) {
         expect(transcript).toContain('git-link/config')
+        expect(transcript).toContain('.git/config')
         expect(transcript).toContain('outside-link/AGENTS.md')
         return toolCallsResponse([
           { id: 'staged-ignored', name: 'read_staged_file', args: { path: 'cache.ignored' } },
           { id: 'staged-secret', name: 'read_staged_file', args: { path: 'private.pem' } },
           { id: 'staged-untracked', name: 'read_staged_file', args: { path: 'src/draft.ts' } },
           { id: 'staged-binary', name: 'read_staged_file', args: { path: 'binary.bin' } },
+          { id: 'staged-offset', name: 'read_staged_file', args: { path: 'src/core.ts', offset: 0 } },
+          { id: 'staged-limit', name: 'read_staged_file', args: { path: 'src/core.ts', limit: 401 } },
           { id: 'attempt-write', name: 'write', args: {
             file_path: join(thirdPath, 'forbidden.txt'), content: 'forbidden', sandbox_permissions: 'require_escalated',
           } },
@@ -351,6 +369,14 @@ describe('read-only multi-repository coordination', () => {
     const coordinate = f.ctx.tools.get('coordinate_repositories')
     expect(coordinate).toBeDefined()
     await expect(coordinate?.execute(
+      { repositories: [f.alphaPath], task: 'inspect one repository' },
+      directToolContext('coordinate_repositories', {}, f.parent),
+    )).rejects.toMatchObject({ code: 'REPOSITORY_COUNT_INVALID' })
+    await expect(coordinate?.execute(
+      { repositories: [f.alphaPath, f.betaPath, f.thirdPath], task: 'inspect three repositories' },
+      directToolContext('coordinate_repositories', {}, f.parent),
+    )).rejects.toMatchObject({ code: 'REPOSITORY_COUNT_INVALID' })
+    await expect(coordinate?.execute(
       { repositories: [f.alphaPath, f.betaPath], task: 'inspect both repositories' },
       directToolContext('coordinate_repositories', {}, undefined),
     )).rejects.toMatchObject({ code: 'PARENT_UNAVAILABLE' })
@@ -362,9 +388,10 @@ describe('read-only multi-repository coordination', () => {
     for (const name of REPO_READ_TOOLS) {
       const reader = f.ctx.tools.get(name)
       expect(reader).toBeDefined()
-      await expect(reader?.execute({}, directToolContext(name, {}, undefined)))
+      const args = name === 'repository_list_files' ? {} : { path: 'README.md' }
+      await expect(reader?.execute(args, directToolContext(name, {}, undefined)))
         .rejects.toMatchObject({ code: 'REPOSITORY_WORKER_REQUIRED' })
-      await expect(reader?.execute({}, directToolContext(name, {}, f.parent)))
+      await expect(reader?.execute(args, directToolContext(name, {}, f.parent)))
         .rejects.toMatchObject({ code: 'REPOSITORY_WORKER_REQUIRED' })
     }
     expect(await f.parent.ctx.waterfall(
@@ -374,13 +401,86 @@ describe('read-only multi-repository coordination', () => {
     )).toEqual({ kind: 'allow' })
   }, 30_000)
 
+  it('does not let one root Session consume another Session approval with a colliding call id', async () => {
+    const f = await setup()
+    const coordinator = f.ctx.tools.get('coordinate_repositories')
+    if (coordinator === undefined) throw new Error('coordinate_repositories tool is not mounted')
+    const callId = ToolCallId('same-fallback-call-id')
+    const args = { repositories: [f.alphaPath, f.betaPath] as const, task: 'inspect the same bounded task' }
+    const firstCall = directToolContext('coordinate_repositories', args, f.parent, callId)
+    expect(await f.parent.ctx.waterfall(
+      'tools/pre-execute', firstCall, () => Promise.resolve<PreToolDecision>({ kind: 'allow' }),
+    )).toMatchObject({ kind: 'ask' })
+
+    const second = await f.ctx.agentLoop.create(
+      SessionId(`unrelated-root-${randomUUID()}`), { provider: 'mock', model: 'mock' }, { cwd: f.thirdPath },
+    )
+    const collidingCall = directToolContext('coordinate_repositories', args, second, callId)
+    await expect(coordinator.execute(args, collidingCall)).rejects.toMatchObject({ code: 'READ_AUTHORIZATION_REQUIRED' })
+
+    await expect(coordinator.execute(args, firstCall)).resolves.toMatchObject({ repositories: expect.any(Array) })
+    expect(f.starts).toHaveLength(2)
+    expect(new Set(f.starts.map(start => start.id)).size).toBe(2)
+  }, 30_000)
+
+  it('returns later staged-file pages with line numbers and the total line count', async () => {
+    const f = await setup({ stagedPagination: true })
+    for (const [repo, path] of [['alpha', f.alphaPath], ['beta', f.betaPath]] as const) {
+      const content = `${Array.from({ length: 405 }, (_, index) => `staged-${repo}-${index + 1}`).join('\n')}\n`
+      await writeFile(join(path, 'src', 'long.ts'), content)
+      await git(path, ['add', '--', 'src/long.ts'])
+    }
+
+    f.parent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Compare Alpha and Beta staged file pages.' }], source: { kind: 'user' },
+    }))
+    await f.parent.whenIdle()
+    const childReads = f.adapter.requests.filter(request => request.sessionId !== f.parentId)
+      .map(request => JSON.stringify(request.messages))
+    expect(childReads.some(transcript => transcript.includes('401: staged-alpha-401')
+      && transcript.includes('402: staged-alpha-402') && transcript.includes('lines 401–402 of 405'))).toBe(true)
+    expect(childReads.some(transcript => transcript.includes('401: staged-beta-401')
+      && transcript.includes('402: staged-beta-402') && transcript.includes('lines 401–402 of 405'))).toBe(true)
+  }, 30_000)
+
+  it('states the number of safe paths omitted from an oversized file listing', async () => {
+    const f = await setup({ fileListOverflow: true })
+    await Promise.all(Array.from({ length: 496 }, (_, index) => writeFile(
+      join(f.alphaPath, `extra-${index}.txt`), `${index}\n`,
+    )))
+    f.parent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Compare Alpha and Beta file listings.' }], source: { kind: 'user' },
+    }))
+    await f.parent.whenIdle()
+    expect(f.adapter.requests.some(request => request.sessionId !== f.parentId
+      && JSON.stringify(request.messages).includes('1 additional safe paths omitted'))).toBe(true)
+  }, 30_000)
+
   it('renders safe fallbacks for malformed tool output values', async () => {
     const f = await setup()
     const render = (name: string, value: JsonValue) => f.ctx.tools.get(name)?.output?.render?.({}, value)
     expect(render('read_staged_file', null)).toEqual([{ type: 'text', text: 'Staged index content is unavailable.' }])
     expect(render('repository_list_files', null)).toEqual([{ type: 'text', text: 'Repository file list is unavailable.' }])
-    expect(render('repository_list_files', { paths: ['src/core.ts', 42], totalFiles: 2 }))
-      .toEqual([{ type: 'text', text: 'Repository files (2; 0 secret-like or Git metadata paths omitted):\nsrc/core.ts' }])
+    expect(render('repository_list_files', { paths: ['src/core.ts', 42], totalFiles: 2, omittedPaths: 0 }))
+      .toEqual([{ type: 'text', text: 'Repository files (1 of 2; 0 additional safe paths omitted; 0 secret-like or Git metadata paths omitted):\nsrc/core.ts' }])
+    expect(render('repository_list_files', {
+      paths: ['src/core.ts'], totalFiles: 501, omittedPaths: 1, omittedSensitiveFiles: 2,
+    })).toEqual([{
+      type: 'text',
+      text: 'Repository files (1 of 501; 1 additional safe paths omitted; 2 secret-like or Git metadata paths omitted):\nsrc/core.ts',
+    }])
+    expect(render('read_staged_file', {
+      path: 'src/core.ts', stage: 0, offset: 401, totalLines: 405,
+      lines: [{ number: 401, text: 'staged line 401' }, { number: 402, text: 'staged line 402' }],
+    })).toEqual([{
+      type: 'text',
+      text: 'Staged index content for src/core.ts (stage 0; lines 401–402 of 405):\n401: staged line 401\n402: staged line 402',
+    }])
+    expect(render('read_staged_file', {
+      path: 'src/core.ts', stage: 0, offset: 401, totalLines: 400, lines: [{ number: '401', text: 42 }],
+    })).toEqual([{
+      type: 'text', text: 'Staged index content for src/core.ts (stage 0; no lines returned at offset 401 of 400):\n',
+    }])
     expect(render('repository_read_file', null)).toEqual([{ type: 'text', text: 'Working-tree file content is unavailable.' }])
     expect(render('repository_read_file', {
       path: 'src/core.ts', offset: 1, totalLines: 2, lines: [{ number: 1, text: 'ok' }, { number: '2', text: 42 }],
@@ -602,8 +702,16 @@ describe('read-only multi-repository coordination', () => {
     expect(f.approvalRequests).toHaveLength(1)
     expect(f.approvalRequests[0]?.reason).toContain(f.alphaPath.replaceAll('\\', '\\\\'))
     expect(f.approvalRequests[0]?.reason).toContain(f.betaPath.replaceAll('\\', '\\\\'))
-    expect(f.approvalRequests[0]?.displayReason?.en).toContain('one read-only DSH child Session per repository')
-    expect(f.approvalRequests[0]?.displayReason?.zh).toContain('每个仓库会启动一个只读 DSH 子级 Session')
+    const displayReason = f.approvalRequests[0]?.displayReason
+    const englishReason = displayReason?.en ?? ''
+    const chineseReason = displayReason?.zh ?? ''
+    expect(englishReason).toContain('Important: If sandbox restrictions are only partial')
+    expect(englishReason).toContain('children cannot write files, run shell or process commands')
+    expect(englishReason.indexOf('Important:')).toBeLessThan(englishReason.indexOf('Repository 1:'))
+    expect(englishReason).not.toContain('On Windows')
+    expect(chineseReason).toContain('\u91cd\u8981\uff1a\u5982\u679c\u6c99\u7bb1\u4ec5\u90e8\u5206\u9650\u5236\u8bbf\u95ee')
+    expect(chineseReason).toContain('\u5b50\u7ea7\u4e0d\u80fd\u5199\u5165\u6587\u4ef6')
+    expect(chineseReason.indexOf('\u91cd\u8981\uff1a')).toBeLessThan(chineseReason.indexOf('\u4ed3\u5e93 1\uff1a'))
     expect(f.starts).toHaveLength(2)
     expect(f.ends).toHaveLength(2)
     expect(new Set(f.starts.map(start => start.id)).size).toBe(2)
@@ -640,7 +748,7 @@ describe('read-only multi-repository coordination', () => {
     expect(parentToolResult?.type === 'tool/result' ? JSON.stringify(parentToolResult.data) : '')
       .toContain('ignored untracked files excluded: 2')
     expect(parentToolResult?.type === 'tool/result' ? JSON.stringify(parentToolResult.data) : '')
-      .toContain('Git command enforcement: partial')
+      .toMatch(/Git command enforcement: (full|partial); partial enforcement uses fixed read-only Git commands/u)
 
     const after = await Promise.all([f.alphaPath, f.betaPath, f.thirdPath].map(snapshotRepository))
     expect(after).toEqual(before)
@@ -666,6 +774,7 @@ describe('read-only multi-repository coordination', () => {
 
   it('rejects write, shell, child, and policy attempts from read-only workers', async () => {
     const f = await setup({ attemptForbiddenTools: true })
+    const spawn = vi.spyOn(f.ctx.subprocess, 'spawn')
     for (const repo of [f.alphaPath, f.betaPath]) {
       await writeFile(join(repo, 'private.pem'), 'fixture-private-key')
       await writeFile(join(repo, 'binary.bin'), Buffer.from([0, 255, 1]))
@@ -674,25 +783,41 @@ describe('read-only multi-repository coordination', () => {
       await symlink(f.thirdPath, join(repo, 'outside-link'), 'junction')
       await symlink(join(repo, '.git'), join(repo, 'git-link'), 'junction')
     }
+    const originalStat = f.ctx.fs.stat.bind(f.ctx.fs)
+    vi.spyOn(f.ctx.fs, 'stat').mockImplementation(async (target, signal) => {
+      const info = await originalStat(target, signal)
+      return info !== undefined && f.ctx.fs.processPath(target).endsWith('large.bin')
+        ? { version: info.version, type: info.type }
+        : info
+    })
+    const boundedReads = vi.spyOn(f.ctx.fs, 'readBytes')
     const signal = new AbortController().signal
     const largeTarget = await f.ctx.fs.resolve(join(f.alphaPath, 'large.bin'), { signal })
-    expect(await f.ctx.fs.stat(largeTarget, signal)).toMatchObject({ type: 'file', size: 1024 * 1024 + 1 })
+    const largeInfo = await f.ctx.fs.stat(largeTarget, signal)
+    expect(largeInfo).toMatchObject({ type: 'file' })
+    expect(largeInfo?.size).toBeUndefined()
     const before = await Promise.all([f.alphaPath, f.betaPath, f.thirdPath].map(snapshotRepository))
     f.parent.followup(createUserMessage({
       content: [{ type: 'text', text: 'Analyze Alpha and Beta and try the available file, shell, and delegation operations.' }],
       source: { kind: 'user' },
     }))
     await f.parent.whenIdle()
+    const largeReads = boundedReads.mock.calls.filter(([target]) => f.ctx.fs.processPath(target).endsWith('large.bin'))
+    expect(largeReads).toHaveLength(2)
+    expect(largeReads.every(([, , maxBytes]) => maxBytes === 1024 * 1024)).toBe(true)
     const childRequests = f.adapter.requests.filter(request => request.sessionId !== f.parentId)
     expect(childRequests).toHaveLength(8)
     for (const request of childRequests) expect(request.tools?.map(tool => tool.name).sort()).toEqual(REPO_READ_TOOLS)
     for (const child of f.childAgents.values()) {
       const results = child.session.snapshotEvents().filter(event => event.type === 'tool/result')
-      expect(results).toHaveLength(30)
+      expect(results).toHaveLength(33)
       const errorCodes = results.flatMap(event => event.type === 'tool/result' && event.data.error !== undefined
         ? [event.data.error.code] : [])
       const largeReadResult = results.find(event => event.type === 'tool/result' && event.data.message.toolCallId === 'read-large')
+      const directGitConfigResult = results.find(event => event.type === 'tool/result'
+        && event.data.message.toolCallId === 'read-git-direct')
       expect(largeReadResult).toMatchObject({ data: { error: { code: 'FILE_TOO_LARGE' } } })
+      expect(directGitConfigResult).toMatchObject({ data: { error: { code: 'PROTECTED_PATH_DENIED' } } })
       expect(errorCodes).toContain('INVALID_PATH')
       expect(errorCodes).toContain('FILE_NOT_FOUND')
       expect(errorCodes).toContain('FILE_TOO_LARGE')
@@ -707,6 +832,9 @@ describe('read-only multi-repository coordination', () => {
         && event.data.message.toolCallId === toolCallId)
       expect(toolResultFor('read-git-alias')).toMatchObject({ data: { error: { code: 'PROTECTED_PATH_DENIED' } } })
       expect(toolResultFor('read-outside-alias')).toMatchObject({ data: { error: { code: 'OUTSIDE_REPOSITORY' } } })
+      expect(toolResultFor('read-ignored')).toMatchObject({ data: { error: { code: 'IGNORED_PATH_DENIED' } } })
+      expect(toolResultFor('staged-offset')).toMatchObject({ data: { error: { code: 'INVALID_READ_LIMIT' } } })
+      expect(toolResultFor('staged-limit')).toMatchObject({ data: { error: { code: 'INVALID_READ_LIMIT' } } })
       const attemptedCallIds = [
         'attempt-write', 'attempt-edit', 'attempt-patch', 'attempt-shell', 'attempt-pwsh',
         'attempt-child', 'attempt-coordination', 'attempt-policy-change', 'attempt-escalation',
@@ -717,8 +845,16 @@ describe('read-only multi-repository coordination', () => {
       expect(blockedResults.every(event => event.type === 'tool/result' && event.data.message.isError)).toBe(true)
       expect(blockedResults.some(event => event.type === 'tool/result' && event.data.error?.code === 'UNKNOWN_TOOL')).toBe(true)
     }
+    const checkedPaths = spawn.mock.calls
+      .map(([request]) => request.argv)
+      .filter(argv => argv.includes('check-ignore'))
+      .map(argv => argv.at(-1))
+    expect(checkedPaths).toContain('cache.ignored')
+    expect(checkedPaths).not.toContain('.git/config')
+    expect(checkedPaths).not.toContain('git-link/config')
+    expect(checkedPaths).not.toContain('outside-link/AGENTS.md')
     expect(await Promise.all([f.alphaPath, f.betaPath, f.thirdPath].map(snapshotRepository))).toEqual(before)
-  }, 30_000)
+  }, 90_000)
 
   it('returns an independent repository error without attributing it to the successful worker', async () => {
     const f = await setup({ failBeta: true })
@@ -823,8 +959,30 @@ describe('read-only multi-repository coordination', () => {
       ]))
   }, 30_000)
 
+  it('uses fixed host Git argv when the sandbox reports partial process enforcement', async () => {
+    const f = await setup()
+    vi.spyOn(f.ctx.sandbox, 'confine').mockImplementation(async argv => ({
+      argv: ['unavailable-sandbox-wrapper', ...argv],
+      enforcement: 'partial',
+      denialSignatures: [],
+      runnerFailureRules: [],
+    }))
+    const spawn = vi.spyOn(f.ctx.subprocess, 'spawn')
+
+    const result = await authorizeDirectCoordination(f, [f.alphaPath, f.betaPath], 'inspect under partial confinement')
+
+    expect((result as { repositories: readonly Record<string, unknown>[] }).repositories)
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ workspaceId: 'workspace-alpha', gitCommandEnforcement: 'partial' }),
+        expect.objectContaining({ workspaceId: 'workspace-beta', gitCommandEnforcement: 'partial' }),
+      ]))
+    expect(spawn.mock.calls.length).toBeGreaterThan(0)
+    expect(spawn.mock.calls.every(([request]) => request.argv[0] === 'git')).toBe(true)
+  }, 30_000)
+
   it('keeps a live read when metadata cannot report an untracked version or file size', async () => {
     const f = await setup()
+    await writeFile(join(f.alphaPath, 'src', 'draft.ts'), 'draft-alpha')
     const originalLstat = f.ctx.fs.lstat.bind(f.ctx.fs)
     vi.spyOn(f.ctx.fs, 'lstat').mockImplementation(async (path, options, signal) => {
       if (path === 'src/draft.ts' && options?.cwd === f.alphaPath) return undefined
@@ -842,6 +1000,8 @@ describe('read-only multi-repository coordination', () => {
     const rows = (result as { repositories: readonly Record<string, unknown>[] }).repositories
     expect(rows[0]).toMatchObject({ sourceChanged: false, workspaceId: 'workspace-alpha' })
     expect(f.adapter.requests.some(request => JSON.stringify(request.messages).includes('draft-alpha'))).toBe(true)
+    expect(JSON.stringify(f.adapter.requests.filter(request => request.sessionId !== f.parentId)))
+      .toContain('src/draft.ts (working tree; lines 1–1 of 1)')
   }, 30_000)
 
   it('handles accepted read-only Git exit codes when collected output is absent', async () => {

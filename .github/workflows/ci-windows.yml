@@ -36,6 +36,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
+          || github.repository == 'ThorStarlord/deepseek-harness' && 'windows-2025'
           || 'dsh-windows-2025-16core' }}
     name: windows node 24 / build & observational
     timeout-minutes: 60
@@ -125,6 +126,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
+          || github.repository == 'ThorStarlord/deepseek-harness' && 'windows-2025'
           || 'dsh-windows-2025-16core' }}
     name: windows node 24 / coverage
     timeout-minutes: 120
@@ -178,11 +180,9 @@ jobs:
           } else {
             pnpm install --frozen-lockfile
           }
-      # No build before coverage, matching the Linux lane: workspace imports
-      # resolve to src through the tsconfig paths map, and the lib-consuming
-      # suites (webworker-packer image-loadable, webworker-runtime
-      # transform-corpus, client ui-trajectory client-bundle) self-skip on
-      # unbuilt checkouts.
+      - name: Build artifacts for profile process tests
+        shell: pwsh
+        run: pnpm run build:artifacts
       - name: Run Windows coverage
         shell: pwsh
         run: pnpm run check:ci:coverage
@@ -203,6 +203,7 @@ jobs:
           || vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
+          || github.repository == 'ThorStarlord/deepseek-harness' && 'windows-2025'
           || 'dsh-windows-2025-16core' }}
     name: windows node 24 / native tests
     timeout-minutes: 60

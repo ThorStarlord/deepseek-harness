@@ -333,6 +333,9 @@ flowchart TD
     pkg_repeat_tool_reminder["repeat-tool-reminder"]
     pkg_tool_call_timeout_policy["tool-call-timeout-policy"]
   end
+  subgraph group_home["packages/home"]
+    pkg_home_activity["home-activity"]
+  end
   subgraph group_host["packages/host"]
     pkg_host_directory_picker["host-directory-picker"]
     pkg_host_directory_picker_auto["host-directory-picker-auto"]
@@ -348,6 +351,8 @@ flowchart TD
     pkg_anonymous_user_id["anonymous-user-id"]
   end
   subgraph group_interaction["packages/interaction"]
+    pkg_command_code_review["command-code-review"]
+    pkg_command_home_activity["command-home-activity"]
     pkg_commands["commands"]
     pkg_permission_presets["permission-presets"]
     pkg_tool_ask_user["tool-ask-user"]
@@ -483,6 +488,7 @@ flowchart TD
     pkg_workflow_ptc["workflow-ptc"]
   end
   subgraph group_workspace["packages/workspace"]
+    pkg_tool_multi_repository["tool-multi-repository"]
     pkg_workspace["workspace"]
   end
   pkg_session --> pkg_scope
@@ -1423,6 +1429,22 @@ flowchart TD
   pkg_tool_ralph --> pkg_system_prompt
   pkg_tool_ralph --> pkg_tools
   pkg_tool_ralph --> pkg_workflow
+  pkg_home_activity --> pkg_brand
+  pkg_home_activity --> pkg_session
+  pkg_home_activity --> pkg_session_persistence
+  pkg_home_activity --> pkg_storage_domain
+  pkg_home_activity --> pkg_subagent
+  pkg_home_activity --> pkg_workspace
+  pkg_command_code_review --> pkg_agent
+  pkg_command_code_review --> pkg_commands
+  pkg_command_code_review --> pkg_fs
+  pkg_command_code_review --> pkg_llm
+  pkg_command_code_review --> pkg_sandbox
+  pkg_command_code_review --> pkg_sandbox_policy
+  pkg_command_code_review --> pkg_session
+  pkg_command_code_review --> pkg_subagent
+  pkg_command_code_review --> pkg_subprocess
+  pkg_command_code_review --> pkg_working_directory
   pkg_sdk_protocol --> pkg_commands
   pkg_sdk_protocol --> pkg_llm
   pkg_sdk_protocol --> pkg_session
@@ -1445,6 +1467,28 @@ flowchart TD
   pkg_workflow_ptc --> pkg_tools
   pkg_workflow_ptc --> pkg_workflow
   pkg_workflow_ptc --> pkg_working_directory
+  pkg_tool_multi_repository --> pkg_agent
+  pkg_tool_multi_repository --> pkg_agent_preset_registry
+  pkg_tool_multi_repository --> pkg_fs
+  pkg_tool_multi_repository --> pkg_fs_sandbox
+  pkg_tool_multi_repository --> pkg_llm
+  pkg_tool_multi_repository --> pkg_persona
+  pkg_tool_multi_repository --> pkg_sandbox
+  pkg_tool_multi_repository --> pkg_subagent
+  pkg_tool_multi_repository --> pkg_subprocess
+  pkg_tool_multi_repository --> pkg_tools
+  pkg_tool_multi_repository --> pkg_workspace
+  pkg_command_home_activity --> pkg_agent
+  pkg_command_home_activity --> pkg_commands
+  pkg_command_home_activity --> pkg_home_activity
+  pkg_command_home_activity --> pkg_llm
+  pkg_command_home_activity --> pkg_session
+  pkg_command_home_activity --> pkg_session_persistence
+  pkg_command_home_activity --> pkg_skill
+  pkg_command_home_activity --> pkg_storage
+  pkg_command_home_activity --> pkg_subagent
+  pkg_command_home_activity --> pkg_tools
+  pkg_command_home_activity --> pkg_workspace
   pkg_schedule --> pkg_agent
   pkg_schedule --> pkg_api_session_controller
   pkg_schedule --> pkg_brand
@@ -1877,9 +1921,13 @@ flowchart TD
 | [`experimental-tool-subagent-oar`](../packages/experimental/tool-subagent-oar) | `experimental` | [`subagent`](../packages/subagent/subagent), [`tools`](../packages/core/tools) |
 | [`hooks-claude-code`](../packages/experimental/hooks-claude-code) | `experimental` | [`agent`](../packages/core/agent), [`hook-protocol`](../packages/experimental/hook-protocol), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`tools`](../packages/core/tools), [`working-directory`](../packages/session/working-directory) |
 | [`tool-ralph`](../packages/experimental/tool-ralph) | `experimental` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`subagent`](../packages/subagent/subagent), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools), [`workflow`](../packages/workflow/workflow) |
+| [`home-activity`](../packages/home/activity) | `home` | [`brand`](../packages/util/brand), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`storage-domain`](../packages/storage/storage-domain), [`subagent`](../packages/subagent/subagent), [`workspace`](../packages/workspace/workspace) |
+| [`command-code-review`](../packages/interaction/command-code-review) | `interaction` | [`agent`](../packages/core/agent), [`commands`](../packages/interaction/commands), [`fs`](../packages/fs/fs), [`llm`](../packages/llm/llm), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess), [`working-directory`](../packages/session/working-directory) |
 | [`sdk-protocol`](../packages/sdk/protocol) | `sdk` | [`commands`](../packages/interaction/commands), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`user-questions`](../packages/interaction/user-questions) |
 | [`agent-team`](../packages/team/agent-team) | `team` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection`](../packages/session/session-projection), [`subagent`](../packages/subagent/subagent), [`typert-protocol`](../packages/typert/protocol) |
 | [`workflow-ptc`](../packages/workflow/workflow-ptc) | `workflow` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`ptc-runtime`](../packages/ptc-runtime/ptc-runtime), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`tools`](../packages/core/tools), [`workflow`](../packages/workflow/workflow), [`working-directory`](../packages/session/working-directory) |
+| [`tool-multi-repository`](../packages/workspace/tool-multi-repository) | `workspace` | [`agent`](../packages/core/agent), [`agent-preset-registry`](../packages/preset/agent-preset-registry), [`fs`](../packages/fs/fs), [`fs-sandbox`](../packages/fs/fs-sandbox), [`llm`](../packages/llm/llm), [`persona`](../packages/preset/persona), [`sandbox`](../packages/sandbox/sandbox), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess), [`tools`](../packages/core/tools), [`workspace`](../packages/workspace/workspace) |
+| [`command-home-activity`](../packages/interaction/command-home-activity) | `interaction` | [`agent`](../packages/core/agent), [`commands`](../packages/interaction/commands), [`home-activity`](../packages/home/activity), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`skill`](../packages/skill/skill), [`storage`](../packages/storage/storage), [`subagent`](../packages/subagent/subagent), [`tools`](../packages/core/tools), [`workspace`](../packages/workspace/workspace) |
 | [`schedule`](../packages/schedule/schedule) | `schedule` | [`agent`](../packages/core/agent), [`api-session-controller`](../packages/api/session-controller), [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection`](../packages/session/session-projection), [`storage-domain`](../packages/storage/storage-domain), [`subagent`](../packages/subagent/subagent), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol), [`util-time`](../packages/util/time), [`workspace`](../packages/workspace/workspace) |
 | [`sdk-client`](../packages/sdk/client) | `sdk` | [`llm`](../packages/llm/llm), [`sdk-protocol`](../packages/sdk/protocol), [`session`](../packages/core/session) |
 | [`tool-agent-team`](../packages/team/tool-agent-team) | `team` | [`agent`](../packages/core/agent), [`agent-team`](../packages/team/agent-team), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
