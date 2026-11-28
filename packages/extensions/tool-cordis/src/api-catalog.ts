@@ -6224,8 +6224,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ClaudeCodeActivityDelegationAdmission extends ActivityDelegationAdmissionBase {\n    readonly provider: \'claude-code\';\n    readonly providerRunId: string;\n}',
   },
   {
+    name: 'ClaudeCodeActivityDelegationExecutionSelectionSnapshot',
+    declaration: 'export interface ClaudeCodeActivityDelegationExecutionSelectionSnapshot {\n    readonly provider: \'claude-code\';\n    readonly unavailableReason: \'external-provider-does-not-expose-dsh-composition\';\n}',
+  },
+  {
     name: 'ClaudeCodeActivityDelegationRequest',
-    declaration: 'export interface ClaudeCodeActivityDelegationRequest extends ActivityDelegationRequestBase {\n    readonly provider: \'claude-code\';\n}',
+    declaration: 'export interface ClaudeCodeActivityDelegationRequest extends ActivityDelegationRequestBase {\n    readonly provider: \'claude-code\';\n    readonly executionSelection?: ClaudeCodeActivityDelegationExecutionSelectionSnapshot | undefined;\n}',
   },
   {
     name: 'ClientArtifactBaseline',
@@ -6236,8 +6240,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CodexActivityDelegationAdmission extends ActivityDelegationAdmissionBase {\n    readonly provider: \'codex\';\n    readonly providerRunId: string;\n}',
   },
   {
+    name: 'CodexActivityDelegationExecutionSelectionSnapshot',
+    declaration: 'export interface CodexActivityDelegationExecutionSelectionSnapshot {\n    readonly provider: \'codex\';\n    readonly unavailableReason: \'external-provider-does-not-expose-dsh-composition\';\n}',
+  },
+  {
     name: 'CodexActivityDelegationRequest',
-    declaration: 'export interface CodexActivityDelegationRequest extends ActivityDelegationRequestBase {\n    readonly provider: \'codex\';\n}',
+    declaration: 'export interface CodexActivityDelegationRequest extends ActivityDelegationRequestBase {\n    readonly provider: \'codex\';\n    readonly executionSelection?: CodexActivityDelegationExecutionSelectionSnapshot | undefined;\n}',
   },
   {
     name: 'CollectedOutput',
@@ -9521,7 +9529,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SpawnActivityDelegationRequest',
-    declaration: 'export interface SpawnActivityDelegationRequest extends ActivityDelegationRequestBase {\n    readonly provider: \'spawn\';\n    readonly requestedChildSessionId: SessionId;\n}',
+    declaration: 'export interface SpawnActivityDelegationRequest extends ActivityDelegationRequestBase {\n    readonly provider: \'spawn\';\n    readonly requestedChildSessionId: SessionId;\n    readonly executionSelection?: DshActivityDelegationExecutionSelectionSnapshot | undefined;\n}',
   },
   {
     name: 'SpeechCatalog',

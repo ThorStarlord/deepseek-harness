@@ -52,7 +52,7 @@ const { exitCode, signal } = await handle.done
 const output = handle.collected.stdout?.readFrom(0)
 ```
 
-批处理命令若需要在受管理的进程范围退出后同时读取退出事实和已收集输出，可调用 `collectSubprocessResult(handle, signal)`。它先等待 `done` 和 `waitForExit()`，再读取 stdout 与 stderr；生命周期错误原样传播，调用方负责解释退出码、输出丢失以及命令专属错误。
+批处理命令若需要在受管理的进程范围退出后同时读取退出事实和已收集输出，可调用 `collectSubprocessResult(handle, signal)`。它先等待 `done` 和 `waitForExit()`，再读取 stdout 与 stderr。若取消信号在进程范围结束前中断等待，助手会抛出信号原因且不会返回部分输出。其他生命周期错误原样传播，调用方负责解释退出码、输出丢失以及命令专属错误。
 
 ### 选择输出投递方式
 

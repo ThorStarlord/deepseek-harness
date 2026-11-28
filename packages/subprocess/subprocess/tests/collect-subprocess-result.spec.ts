@@ -71,4 +71,32 @@ describe('collectSubprocessResult', () => {
     await expect(collectSubprocessResult(failedRange)).rejects.toBe(rangeFailure)
     expect(unusedReader).not.toHaveBeenCalled()
   })
+
+  it('rejects canceled or incomplete range waits without reading collected output', async () => {
+    const canceled = new Error('cancelled before the managed range exited')
+    const controller = new AbortController()
+    controller.abort(canceled)
+    const canceledReader = vi.fn((_fromByte: number) => stdout)
+    const canceledWait = vi.fn(async () => false)
+    const canceledHandle = createHandle({
+      waitForExit: canceledWait,
+      readStdout: canceledReader,
+      readStderr: canceledReader,
+    })
+
+    await expect(collectSubprocessResult(canceledHandle, controller.signal)).rejects.toBe(canceled)
+    expect(canceledReader).not.toHaveBeenCalled()
+
+    const unexpectedReader = vi.fn((_fromByte: number) => stdout)
+    const unexpectedWait = vi.fn(async () => false)
+    const unexpectedHandle = createHandle({
+      waitForExit: unexpectedWait,
+      readStdout: unexpectedReader,
+      readStderr: unexpectedReader,
+    })
+    await expect(collectSubprocessResult(unexpectedHandle)).rejects.toThrow(
+      'Managed subprocess range did not become quiescent before collected output was read',
+    )
+    expect(unexpectedReader).not.toHaveBeenCalled()
+  })
 })

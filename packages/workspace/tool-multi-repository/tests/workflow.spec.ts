@@ -495,17 +495,16 @@ describe('read-only multi-repository coordination', () => {
       () => Promise.resolve<PreToolDecision>({ kind: 'allow' }),
     )
 
-    expect(decision).toMatchObject({
-      kind: 'ask', reason: expect.stringContaining(f.alphaPath.replaceAll('\\', '\\\\')),
-    })
+    expect(decision.kind).toBe('ask')
+    if (decision.kind !== 'ask') throw new Error('An outside repository alias must require approval.')
+    expect(decision.reason).toContain(f.alphaPath.replaceAll('\\', '\\\\'))
     expect(f.approvalRequests).toEqual([])
     expect(f.starts).toEqual([])
   }, 60_000)
 
   it('rejects approval reuse after the task or registered Workspace identity changes', async () => {
     const f = await setup()
-    const tool = f.ctx.tools.get('coordinate_repositories')
-    expect(tool).toBeDefined()
+    expect(f.ctx.tools.get('coordinate_repositories')).toBeDefined()
     const taskCall = directToolContext('coordinate_repositories', {
       repositories: [f.alphaPath, f.betaPath], task: 'approved task',
     }, f.parent)
@@ -515,7 +514,7 @@ describe('read-only multi-repository coordination', () => {
       () => Promise.resolve<PreToolDecision>({ kind: 'allow' }),
     )
     expect(taskApproval).toMatchObject({ kind: 'ask' })
-    await expect(tool?.execute(
+    await expect(f.ctx.tools.get('coordinate_repositories')?.execute(
       { repositories: [f.alphaPath, f.betaPath], task: 'different task' }, taskCall,
     )).rejects.toMatchObject({ code: 'READ_AUTHORIZATION_REQUIRED' })
 
@@ -531,7 +530,8 @@ describe('read-only multi-repository coordination', () => {
       )
       expect(decision).toMatchObject({ kind: 'ask' })
       f.workspaces[index] = workspaceRecord(`${original?.id}-changed`, original?.title ?? '', original?.path ?? '')
-      await expect(tool?.execute(args, call)).rejects.toMatchObject({ code: 'APPROVED_REPOSITORY_CHANGED' })
+      await expect(f.ctx.tools.get('coordinate_repositories')?.execute(args, call))
+        .rejects.toMatchObject({ code: 'APPROVED_REPOSITORY_CHANGED' })
       if (original !== undefined) f.workspaces[index] = original
     }
     expect(f.starts).toEqual([])

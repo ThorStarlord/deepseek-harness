@@ -52,7 +52,7 @@ const { exitCode, signal } = await handle.done
 const output = handle.collected.stdout?.readFrom(0)
 ```
 
-For batch commands that need both exit facts and collected output after the managed process range exits, `collectSubprocessResult(handle, signal)` waits for `done` and `waitForExit()` before reading stdout and stderr. Lifecycle failures propagate unchanged; the caller interprets exit codes, lossy output, and command-specific errors.
+For batch commands that need both exit facts and collected output after the managed process range exits, `collectSubprocessResult(handle, signal)` waits for `done` and `waitForExit()` before reading stdout and stderr. If cancellation interrupts the range wait, the helper throws the signal reason and does not return partial output. Other lifecycle failures propagate unchanged; the caller interprets exit codes, lossy output, and command-specific errors.
 
 ### Choosing how output is delivered
 
