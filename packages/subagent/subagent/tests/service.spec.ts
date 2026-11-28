@@ -8,6 +8,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 
 import { HarnessError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { carrierKeyOf } from '@deepseek-ai/dsh-scope'
+import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import SubagentRuntime, {
   foldSubagentDescriptor,
   snapshotSubagentDescriptor,
@@ -104,6 +105,17 @@ async function start(subagents: SubagentRuntime, provider: string, request: Suba
 }
 
 describe('SubagentRuntime', () => {
+  it('binds browser prompt and interrupt controls to the target Session', async () => {
+    const { subagents } = await service()
+    const methods = remoteMethods(subagents)
+    const prompt = methods.find(method => method.method === 'prompt')
+    const interrupt = methods.find(method => method.method === 'interruptByUser')
+    const childSessionId = SessionId('target-session')
+
+    expect(prompt?.resources?.session?.({ childSessionId })).toBe(childSessionId)
+    expect(interrupt?.resources?.session?.(childSessionId)).toBe(childSessionId)
+  })
+
   it('resolves Activation roots only for exact live child and root instances', async () => {
     const { ctx, subagents } = await service()
     const root = await ctx.agents.create({ sessionId: SessionId('lineage-root') })
@@ -367,6 +379,48 @@ describe('SubagentRuntime', () => {
       .rejects.toMatchObject({ code: 'UNSUPPORTED_CAPABILITY' })
     expect(provider.startCount).toBe(0)
   })
+
+  it.each([
+    [
+      'the provider cannot pin read-only execution',
+      { ...ALL_CAPS, readOnly: false, toolFilter: true },
+      false,
+      { toolFilter: { allow: ['read'] } },
+    ],
+    [
+      'the request has no tool restriction',
+      { ...ALL_CAPS, readOnly: true, toolFilter: true },
+      false,
+      {},
+    ],
+    [
+      'the provider inherits parent context',
+      { ...ALL_CAPS, readOnly: true, toolFilter: true },
+      true,
+      { toolFilter: { allow: ['read'] } },
+    ],
+  ] as const)(
+    'rejects read-only execution when %s',
+    async (_reason, capabilities, inheritsParentContext, restriction) => {
+      const { ctx, subagents } = await service()
+      const prepare = vi.fn(async () => ({}))
+      subagents.registerProvider({
+        name: 'read-only',
+        capabilities,
+        inheritsParentContext,
+        prepareContinuable: prepare,
+      })
+      const { agent: parent } = await ctx.agents.create({ sessionId: SessionId('read-only-parent') })
+
+      await expect(start(subagents, 'read-only', baseRequest({ parent, readOnly: true, ...restriction })))
+        .rejects.toMatchObject({
+          code: 'UNSUPPORTED_CAPABILITY',
+          message: 'subagent provider "read-only" cannot pin a read-only child without an independent tool restriction',
+        })
+      expect(prepare).not.toHaveBeenCalled()
+      expect(ctx.agents.list()).toEqual([parent])
+    },
+  )
 
   it('rejects a reserved child identity for an external backend before startup', async () => {
     const { ctx, subagents } = await service()
