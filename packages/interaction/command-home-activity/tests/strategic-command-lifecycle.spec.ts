@@ -68,11 +68,13 @@ it('reports uncertain persistence failure without releasing the active turn guar
     agent: setup.agent,
     callId: ToolCallId('strategic-record-failure'),
     signal: new AbortController().signal,
-  } as never)).rejects.toThrow('could not be confirmed in storage. Open the Activity before retrying.')
+  } as never)).rejects.toThrow('Open the Activity to inspect whether it was recorded before starting a new assessment.')
 
   expect(record).toHaveBeenCalledTimes(1)
-  expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toContain('Activity Strategic Brief is active')
-  expect(setup.toolsByName.get('record_activity_strategic_brief')?.options.when?.({ agent: setup.agent } as never)).toBe(true)
+  expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toContain('was canceled')
+  expect(setup.toolsByName.get('record_activity_strategic_brief')?.options.when?.({ agent: setup.agent } as never)).toBe(false)
+  await expect(executeRecord(setup, requestId, JSON.stringify(brief()))).rejects.toThrow('does not match a live explicit assessment request')
+  expect(record).toHaveBeenCalledTimes(1)
 
   setup.ctx.emit('session/event', setup.agent.session as never, {
     type: 'turn/end',
@@ -736,8 +738,15 @@ it('preserves typed persistence errors for callers', async () => {
     const setup = createHarness(async name => skill(name), vi.fn(async () => { throw error }))
     expect(await assess(setup)).toMatchObject({ kind: 'success' })
     emitCoordinatorResult(setup)
-    await expect(executeRecord(setup, requestIdFrom(setup), JSON.stringify(brief()))).rejects.toBe(error)
-    expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toContain('Activity Strategic Brief is active')
+    const requestId = requestIdFrom(setup)
+    await expect(executeRecord(setup, requestId, JSON.stringify(brief()))).rejects.toBe(error)
+    expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toContain('was canceled')
+    expect(setup.toolsByName.get('record_activity_strategic_brief')?.options.when?.({ agent: setup.agent } as never)).toBe(false)
+    await expect(executeRecord(setup, requestId, JSON.stringify(brief()))).rejects.toThrow('does not match a live explicit assessment request')
+    expect(setup.record).toHaveBeenCalledTimes(1)
+    setup.ctx.emit('session/event', setup.agent.session as never, {
+      type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } },
+    } as never)
   }
 })
 

@@ -756,11 +756,15 @@ function createRecordTool(
         request.saved = true
         return { saved: true, episodeId: episode.id, revision: episode.revision, recordedAt: episode.recordedAt }
       } catch (error: unknown) {
+        request.cancelled = true
         if (error instanceof ActivityStrategicEpisodeError || error instanceof ActivityStrategicEpisodeStorageError) {
           throw error
         }
         ctx.logger.warn('command-home-activity: strategic episode save failed: %o', error)
-        throw new Error('Activity Strategic Brief could not be confirmed in storage. Open the Activity before retrying.')
+        throw new Error(
+          'Activity Strategic Brief could not be confirmed in storage. '
+          + 'Open the Activity to inspect whether it was recorded before starting a new assessment.',
+        )
       } finally {
         request.saveStarted = false
         onSaveSettled(sessionId, request)
