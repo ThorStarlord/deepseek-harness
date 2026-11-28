@@ -8,9 +8,10 @@ import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { ActivityDelegationAdmission, ActivityDelegationReport } from './delegation-types.ts'
 import type {
   ActivityDelegation,
-  ActivityDelegationExecutionSelectionSnapshot,
   ActivityDelegationId,
   ActivityDelegationUncertainty,
+  ActivityDelegationRequest,
+  ExternalActivityDelegationExecutionSelectionSnapshot,
   DshActivityDelegationExecutionSelectionSnapshot,
   CreateActivityDelegationRequest,
 } from './delegation-types.ts'
@@ -277,12 +278,7 @@ export function activityDelegationId(value: string): ActivityDelegationId {
 function freezeDelegation(record: ActivityDelegation): ActivityDelegation {
   return Object.freeze({
     ...record,
-    request: Object.freeze({
-      ...record.request,
-      ...(record.request.executionSelection === undefined ? {} : {
-        executionSelection: freezeExecutionSelectionSnapshot(record.request.executionSelection),
-      }),
-    }),
+    request: freezeDelegationRequest(record.request),
     ...(record.admission === undefined ? {} : { admission: Object.freeze({ ...record.admission }) }),
     ...(record.report === undefined ? {} : {
       report: Object.freeze({ ...record.report, nonTextBlockTypes: Object.freeze([...record.report.nonTextBlockTypes]) }),
@@ -292,26 +288,30 @@ function freezeDelegation(record: ActivityDelegation): ActivityDelegation {
   })
 }
 
+/** Copy a provider-specific request while preserving its provider and selection correlation. */
+function freezeDelegationRequest(request: ActivityDelegationRequest): ActivityDelegationRequest {
+  const copy = structuredClone(request)
+  if (copy.executionSelection?.provider === 'spawn') {
+    freezeDshExecutionSelectionSnapshot(copy.executionSelection)
+  } else if (copy.executionSelection !== undefined) {
+    Object.freeze(copy.executionSelection)
+  }
+  return Object.freeze(copy)
+}
+
 /** Copy a provider-specific launch snapshot so callers cannot mutate persisted selection. */
-function freezeExecutionSelectionSnapshot(
-  selection: ActivityDelegationExecutionSelectionSnapshot,
-): ActivityDelegationExecutionSelectionSnapshot {
-  if (selection.provider !== 'spawn') return Object.freeze({ ...selection })
-  return Object.freeze({
-    ...selection,
-    profile: Object.freeze({
-      ...selection.profile,
-      ...(selection.profile.status === 'available' && selection.profile.startedBundles !== null
-        ? { startedBundles: Object.freeze([...selection.profile.startedBundles]) }
-        : {}),
-    }),
-    preset: Object.freeze({
-      ...selection.preset,
-      ...(selection.preset.status === 'selected' && selection.preset.activeModules !== null
-        ? { activeModules: Object.freeze([...selection.preset.activeModules]) }
-        : {}),
-    }),
-  })
+function freezeDshExecutionSelectionSnapshot(
+  selection: DshActivityDelegationExecutionSelectionSnapshot,
+): void {
+  if (selection.profile.status === 'available' && selection.profile.startedBundles !== null) {
+    Object.freeze(selection.profile.startedBundles)
+  }
+  Object.freeze(selection.profile)
+  if (selection.preset.status === 'selected' && selection.preset.activeModules !== null) {
+    Object.freeze(selection.preset.activeModules)
+  }
+  Object.freeze(selection.preset)
+  Object.freeze(selection)
 }
 
 /** Record unavailable DSH configuration when a direct caller has no launcher context. */
@@ -323,14 +323,32 @@ function unavailableDshSelectionSnapshot(): DshActivityDelegationExecutionSelect
   }
 }
 
+type ExternalActivityDelegationProvider = Exclude<ActivityDelegationRequest['provider'], 'spawn'>
+type ExternalSelectionByProvider = {
+  readonly [Provider in ExternalActivityDelegationProvider]: Extract<
+    ExternalActivityDelegationExecutionSelectionSnapshot,
+    { readonly provider: Provider }
+  >
+}
+const unavailableExternalSelections: ExternalSelectionByProvider = {
+  codex: Object.freeze({
+    provider: 'codex',
+    unavailableReason: 'external-provider-does-not-expose-dsh-composition',
+  }),
+  'claude-code': Object.freeze({
+    provider: 'claude-code',
+    unavailableReason: 'external-provider-does-not-expose-dsh-composition',
+  }),
+}
+
 /** Record that an external provider does not expose its composition to DSH.
  * @param provider - Explicitly selected external provider.
  * @returns The provider-specific unavailable configuration fact.
  */
-function unavailableExternalSelectionSnapshot(
-  provider: 'codex' | 'claude-code',
-): ActivityDelegationExecutionSelectionSnapshot {
-  return { provider, unavailableReason: 'external-provider-does-not-expose-dsh-composition' }
+function unavailableExternalSelectionSnapshot<Provider extends ExternalActivityDelegationProvider>(
+  provider: Provider,
+): ExternalSelectionByProvider[Provider] {
+  return unavailableExternalSelections[provider]
 }
 
 /** Describe a rejected lifecycle transition without exposing persistence internals. */

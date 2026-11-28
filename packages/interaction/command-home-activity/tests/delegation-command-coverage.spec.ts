@@ -236,6 +236,129 @@ describe('Activity delegation command lifecycle', () => {
     }])
     expect(subagents.startActivation).toHaveBeenCalledTimes(1)
   })
+
+  it('records an unavailable external provider without attempting activation and reports an uncertain save failure', async () => {
+    const test = await fixture()
+    const unavailable = installSubagents(test.ctx, [], async () => {
+      throw new Error('An unavailable provider must not be activated.')
+    })
+
+    const result = await executeActivityDelegation(
+      test.ctx,
+      test.invocation,
+      `${test.activityId} codex Review the release checklist once.`,
+    )
+
+    expect(result.kind).toBe('error')
+    expect(result.text).toContain('Codex provider is unavailable; DSH did not attempt activation.')
+    expect(unavailable.startActivation).not.toHaveBeenCalled()
+    expect(test.ctx.homeActivityDelegations.list(test.activityId)).toMatchObject([{ status: 'not-admitted' }])
+
+    const persistenceFailure = await fixture()
+    const unavailableWithoutRecordedStatus = installSubagents(persistenceFailure.ctx, [], async () => {
+      throw new Error('An unavailable provider must not be activated.')
+    })
+    vi.spyOn(persistenceFailure.ctx.homeActivityDelegations, 'markNotAdmitted')
+      .mockRejectedValueOnce(new StorageError('unknown-state', 'private persistence detail'))
+
+    const failedSave = await executeActivityDelegation(
+      persistenceFailure.ctx,
+      persistenceFailure.invocation,
+      `${persistenceFailure.activityId} codex Review the release checklist once.`,
+    )
+
+    expect(failedSave.kind).toBe('error')
+    expect(failedSave.text).toContain('Saving this Activity state failed; no provider call occurred.')
+    expect(unavailableWithoutRecordedStatus.startActivation).not.toHaveBeenCalled()
+    expect(persistenceFailure.ctx.homeActivityDelegations.list(persistenceFailure.activityId)).toMatchObject([{ status: 'requested' }])
+  })
+
+  it('keeps an uncertain Claude Code start unconfirmed when its state write also fails', async () => {
+    const test = await fixture()
+    const subagents = installSubagents(test.ctx, ['claude-code'], async () => {
+      throw new Error('private provider transport detail')
+    })
+    vi.spyOn(test.ctx.homeActivityDelegations, 'markUnconfirmed')
+      .mockRejectedValueOnce(new StorageError('unknown-state', 'private persistence detail'))
+
+    const result = await executeActivityDelegation(
+      test.ctx,
+      test.invocation,
+      `${test.activityId} claude-code Review the release checklist once.`,
+    )
+
+    expect(result.kind).toBe('error')
+    expect(result.text).toContain('Saving the Activity status also failed; check the Activity after storage is available.')
+    expect(test.ctx.homeActivityDelegations.list(test.activityId)).toMatchObject([{ status: 'requested' }])
+    expect(subagents.startActivation).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a changed pre-dispatch provider from being treated as an uncertain start', async () => {
+    const test = await fixture()
+    const subagents = installSubagents(test.ctx, ['spawn'], async () => {
+      throw new SubagentError('The selected provider changed.', 'PROVIDER_CHANGED')
+    })
+    vi.spyOn(test.ctx.homeActivityDelegations, 'markNotAdmitted')
+      .mockRejectedValueOnce(new StorageError('unknown-state', 'private persistence detail'))
+
+    const result = await executeActivityDelegation(
+      test.ctx,
+      test.invocation,
+      `${test.activityId} spawn Review the release checklist once.`,
+    )
+
+    expect(result.kind).toBe('error')
+    expect(result.text).toContain('provider changed before dispatch, so DSH did not start this task.')
+    expect(result.text).toContain('Saving this Activity status failed; check the Activity before submitting another request.')
+    expect(result.text).not.toContain('do not repeat this task')
+    expect(subagents.startActivation).toHaveBeenCalledTimes(1)
+    expect(test.ctx.homeActivityDelegations.list(test.activityId)).toMatchObject([{ status: 'requested' }])
+  })
+
+  it('reports provider admission when persisting the admission record fails', async () => {
+    const test = await fixture()
+    const subagents = installSubagents(test.ctx, ['spawn'], async spec => activation(
+      spec,
+      Promise.resolve({ stopReason: 'completed', output: [{ type: 'text', text: 'Checklist reviewed.' }] }),
+    ))
+    vi.spyOn(test.ctx.homeActivityDelegations, 'recordAdmitted')
+      .mockRejectedValueOnce(new StorageError('unknown-state', 'private persistence detail'))
+
+    const result = await executeActivityDelegation(
+      test.ctx,
+      test.invocation,
+      `${test.activityId} spawn Review the release checklist once.`,
+    )
+
+    expect(result.kind).toBe('success')
+    expect(result.text).toContain('Delegation admitted but not durably confirmed: provider spawn')
+    expect(result.text).toContain('Execution was accepted by DSH, but the admission record could not be confirmed.')
+    expect(subagents.startActivation).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves the uncertain one-shot warning when external admission persistence fails', async () => {
+    const test = await fixture()
+    const subagents = installSubagents(test.ctx, ['codex'], async () => ({
+      childId: SessionId('codex-coverage-session'),
+      name: 'codex-coverage-run',
+      result: Promise.resolve({ stopReason: 'completed', output: [] }),
+      dispose: async () => {},
+    }))
+    vi.spyOn(test.ctx.homeActivityDelegations, 'recordAdmitted')
+      .mockRejectedValueOnce(new StorageError('unknown-state', 'private persistence detail'))
+
+    const result = await executeActivityDelegation(
+      test.ctx,
+      test.invocation,
+      `${test.activityId} codex Review the release checklist once.`,
+    )
+
+    expect(result.kind).toBe('success')
+    expect(result.text).toContain('Delegation admitted but not durably confirmed: provider codex')
+    expect(result.text).toContain('Execution was accepted by DSH, but its admission record could not be confirmed.')
+    expect(result.text).toContain('do not treat this record as proof it did not run')
+    expect(subagents.startActivation).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('Activity delegation execution selection limits', () => {

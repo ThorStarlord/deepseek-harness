@@ -50,11 +50,12 @@ it('reports malformed handoff JSON and invalid details without recording a hando
   const create = vi.fn()
   const { ctx } = context(undefined, { create, list: vi.fn(() => []) })
 
-  expect(await executeActivityHandoffCommand(ctx, invocation(' handoff'))).toMatchObject({
-    kind: 'error', text: expect.stringContaining('Usage: /activity handoff add'),
-  })
-  expect(await executeActivityHandoffCommand(ctx, invocation(` handoff ${'x'.repeat(16_384)}`)))
-    .toMatchObject({ kind: 'error', text: expect.stringContaining('must not exceed 16384 bytes') })
+  const malformed = await executeActivityHandoffCommand(ctx, invocation(' handoff'))
+  expect(malformed?.kind).toBe('error')
+  expect(malformed?.text).toContain('Usage: /activity handoff add')
+  const oversized = await executeActivityHandoffCommand(ctx, invocation(` handoff ${'x'.repeat(16_384)}`))
+  expect(oversized?.kind).toBe('error')
+  expect(oversized?.text).toContain('must not exceed 16384 bytes')
 
   const malformedJson = await executeActivityHandoffCommand(ctx, invocation(` handoff add ${activityId} {`))
   expect(malformedJson).toEqual({

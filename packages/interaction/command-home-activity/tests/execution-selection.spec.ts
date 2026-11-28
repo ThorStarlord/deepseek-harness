@@ -40,6 +40,21 @@ it('classifies only explicitly experimental package identities', () => {
   expect(isExplicitlyExperimentalPackage('cordis:experimental-loader')).toBe(false)
 })
 
+it('marks a selected profile experimental when its launch bundles include an experimental package', () => {
+  const selection = captureActivityDelegationExecutionSelection({
+    name: 'custom-review',
+    startedBundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-experimental-review'],
+  }, undefined, new Context())
+
+  expect(selection.profile).toEqual({
+    status: 'available',
+    name: 'custom-review',
+    startedBundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-experimental-review'],
+    classification: 'experimental',
+    classificationSource: 'experimental-package-metadata',
+  })
+})
+
 it('classifies a supported shipped profile and an unprefixed experimental preset module', () => {
   const context = new Context()
   const presets: Pick<AgentPresetRegistry, 'composedPreset' | 'inspectCompositions'> = {

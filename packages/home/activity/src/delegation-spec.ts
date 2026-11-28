@@ -60,21 +60,19 @@ const presetSelectionSnapshotSchema = z.discriminatedUnion('status', [
     ]),
   }).strict(),
 ])
-const executionSelectionSchema = z.union([
-  z.object({
-    provider: z.literal('spawn'),
-    profile: profileSelectionSnapshotSchema,
-    preset: presetSelectionSnapshotSchema,
-  }).strict(),
-  z.object({
-    provider: z.literal('codex'),
-    unavailableReason: z.literal('external-provider-does-not-expose-dsh-composition'),
-  }).strict(),
-  z.object({
-    provider: z.literal('claude-code'),
-    unavailableReason: z.literal('external-provider-does-not-expose-dsh-composition'),
-  }).strict(),
-])
+const spawnExecutionSelectionSchema = z.object({
+  provider: z.literal('spawn'),
+  profile: profileSelectionSnapshotSchema,
+  preset: presetSelectionSnapshotSchema,
+}).strict()
+const codexExecutionSelectionSchema = z.object({
+  provider: z.literal('codex'),
+  unavailableReason: z.literal('external-provider-does-not-expose-dsh-composition'),
+}).strict()
+const claudeCodeExecutionSelectionSchema = z.object({
+  provider: z.literal('claude-code'),
+  unavailableReason: z.literal('external-provider-does-not-expose-dsh-composition'),
+}).strict()
 const requestBaseSchema = z.object({
   task: z.string().trim().min(1).max(4_096)
     .refine(value => Buffer.byteLength(value, 'utf8') <= 4_096, 'task exceeds 4096 UTF-8 bytes'),
@@ -86,15 +84,15 @@ const requestSchema = z.union([
   requestBaseSchema.extend({
     provider: z.literal('spawn'),
     requestedChildSessionId: sessionIdSchema,
-    executionSelection: executionSelectionSchema.optional(),
+    executionSelection: spawnExecutionSelectionSchema.optional(),
   }).strict(),
   requestBaseSchema.extend({
     provider: z.literal('codex'),
-    executionSelection: executionSelectionSchema.optional(),
+    executionSelection: codexExecutionSelectionSchema.optional(),
   }).strict(),
   requestBaseSchema.extend({
     provider: z.literal('claude-code'),
-    executionSelection: executionSelectionSchema.optional(),
+    executionSelection: claudeCodeExecutionSelectionSchema.optional(),
   }).strict(),
 ])
 const admissionBaseSchema = z.object({
@@ -160,13 +158,11 @@ export const activityDelegationRecordSchema = z.object({
   const hasReport = record.report !== undefined
   const hasFailure = record.failure !== undefined
   const hasUncertainty = record.uncertainty !== undefined
-  const selectionMatchesProvider = record.request.executionSelection === undefined
-    || record.request.executionSelection.provider === record.request.provider
   const admissionMatchesProvider = record.admission === undefined
     || (record.request.provider === 'spawn'
       ? record.admission.provider === undefined || record.admission.provider === 'spawn'
       : record.admission.provider === record.request.provider)
-  const valid = selectionMatchesProvider && admissionMatchesProvider && (record.status === 'requested'
+  const valid = admissionMatchesProvider && (record.status === 'requested'
     ? !hasAdmission && !hasReport && !hasFailure && !hasUncertainty
     : record.status === 'not-admitted'
       ? !hasAdmission && !hasReport && hasFailure && !hasUncertainty

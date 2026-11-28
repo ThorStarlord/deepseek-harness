@@ -71,13 +71,26 @@ export interface DshActivityDelegationExecutionSelectionSnapshot {
   readonly preset: ActivityDelegationPresetSelectionSnapshot
 }
 
-/** Native external providers own their composition and do not expose DSH profile or preset facts. */
-export interface ExternalActivityDelegationExecutionSelectionSnapshot {
+/** Codex owns its runtime and does not expose DSH profile or preset facts. */
+export interface CodexActivityDelegationExecutionSelectionSnapshot {
   /** The selected provider owns a runtime outside DSH's profile and preset registry. */
-  readonly provider: 'codex' | 'claude-code'
+  readonly provider: 'codex'
   /** Reason DSH cannot report that provider's selected configuration. */
   readonly unavailableReason: 'external-provider-does-not-expose-dsh-composition'
 }
+
+/** Claude Code owns its runtime and does not expose DSH profile or preset facts. */
+export interface ClaudeCodeActivityDelegationExecutionSelectionSnapshot {
+  /** The selected provider owns a runtime outside DSH's profile and preset registry. */
+  readonly provider: 'claude-code'
+  /** Reason DSH cannot report that provider's selected configuration. */
+  readonly unavailableReason: 'external-provider-does-not-expose-dsh-composition'
+}
+
+/** External execution selections retain the provider identity that owns the runtime. */
+export type ExternalActivityDelegationExecutionSelectionSnapshot =
+  | CodexActivityDelegationExecutionSelectionSnapshot
+  | ClaudeCodeActivityDelegationExecutionSelectionSnapshot
 
 /** Provider-specific runtime configuration captured when the request is saved. */
 export type ActivityDelegationExecutionSelectionSnapshot =
@@ -93,8 +106,6 @@ interface ActivityDelegationRequestBase {
   readonly requestedAt: string
   /** Records that the request originated from the human `/activity` command. */
   readonly source: 'user-command'
-  /** Runtime selection captured before startup; absent only in records created before selection support. */
-  readonly executionSelection?: ActivityDelegationExecutionSelectionSnapshot | undefined
 }
 
 /** Request persisted before a local DSH child starts. */
@@ -103,18 +114,24 @@ export interface SpawnActivityDelegationRequest extends ActivityDelegationReques
   readonly provider: 'spawn'
   /** Child Session identity requested from the provider; does not establish admission. */
   readonly requestedChildSessionId: SessionId
+  /** DSH profile and preset facts; absent only in records created before selection support. */
+  readonly executionSelection?: DshActivityDelegationExecutionSelectionSnapshot | undefined
 }
 
 /** Request persisted before an external native Codex run starts. */
 export interface CodexActivityDelegationRequest extends ActivityDelegationRequestBase {
   /** External native Codex provider selected by the user. */
   readonly provider: 'codex'
+  /** Codex-owned runtime fact; absent only in records created before selection support. */
+  readonly executionSelection?: CodexActivityDelegationExecutionSelectionSnapshot | undefined
 }
 
 /** Request persisted before one external native Claude Code run starts. */
 export interface ClaudeCodeActivityDelegationRequest extends ActivityDelegationRequestBase {
   /** External native Claude Code provider selected by the user. */
   readonly provider: 'claude-code'
+  /** Claude Code-owned runtime fact; absent only in records created before selection support. */
+  readonly executionSelection?: ClaudeCodeActivityDelegationExecutionSelectionSnapshot | undefined
 }
 
 /** The explicit user request persisted before provider startup. */

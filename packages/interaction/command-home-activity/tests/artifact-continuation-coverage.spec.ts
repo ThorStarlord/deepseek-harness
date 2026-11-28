@@ -29,7 +29,7 @@ describe('Activity artifact command', () => {
     ['malformed arguments', `artifact add ${activityId}`],
     ['invalid Activity id', `artifact add invalid ${delegationId} ${workspaceId} {}`],
     ['invalid delegation id', `artifact add ${activityId} invalid ${workspaceId} {}`],
-    ['invalid Workspace id', `artifact add ${activityId} ${delegationId} invalid {}`],
+    ['invalid Workspace id', `artifact add ${activityId} ${delegationId} invalid ${JSON.stringify({ label: 'Patch output', location: 'src/result.ts' })}`],
     ['invalid JSON', `artifact add ${activityId} ${delegationId} ${workspaceId} {`],
     ['invalid artifact fields', `artifact add ${activityId} ${delegationId} ${workspaceId} {"label":"","location":"src/a.ts"}`],
     ['control characters', `artifact add ${activityId} ${delegationId} ${workspaceId} {"label":"reference","location":"src\\nfile.ts"}`],
@@ -38,6 +38,7 @@ describe('Activity artifact command', () => {
     const result = await executeActivityArtifactCommand(context({ create }), invocation(rawInput))
 
     expect(result?.kind).toBe('error')
+    if (_case === 'invalid Workspace id') expect(result?.text).toContain('Workspace id must be a UUID')
     expect(create).not.toHaveBeenCalled()
   })
 
@@ -128,8 +129,8 @@ describe('Activity artifact command', () => {
         artifactRow({ id: 'matched', workspaceId, delegationId, revision: 'rev-a' }),
       ]),
       getAssociations: vi.fn(() => ({ workspaceIds: [workspaceId, unavailableWorkspaceId], sessionIds: [] })),
-      getWorkspace: vi.fn(id => id === workspaceId ? { id, title: 'Project', path: 'C:\\projects\\project' } : undefined),
-      getDelegation: vi.fn(id => id === delegationId
+      getWorkspace: vi.fn((id: string) => id === workspaceId ? { id, title: 'Project', path: 'C:\\projects\\project' } : undefined),
+      getDelegation: vi.fn((id: string) => id === delegationId
         ? { id, activityId, request: { provider: 'spawn', parentSessionId: 'session-parent' }, status: 'reported' }
         : id === mismatchedDelegationId
           ? { id, activityId: '00000000-0000-4000-8000-000000000012', request: { provider: 'spawn', parentSessionId: 'session-other' }, status: 'reported' }

@@ -1,5 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SkillDefinition, SkillLookupOptions } from '@deepseek-ai/dsh-skill'
+import type { CommandResult } from '@deepseek-ai/dsh-commands'
 import type { ToolDefinition, ToolGuard, ToolRegistrationOptions } from '@deepseek-ai/dsh-tools'
 import { ActivityId } from '@deepseek-ai/dsh-home-activity'
 import { ActivityStrategicEpisodeError, ActivityStrategicEpisodeStorageError } from '@deepseek-ai/dsh-home-activity/strategic-episodes'
@@ -85,36 +88,36 @@ it('reports uncertain persistence failure without releasing the active turn guar
 })
 
 it('does not queue duplicate work in one Session and handles a synchronous steer failure', async () => {
-  const loadSkill = vi.fn(async name => skill(name))
+  const loadSkill = vi.fn((name: string, _options?: SkillLookupOptions) => skill(name))
   const setup = createHarness(loadSkill)
   expect(await assess(setup)).toMatchObject({ kind: 'success' })
-  await expect(assess(setup)).resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('already has an unfinished') })
+  expectErrorText(await assess(setup), 'already has an unfinished')
   expect(loadSkill).toHaveBeenCalledTimes(2)
 
   const queueFailure = createHarness(async name => skill(name))
   queueFailure.agent.steer.mockImplementation(() => { throw new Error('turn ended before enqueue') })
   const result = await assess(queueFailure)
-  expect(result).toMatchObject({ kind: 'error', text: expect.stringContaining('was not queued') })
+  expectErrorText(result, 'was not queued')
   expect(queueFailure.guards[0]?.({ name: 'shell', agent: queueFailure.agent } as never)).toBeUndefined()
 })
 
 it('rejects missing assessment prerequisites before reading sources', async () => {
   const unavailableActivity = createHarness(async name => skill(name), undefined, { activityAvailable: false })
-  await expect(assess(unavailableActivity)).resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('No saved Activity') })
+  expectErrorText(await assess(unavailableActivity), 'No saved Activity')
 
   const duplicateWorkspace = createHarness(async name => skill(name))
-  await expect(executeActivityStrategicAssessment(
+  expectErrorText(await executeActivityStrategicAssessment(
     duplicateWorkspace.ctx,
     { agent: duplicateWorkspace.agent, signal: new AbortController().signal } as never,
     activityId,
     [workspaceIds[0], workspaceIds[0]],
-  )).resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('two distinct registered Workspace IDs') })
+  ), 'two distinct registered Workspace IDs')
 
   const missingWorkspace = createHarness(async name => skill(name), undefined, { missingWorkspaceId: workspaceIds[1] })
-  await expect(assess(missingWorkspace)).resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('Both selected Workspace IDs must be registered') })
+  expectErrorText(await assess(missingWorkspace), 'Both selected Workspace IDs must be registered')
 
   const unavailableCoordinator = createHarness(async name => skill(name), undefined, { coordinatorAvailable: false })
-  await expect(assess(unavailableCoordinator)).resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('coordinator is unavailable') })
+  expectErrorText(await assess(unavailableCoordinator), 'coordinator is unavailable')
   expect(unavailableCoordinator.guards).toHaveLength(1)
   expect(unavailableCoordinator.agent.steer).not.toHaveBeenCalled()
 })
@@ -154,12 +157,12 @@ it('admits up to the configured pending-request cap across independent Sessions'
 
   const rejectedAgent = { ...setup.agent, id: 'agent-over-cap', session: { ...setup.agent.session, id: 'session-over-cap' }, steer: vi.fn() }
   setup.agents.set(rejectedAgent.id, rejectedAgent)
-  await expect(executeActivityStrategicAssessment(
+  expectErrorText(await executeActivityStrategicAssessment(
     setup.ctx,
     { agent: rejectedAgent, signal: new AbortController().signal } as never,
     activityId,
     workspaceIds,
-  )).resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('Too many Activity Strategic Brief requests') })
+  ), 'Too many Activity Strategic Brief requests')
   expect(loadSkill).toHaveBeenCalledTimes(64)
 
   setup.dispose()
@@ -170,11 +173,11 @@ it('admits up to the configured pending-request cap across independent Sessions'
 
 it('handles unavailable and oversized Skills without admitting an assessment', async () => {
   const missingSkill = createHarness(async name => name === 'using-sensemaking' ? undefined : skill(name))
-  await expect(assess(missingSkill)).resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('Required Sensemaking Skills are unavailable') })
+  expectErrorText(await assess(missingSkill), 'Required Sensemaking Skills are unavailable')
   expect(missingSkill.guards[0]?.({ name: 'shell', agent: missingSkill.agent } as never)).toBeUndefined()
 
   const oversizedSkills = createHarness(async name => ({ name, content: 'x'.repeat(33 * 1024), provider: 'fixture' }))
-  await expect(assess(oversizedSkills)).resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('exceed the assessment context limit') })
+  expectErrorText(await assess(oversizedSkills), 'exceed the assessment context limit')
   expect(oversizedSkills.guards[0]?.({ name: 'shell', agent: oversizedSkills.agent } as never)).toBeUndefined()
   expect(oversizedSkills.agent.steer).not.toHaveBeenCalled()
 })
@@ -194,19 +197,19 @@ it('cancels Skill loading and reports other-Actor and absent-request cancellatio
   const setup = createHarness((_, options) => new Promise((_resolve, reject) => {
     skillLoadCount += 1
     rejectSkill = reject
-    options?.signal.addEventListener('abort', () => reject(new Error('Skill load aborted')), { once: true })
+    options?.signal?.addEventListener('abort', () => { reject(new Error('Skill load aborted')) }, { once: true })
   }))
   const loading = assess(setup)
   expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toContain('Skills are loading')
-  await expect(assess(setup)).resolves.toMatchObject({ kind: 'error', text: expect.stringContaining('already has an unfinished') })
+  expectErrorText(await assess(setup), 'already has an unfinished')
   expect(skillLoadCount).toBe(2)
   const otherAgent = { ...setup.agent, id: 'other-agent' }
   setup.agents.set(otherAgent.id, otherAgent)
   expect(setup.guards[0]?.({ name: 'shell', agent: otherAgent } as never)).toContain('another Agent')
-  expect(cancelActivityStrategicAssessment(setup.ctx, { agent: otherAgent } as never)).toMatchObject({ kind: 'success', text: expect.stringContaining('No unfinished') })
-  expect(cancelActivityStrategicAssessment(setup.ctx, { agent: { ...setup.agent } } as never)).toMatchObject({ kind: 'error', text: expect.stringContaining('live requesting Agent') })
-  expect(cancelActivityStrategicAssessment(setup.ctx, { agent: setup.agent } as never)).toMatchObject({ kind: 'success', text: expect.stringContaining('Canceled Activity Strategic Brief setup') })
-  expect(await loading).toMatchObject({ kind: 'error', text: expect.stringContaining('setup was canceled') })
+  expectTextContaining(cancelActivityStrategicAssessment(setup.ctx, { agent: otherAgent } as never), 'No unfinished')
+  expectErrorText(cancelActivityStrategicAssessment(setup.ctx, { agent: { ...setup.agent } } as never), 'live requesting Agent')
+  expectTextContaining(cancelActivityStrategicAssessment(setup.ctx, { agent: setup.agent } as never), 'Canceled Activity Strategic Brief setup')
+  expectErrorText(await loading, 'setup was canceled')
   expect(rejectSkill).toBeTypeOf('function')
   expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toBeUndefined()
 })
@@ -216,7 +219,7 @@ it('retains a canceled request guard until an in-flight coordinator result retur
   expect(await assess(setup)).toMatchObject({ kind: 'success' })
   emitCoordinatorCall(setup)
   expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toContain('read returns')
-  expect(cancelActivityStrategicAssessment(setup.ctx, { agent: setup.agent } as never)).toMatchObject({ kind: 'success', text: expect.stringContaining('Canceled unfinished') })
+  expectTextContaining(cancelActivityStrategicAssessment(setup.ctx, { agent: setup.agent } as never), 'Canceled unfinished')
   expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toContain('in-flight coordinator call must return and the current turn must end')
 
   setup.ctx.emit('session/event', setup.agent.session as never, {
@@ -288,10 +291,10 @@ it('keeps a started save guarded through TTL expiry until persistence settles', 
     if (requestId === undefined) throw new Error('The assessment request id was not included in its instruction')
     emitCoordinatorResult(setup)
     const saving = executeRecord(setup, requestId, JSON.stringify(brief()))
-    await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => { expect(record).toHaveBeenCalledTimes(1) })
     await vi.advanceTimersByTimeAsync(46 * 60 * 1000)
     expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toContain('Only its approved read-only repository coordinator')
-    expect(cancelActivityStrategicAssessment(setup.ctx, { agent: setup.agent } as never)).toMatchObject({ kind: 'error', text: expect.stringContaining('save has already started') })
+    expectErrorText(cancelActivityStrategicAssessment(setup.ctx, { agent: setup.agent } as never), 'save has already started')
     finishSave.resolve?.({ id: 'episode-1', revision: 1, recordedAt: '2026-11-27T12:00:00.000Z' })
     await expect(saving).resolves.toMatchObject({ saved: true })
     expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toContain('is saved')
@@ -309,7 +312,7 @@ it('drains canceled disposal after persistence settles and the turn ends', async
   expect(await assess(setup)).toMatchObject({ kind: 'success' })
   emitCoordinatorResult(setup)
   const saving = executeRecord(setup, requestIdFrom(setup), JSON.stringify(brief()))
-  await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1))
+  await vi.waitFor(() => { expect(record).toHaveBeenCalledTimes(1) })
 
   setup.dispose()
   expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toContain('save must settle and the current turn must end')
@@ -335,7 +338,7 @@ it('drains plugin disposal when turn end precedes in-flight persistence settleme
   if (recorder === undefined) throw new Error('The explicit assessment recorder was not registered')
   emitCoordinatorResult(setup)
   const saving = executeRecord(setup, requestIdFrom(setup), JSON.stringify(brief()))
-  await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1))
+  await vi.waitFor(() => { expect(record).toHaveBeenCalledTimes(1) })
 
   setup.dispose()
   expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toContain('Its save must settle and the current turn must end')
@@ -358,7 +361,7 @@ it('drains disposed requests after a failed write settles without retrying the a
   expect(await assess(setup)).toMatchObject({ kind: 'success' })
   emitCoordinatorResult(setup)
   const saving = executeRecord(setup, requestIdFrom(setup), JSON.stringify(brief()))
-  await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1))
+  await vi.waitFor(() => { expect(record).toHaveBeenCalledTimes(1) })
 
   setup.dispose()
   setup.ctx.emit('session/event', setup.agent.session as never, {
@@ -374,10 +377,7 @@ it('drains disposed requests after a failed write settles without retrying the a
 })
 
 function createHarness(
-  loadSkill: (
-    name: string,
-    options?: { readonly signal: AbortSignal; readonly cwd?: string },
-  ) => Promise<{ name: string; content: string; provider: string } | undefined>,
+  loadSkill: (name: string, options?: SkillLookupOptions) => Promise<Pick<SkillDefinition, 'name' | 'content' | 'provider'> | undefined>,
   record = vi.fn(async (_request: RecordActivityStrategicEpisodeRequest) => ({ id: 'episode-1', revision: 1, recordedAt: '2026-11-27T12:00:00.000Z' })),
   options: {
     readonly activityAvailable?: boolean
@@ -404,7 +404,7 @@ function createHarness(
     id: 'strategic-agent',
     session: { id: 'strategic-session', seq: 0, header: { cwd: 'C:\\projects' } },
     ctx: { skills: { get: loadSkill } },
-    steer: vi.fn(),
+    steer: vi.fn<Agent['steer']>(),
   }
   const agents = new Map([[agent.id, agent]])
   const toolsByName = new Map<string, { definition: ToolDefinition; options: ToolRegistrationOptions }>()
@@ -457,7 +457,7 @@ async function assess(setup: ReturnType<typeof createHarness>) {
   )
 }
 
-function skill(name: string) {
+function skill(name: string): Promise<Pick<SkillDefinition, 'name' | 'content' | 'provider'>> {
   return Promise.resolve({ name, content: `Instructions for ${name}.`, provider: 'fixture-skill-provider' })
 }
 
@@ -493,7 +493,7 @@ function coordinatorReport(setup: ReturnType<typeof createHarness>): { repositor
     repositories: setup.workspaces.map((workspace, index) => ({
       workspaceId: workspace.id,
       root: workspace.path,
-      head: `${index === 0 ? 'a' : 'b'}`.repeat(40),
+      head: (index === 0 ? 'a' : 'b').repeat(40),
       execution: 'result',
       childSessionId: `child-${index}`,
       runId: `run-${index}`,
@@ -529,7 +529,7 @@ function brief() {
       workspaceId,
       title: `Project ${index + 1}`,
       status: 'observed',
-      revision: `${index === 0 ? 'a' : 'b'}`.repeat(40),
+      revision: (index === 0 ? 'a' : 'b').repeat(40),
       workingTree: 'clean',
       sourceChanged: false,
       observedAtStart: '2026-11-27T12:00:00.000Z',
@@ -538,7 +538,7 @@ function brief() {
     evidence: workspaceIds.map((workspaceId, index) => ({
       id: `E${index + 1}`,
       workspaceId,
-      revision: `${index === 0 ? 'a' : 'b'}`.repeat(40),
+      revision: (index === 0 ? 'a' : 'b').repeat(40),
       path: `docs/project-${index + 1}.md`,
       note: `Observed repository source ${index + 1}.`,
     })),
@@ -590,7 +590,7 @@ it('rejects malformed brief inputs and mismatched authenticated request identiti
   expect(await assess(setup)).toMatchObject({ kind: 'success' })
   const requestId = /Request ID: ([0-9a-f-]{36})/u.exec(setup.steeredText())?.[1]
   if (requestId === undefined) throw new Error('The assessment request id was not included in its instruction')
-  await expect(executeRecord(setup, requestId, JSON.stringify(brief()), { ...setup.agent } as never))
+  await expect(executeRecord(setup, requestId, JSON.stringify(brief()), { ...setup.agent }))
     .rejects.toThrow('requires the live requesting Agent')
   await expect(executeRecord(setup, requestId, JSON.stringify(brief())))
     .rejects.toThrow('requires a successful read-only coordinator result')
@@ -655,15 +655,29 @@ it('compares Workspace roots case-sensitively under a POSIX runtime', async () =
     workspacePaths: ['/workspace/Project-A', '/workspace/Project-B'],
   })
   expect(await assess(setup)).toMatchObject({ kind: 'success' })
-  const nativeProcess = process
-  vi.stubGlobal('process', new Proxy(nativeProcess, {
-    get(target, property) {
-      return property === 'platform' ? 'linux' : Reflect.get(target, property, target)
-    },
-  }))
+  vi.stubGlobal('process', { ...process, platform: 'linux' })
   try {
     emitCoordinatorResult(setup, coordinatorReport(setup), JSON.stringify({
       repositories: ['/workspace/project-a', '/workspace/Project-B'],
+      task: 'Inspect selected sources.',
+    }))
+    emitCoordinatorResult(setup)
+    await expect(executeRecord(setup, requestIdFrom(setup), JSON.stringify(brief()))).resolves.toMatchObject({ saved: true })
+  } finally {
+    vi.unstubAllGlobals()
+  }
+  expect(setup.record).toHaveBeenCalledTimes(1)
+})
+
+it('compares Workspace roots case-insensitively under a Windows runtime', async () => {
+  const setup = createHarness(async name => skill(name), undefined, {
+    workspacePaths: ['C:\\workspace\\Project-A', 'C:\\workspace\\Project-B'],
+  })
+  expect(await assess(setup)).toMatchObject({ kind: 'success' })
+  vi.stubGlobal('process', { ...process, platform: 'win32' })
+  try {
+    emitCoordinatorResult(setup, coordinatorReport(setup), JSON.stringify({
+      repositories: ['c:\\workspace\\project-a', 'C:\\workspace\\Project-B'],
       task: 'Inspect selected sources.',
     }))
     emitCoordinatorResult(setup)
@@ -824,7 +838,7 @@ it('renders the saved record confirmation only for a valid success response', as
   const setup = createHarness(async name => skill(name))
   const recorder = setup.toolsByName.get('record_activity_strategic_brief')?.definition
   if (recorder === undefined) throw new Error('The explicit assessment recorder was not registered')
-  expect(recorder.output.render?.({}, null as never)).toEqual([{ type: 'text', text: 'Saved advisory Activity Strategic Brief. It has not been independently verified or accepted.' }])
+  expect(recorder.output.render?.({}, null)).toEqual([{ type: 'text', text: 'Saved advisory Activity Strategic Brief. It has not been independently verified or accepted.' }])
   expect(recorder.output.render?.({}, { saved: true, episodeId: 'episode-live', revision: 3, recordedAt: '2026-11-27T12:00:00.000Z' })).toEqual([{
     type: 'text',
     text: 'Saved advisory Activity Strategic Brief episode-live (revision 3) at 2026-11-27T12:00:00.000Z. It has not been independently verified or accepted.',
@@ -835,6 +849,15 @@ function requestIdFrom(setup: ReturnType<typeof createHarness>): string {
   const requestId = /Request ID: ([0-9a-f-]{36})/u.exec(setup.steeredText())?.[1]
   if (requestId === undefined) throw new Error('The assessment request id was not included in its instruction')
   return requestId
+}
+
+function expectErrorText(result: CommandResult, expected: string): void {
+  expect(result.kind).toBe('error')
+  expectTextContaining(result, expected)
+}
+
+function expectTextContaining(result: CommandResult, expected: string): void {
+  expect(result.text).toContain(expected)
 }
 
 function changeFirst(
