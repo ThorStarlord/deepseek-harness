@@ -16,7 +16,16 @@ import HomeActivityStrategicEpisodeService, {
   MAX_HOME_ACTIVITY_STRATEGIC_EPISODE_BYTES,
   MAX_HOME_ACTIVITY_STRATEGIC_EPISODES_PER_ACTIVITY,
 } from '../src/strategic-episodes.ts'
-import type { ActivityStrategicEpisode, ActivityStrategicEpisodeId } from '../src/strategic-episode-types.ts'
+import type {
+  ActivityStrategicAlternative,
+  ActivityStrategicEvidenceReference,
+  ActivityStrategicEpisode,
+  ActivityStrategicEpisodeId,
+  ActivityStrategicFinding,
+  ActivityStrategicRepositoryObservation,
+  ActivityStrategicUncertainty,
+  RecordActivityStrategicEpisodeRequest,
+} from '../src/strategic-episode-types.ts'
 import {
   activityStrategicEpisodeRecordSchema,
   recordActivityStrategicEpisodeRequestSchema,
@@ -72,7 +81,31 @@ async function failingReadHarness() {
   return ctx
 }
 
-function brief(activityId: ActivityIdType) {
+type StrategicEpisodeBrief = Omit<
+  RecordActivityStrategicEpisodeRequest,
+  'repositories' | 'skillDigests' | 'evidence' | 'findings' | 'alternatives' | 'uncertainties'
+> & {
+  readonly repositories: readonly [
+    ActivityStrategicRepositoryObservation,
+    ActivityStrategicRepositoryObservation,
+  ]
+  readonly skillDigests: readonly [
+    ActivityStrategicEpisode['skillDigests'][0],
+    ActivityStrategicEpisode['skillDigests'][0],
+  ]
+  readonly evidence: readonly [
+    ActivityStrategicEvidenceReference,
+    ActivityStrategicEvidenceReference,
+  ]
+  readonly findings: readonly [ActivityStrategicFinding]
+  readonly alternatives: readonly [
+    ActivityStrategicAlternative,
+    ActivityStrategicAlternative,
+  ]
+  readonly uncertainties: readonly [ActivityStrategicUncertainty]
+}
+
+function brief(activityId: ActivityIdType): StrategicEpisodeBrief {
   const firstRevision = 'a'.repeat(40)
   const secondRevision = 'b'.repeat(40)
   return {
@@ -112,9 +145,15 @@ function brief(activityId: ActivityIdType) {
   }
 }
 
-function requestContent(value: ReturnType<typeof brief>) {
+function requestContent(value: RecordActivityStrategicEpisodeRequest) {
   const { status, repositories, evidence, findings, alternatives, uncertainties, recommendation } = value
   return { status, repositories, evidence, findings, alternatives, uncertainties, recommendation }
+}
+
+function arrayItem<T>(items: readonly T[], index: number): T {
+  const item = items[index]
+  if (item === undefined) throw new Error(`Expected array item at index ${index}`)
+  return item
 }
 
 it('retains source-attributed episodes across restart and never rewrites earlier recommendations', async () => {
@@ -305,15 +344,21 @@ it('rejects repeated or unresolved strategic evidence references in both request
   }
 
   const episode = await ctx.homeActivityStrategicEpisodes.record(valid)
+  const firstRepository = arrayItem(episode.repositories, 0)
+  const secondRepository = arrayItem(episode.repositories, 1)
+  const firstSkillDigest = arrayItem(episode.skillDigests, 0)
+  const firstEvidence = arrayItem(episode.evidence, 0)
+  const firstUncertainty = arrayItem(episode.uncertainties, 0)
+  const firstFinding = arrayItem(episode.findings, 0)
   const storedInvalid = [
     {
       ...episode,
-      repositories: [episode.repositories[0], { ...episode.repositories[1], workspaceId: episode.repositories[0].workspaceId }],
+      repositories: [firstRepository, { ...secondRepository, workspaceId: firstRepository.workspaceId }],
     },
-    { ...episode, skillDigests: [episode.skillDigests[0], episode.skillDigests[0]] },
-    { ...episode, evidence: [episode.evidence[0], episode.evidence[0]] },
-    { ...episode, uncertainties: [episode.uncertainties[0], episode.uncertainties[0]] },
-    { ...episode, findings: [{ ...episode.findings[0], evidenceIds: ['E9'] }] },
+    { ...episode, skillDigests: [firstSkillDigest, firstSkillDigest] },
+    { ...episode, evidence: [firstEvidence, firstEvidence] },
+    { ...episode, uncertainties: [firstUncertainty, firstUncertainty] },
+    { ...episode, findings: [{ ...firstFinding, evidenceIds: ['E9'] }] },
     { ...episode, recommendation: { ...episode.recommendation, uncertaintyIds: ['U9'] } },
   ]
   for (const invalid of storedInvalid) {

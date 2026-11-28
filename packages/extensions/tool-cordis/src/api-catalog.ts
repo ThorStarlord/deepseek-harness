@@ -1786,7 +1786,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Record a user-linked pointer after confirming its Activity, delegation, and selected Workspace references.',
         parameters: [{ name: 'request', description: 'User-supplied label, location, optional revision, and selected identities.' }],
         returns: 'The durable pointer; this does not confirm its Workspace matches execution or who produced it.',
-        throws: ['{ActivityArtifactError} when identities are missing, mismatched, or unlinked.', '{ActivityArtifactStorageError} when pointer persistence fails.'],
+        throws: ['{ActivityArtifactError} when identities are missing, mismatched, or unlinked.', '{ActivityArtifactStorageError} when artifact storage cannot be read or written.'],
       },
       {
         signature: 'list(activityId: ActivityId): readonly ActivityArtifactReference[]',

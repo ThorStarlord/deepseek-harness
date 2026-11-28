@@ -37,12 +37,12 @@ describe.sequential('bootProductionProfile', () => {
         profile: 'headless',
         overlayPaths: [],
         prepare: (root) => {
-          expect(root.get('profileContext').home).toBe(expectedDshHome)
+          expect(root.get('profileContext')?.home).toBe(expectedDshHome)
           prepared = true
         },
       })
 
-      expect(context.get('profileContext').home).toBe(expectedDshHome)
+      expect(context.get('profileContext')?.home).toBe(expectedDshHome)
       expect(prepared).toBe(true)
     } finally {
       await context?.fiber.dispose()
@@ -61,14 +61,17 @@ describe.sequential('bootProductionProfile', () => {
       const savedHome = process.env['DSH_HOME']
       await selectBaseOnlyProfile(savedHome)
 
-      context = await bootProductionProfile({
+      const bootedContext = await bootProductionProfile({
         binName: 'loader-smoke-test',
         profile: 'headless',
         overlayPaths: [overlayPath],
       })
+      context = bootedContext
 
-      expect(context.get('profileContext').home).toBe(savedHome)
-      const resolution = context.get('pluginPackages').resolution
+      expect(bootedContext.get('profileContext')?.home).toBe(savedHome)
+      const pluginPackages = bootedContext.get('pluginPackages')
+      if (pluginPackages === undefined) throw new Error('Plugin package resolution service is unavailable')
+      const resolution = pluginPackages.resolution
       expect(resolution).toBeDefined()
       const overlayPackages = resolution?.entries
         .filter(entry => entry.scope === 'profile' && ['tsx', 'vitest'].includes(entry.name))

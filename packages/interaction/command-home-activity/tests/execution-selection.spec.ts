@@ -161,13 +161,13 @@ it('keeps missing or oversized preset module details unavailable', () => {
   const tooMany: Pick<AgentPresetRegistry, 'composedPreset' | 'inspectCompositions'> = {
     composedPreset: () => 'review',
     inspectCompositions: () => [{
-      id: 'review', modules: Array.from({ length: 257 }, (_, index) => ({ moduleName: `module-${index}` })),
+      id: 'review', modules: Array.from({ length: 257 }, (_, index) => ({ moduleName: `module-${index}`, useHostBase: false })),
       leakedServices: [],
     }],
   }
   const tooLongName: Pick<AgentPresetRegistry, 'composedPreset' | 'inspectCompositions'> = {
     composedPreset: () => 'review',
-    inspectCompositions: () => [{ id: 'review', modules: [{ moduleName: 'x'.repeat(257) }], leakedServices: [] }],
+    inspectCompositions: () => [{ id: 'review', modules: [{ moduleName: 'x'.repeat(257), useHostBase: false }], leakedServices: [] }],
   }
 
   for (const presets of [missing, tooMany, tooLongName]) {

@@ -169,50 +169,63 @@ export function parseTraceEvents(input: string): TraceEvent[] {
       throw new Error(`Trace line ${index + 1} is not valid JSON`)
     }
     if (!isTraceEvent(value)) throw new Error(`Trace line ${index + 1} does not match format version ${FORMAT_VERSION}`)
-    if (value.event === 'run-started' || value.event === 'run-finished') {
-      events.push({
-        ...traceCommonFields(value),
-        event: value.event,
-        ...(value.parentRunId === undefined ? {} : { parentRunId: value.parentRunId }),
-      })
-    } else if (value.event === 'operation-started') {
-      events.push({
-        ...traceCommonFields(value),
-        ...operationCommonFields(value),
-        event: value.event,
-        monotonicMs: value.monotonicMs,
-      })
-    } else if (value.event === 'span-started') {
-      events.push({
-        ...traceCommonFields(value),
-        ...operationCommonFields(value),
-        event: value.event,
-      })
-    } else if (value.event === 'operation-finished') {
-      events.push({
-        ...traceCommonFields(value),
-        ...operationCommonFields(value),
-        event: value.event,
-        durationMs: value.durationMs,
-        status: value.status,
-        ...(value.failureCode === undefined ? {} : { failureCode: value.failureCode }),
-        ...(typeof value.exitCode === 'number' || value.exitCode === null ? { exitCode: value.exitCode } : {}),
-        ...(typeof value.signal === 'string' || value.signal === null ? { signal: value.signal } : {}),
-      })
-    } else {
-      events.push({
-        ...traceCommonFields(value),
-        ...operationCommonFields(value),
-        event: value.event,
-        status: value.status,
-      })
+    switch (value.event) {
+      case 'run-started':
+        events.push({
+          ...traceCommonFields(value),
+          event: 'run-started',
+          ...(value.parentRunId === undefined ? {} : { parentRunId: value.parentRunId }),
+        })
+        break
+      case 'run-finished':
+        events.push({
+          ...traceCommonFields(value),
+          event: 'run-finished',
+          ...(value.parentRunId === undefined ? {} : { parentRunId: value.parentRunId }),
+        })
+        break
+      case 'operation-started':
+        events.push({
+          ...traceCommonFields(value),
+          ...operationCommonFields(value),
+          event: 'operation-started',
+          monotonicMs: value.monotonicMs,
+        })
+        break
+      case 'span-started':
+        events.push({
+          ...traceCommonFields(value),
+          ...operationCommonFields(value),
+          event: 'span-started',
+        })
+        break
+      case 'operation-finished':
+        events.push({
+          ...traceCommonFields(value),
+          ...operationCommonFields(value),
+          event: 'operation-finished',
+          durationMs: value.durationMs,
+          status: value.status,
+          ...(value.failureCode === undefined ? {} : { failureCode: value.failureCode }),
+          ...(typeof value.exitCode === 'number' || value.exitCode === null ? { exitCode: value.exitCode } : {}),
+          ...(typeof value.signal === 'string' || value.signal === null ? { signal: value.signal } : {}),
+        })
+        break
+      case 'span-finished':
+        events.push({
+          ...traceCommonFields(value),
+          ...operationCommonFields(value),
+          event: 'span-finished',
+          status: value.status,
+        })
+        break
     }
   }
   assertEventPairs(events)
   return events
 }
 
-function traceCommonFields(value: TraceEvent) {
+function traceCommonFields(value: TraceEvent): Pick<RunEvent, 'version' | 'timestamp' | 'processId' | 'runId' | 'taskId' | 'agentId'> {
   return {
     version: FORMAT_VERSION,
     timestamp: value.timestamp,

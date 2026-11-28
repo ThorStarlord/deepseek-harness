@@ -4,7 +4,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { ActivityId } from '@deepseek-ai/dsh-home-activity'
 import type { ActivityHandoff, ActivityHandoffId } from '@deepseek-ai/dsh-home-activity/handoffs'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { CommandInvocation } from '@deepseek-ai/dsh-commands'
+import { CommandId, type CommandInvocation } from '@deepseek-ai/dsh-commands'
 import {
   executeActivityAnnotationCommand,
   renderActivityAnnotations,
@@ -134,7 +134,7 @@ function context(
 
 function invocation(rawInput: string, sessionId = SessionId('coverage-command-session')): CommandInvocation {
   return {
-    commandId: brandString<'CommandId'>('cmd-coverage'),
+    commandId: CommandId('cmd-coverage'),
     agent: { id: sessionId } as CommandInvocation['agent'],
     rawInput,
     attachments: [],

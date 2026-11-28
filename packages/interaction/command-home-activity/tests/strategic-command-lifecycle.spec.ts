@@ -3,6 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { ToolDefinition, ToolGuard, ToolRegistrationOptions } from '@deepseek-ai/dsh-tools'
 import { ActivityId } from '@deepseek-ai/dsh-home-activity'
 import { ActivityStrategicEpisodeError, ActivityStrategicEpisodeStorageError } from '@deepseek-ai/dsh-home-activity/strategic-episodes'
+import type { RecordActivityStrategicEpisodeRequest } from '@deepseek-ai/dsh-home-activity/strategic-episodes'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Workspace } from '@deepseek-ai/dsh-workspace/types'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -377,7 +378,7 @@ function createHarness(
     name: string,
     options?: { readonly signal: AbortSignal; readonly cwd?: string },
   ) => Promise<{ name: string; content: string; provider: string } | undefined>,
-  record = vi.fn(async () => ({ id: 'episode-1', revision: 1, recordedAt: '2026-11-27T12:00:00.000Z' })),
+  record = vi.fn(async (_request: RecordActivityStrategicEpisodeRequest) => ({ id: 'episode-1', revision: 1, recordedAt: '2026-11-27T12:00:00.000Z' })),
   options: {
     readonly activityAvailable?: boolean
     readonly coordinatorAvailable?: boolean
@@ -728,7 +729,7 @@ it('requires coordinator source identities and roots to match the selected Works
 })
 
 it('records incomplete observations when a selected repository is unavailable or changed', async () => {
-  const record = vi.fn(async () => ({ id: 'episode-incomplete', revision: 1, recordedAt: '2026-11-27T12:00:00.000Z' }))
+  const record = vi.fn(async (_request: RecordActivityStrategicEpisodeRequest) => ({ id: 'episode-incomplete', revision: 1, recordedAt: '2026-11-27T12:00:00.000Z' }))
   const setup = createHarness(async name => skill(name), record)
   expect(await assess(setup)).toMatchObject({ kind: 'success' })
   const report = coordinatorReport(setup)

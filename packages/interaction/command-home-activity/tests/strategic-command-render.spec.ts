@@ -93,7 +93,7 @@ it('renders no-history guidance, latest summaries, and historical freshness with
 function episode(
   revision: number,
   overrides: Partial<Pick<ActivityStrategicEpisode,
-    'repositories' | 'evidence' | 'findings' | 'alternatives' | 'uncertainties'>> = {},
+    'repositories' | 'evidence' | 'findings' | 'alternatives' | 'uncertainties' | 'recommendation'>> = {},
 ): ActivityStrategicEpisode {
   return {
     id: brandString<ActivityStrategicEpisodeId>(`episode-${revision}`),

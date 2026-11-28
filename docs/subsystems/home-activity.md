@@ -126,7 +126,7 @@ Stores user-linked artifact pointers independently from delegation lifecycle fac
  * @param request - User-supplied label, location, optional revision, and selected identities.
  * @returns The durable pointer; this does not confirm its Workspace matches execution or who produced it.
  * @throws {ActivityArtifactError} when identities are missing, mismatched, or unlinked.
- * @throws {ActivityArtifactStorageError} when pointer persistence fails.
+ * @throws {ActivityArtifactStorageError} when artifact storage cannot be read or written.
  */
 create(request: CreateActivityArtifactRequest): Promise<ActivityArtifactReference>
 
