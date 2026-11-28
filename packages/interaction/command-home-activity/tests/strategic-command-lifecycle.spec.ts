@@ -277,6 +277,55 @@ it('drains canceled disposal after persistence settles and the turn ends', async
   expect(setup.toolsByName.has('record_activity_strategic_brief')).toBe(false)
 })
 
+it('drains plugin disposal when turn end precedes in-flight persistence settlement', async () => {
+  const finishSave: { resolve?: (value: { id: string; revision: number; recordedAt: string }) => void } = {}
+  const record = vi.fn(() => new Promise<{ id: string; revision: number; recordedAt: string }>((resolve) => {
+    finishSave.resolve = resolve
+  }))
+  const setup = createHarness(async name => skill(name), record)
+  expect(await assess(setup)).toMatchObject({ kind: 'success' })
+  const recorder = setup.toolsByName.get('record_activity_strategic_brief')?.definition
+  if (recorder === undefined) throw new Error('The explicit assessment recorder was not registered')
+  emitCoordinatorResult(setup)
+  const saving = executeRecord(setup, requestIdFrom(setup), JSON.stringify(brief()))
+  await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1))
+
+  setup.dispose()
+  expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toContain('Its save must settle and the current turn must end')
+  setup.ctx.emit('session/event', setup.agent.session as never, {
+    type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } },
+  } as never)
+  expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toContain('Its save must settle before the guard is released')
+
+  finishSave.resolve?.({ id: 'episode-disposed', revision: 1, recordedAt: '2026-11-27T12:00:00.000Z' })
+  await expect(saving).resolves.toMatchObject({ saved: true })
+  expect(setup.guards).toHaveLength(0)
+  expect(setup.toolsByName.has('record_activity_strategic_brief')).toBe(false)
+})
+
+it('drains disposed requests after a failed write settles without retrying the append', async () => {
+  const finishSave: { reject?: (error: Error) => void } = {}
+  const storageError = new ActivityStrategicEpisodeStorageError(new Error('write outcome is uncertain'))
+  const record = vi.fn(() => new Promise<never>((_resolve, reject) => { finishSave.reject = reject }))
+  const setup = createHarness(async name => skill(name), record)
+  expect(await assess(setup)).toMatchObject({ kind: 'success' })
+  emitCoordinatorResult(setup)
+  const saving = executeRecord(setup, requestIdFrom(setup), JSON.stringify(brief()))
+  await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1))
+
+  setup.dispose()
+  setup.ctx.emit('session/event', setup.agent.session as never, {
+    type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } },
+  } as never)
+  expect(setup.guards[0]?.({ name: 'shell', agent: setup.agent } as never)).toContain('save must settle before the guard is released')
+
+  finishSave.reject?.(storageError)
+  await expect(saving).rejects.toBe(storageError)
+  expect(record).toHaveBeenCalledTimes(1)
+  expect(setup.guards).toHaveLength(0)
+  expect(setup.toolsByName.has('record_activity_strategic_brief')).toBe(false)
+})
+
 function createHarness(
   loadSkill: (
     name: string,

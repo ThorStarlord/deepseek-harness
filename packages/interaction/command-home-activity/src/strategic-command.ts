@@ -80,20 +80,7 @@ type ActivityStrategicPendingRequests = Map<string, PendingAssessment>
 export function registerActivityStrategicBriefTool(ctx: Context): () => void {
   const pending: ActivityStrategicPendingRequests = new Map()
   const preparing = getPreparingAssessments(ctx)
-  const tool = createRecordTool(ctx, pending)
   const disposeGuard = ctx.tools.guard(activityStrategicToolGuard(ctx, pending))
-  const disposeTool = ctx.tools.register(tool, {
-    when: ({ agent }) => {
-      const request = pending.get(String(agent.session.id))
-      return request !== undefined
-        && request.agentId === String(agent.id)
-        && request.expiresAt > Date.now()
-        && !request.saveStarted
-        && !request.saved
-        && !request.cancelled
-        && request.coordinatorReports.length > 0
-    },
-  })
   const disposeSessionEvents = ctx.root.on('session/event', (session, event) => {
     captureCoordinatorEvent(pending, session.id, event)
     if (event.type === 'turn/end') {
@@ -121,6 +108,25 @@ export function registerActivityStrategicBriefTool(ctx: Context): () => void {
     preparationSettledByContext.delete(ctx)
     pending.clear()
   }
+  const onSaveSettled = (sessionId: string, request: PendingAssessment): void => {
+    if (pending.get(sessionId) === request && request.turnEnded && !request.saveStarted && request.coordinatorCallIds.size === 0) {
+      pending.delete(sessionId)
+    }
+    disposeDrainedRegistration()
+  }
+  const tool = createRecordTool(ctx, pending, onSaveSettled)
+  const disposeTool = ctx.tools.register(tool, {
+    when: ({ agent }) => {
+      const request = pending.get(String(agent.session.id))
+      return request !== undefined
+        && request.agentId === String(agent.id)
+        && request.expiresAt > Date.now()
+        && !request.saveStarted
+        && !request.saved
+        && !request.cancelled
+        && request.coordinatorReports.length > 0
+    },
+  })
   preparationSettledByContext.set(ctx, disposeDrainedRegistration)
   const dispose = (): void => {
     if (disposeRequested) return
@@ -646,7 +652,11 @@ function prunePending(pending: ActivityStrategicPendingRequests): void {
   }
 }
 
-function createRecordTool(ctx: Context, pending: ActivityStrategicPendingRequests): ToolDefinition {
+function createRecordTool(
+  ctx: Context,
+  pending: ActivityStrategicPendingRequests,
+  onSaveSettled: (sessionId: string, request: PendingAssessment) => void,
+): ToolDefinition {
   return {
     name: RECORD_TOOL,
     description: 'Save the source-grounded Activity Strategic Brief for the current explicit request. It records advice and never starts execution.',
@@ -744,15 +754,16 @@ function createRecordTool(ctx: Context, pending: ActivityStrategicPendingRequest
       try {
         const episode = await ctx.homeActivityStrategicEpisodes.record(report)
         request.saved = true
-        request.saveStarted = false
         return { saved: true, episodeId: episode.id, revision: episode.revision, recordedAt: episode.recordedAt }
       } catch (error: unknown) {
-        request.saveStarted = false
         if (error instanceof ActivityStrategicEpisodeError || error instanceof ActivityStrategicEpisodeStorageError) {
           throw error
         }
         ctx.logger.warn('command-home-activity: strategic episode save failed: %o', error)
         throw new Error('Activity Strategic Brief could not be confirmed in storage. Open the Activity before retrying.')
+      } finally {
+        request.saveStarted = false
+        onSaveSettled(sessionId, request)
       }
     },
   }
