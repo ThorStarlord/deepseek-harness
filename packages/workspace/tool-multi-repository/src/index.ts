@@ -322,7 +322,7 @@ function createStagedReadTool(
       const offset = positiveLineNumber(args.offset, 1, 'offset')
       const limit = positiveLineNumber(args.limit, MAX_READ_LINES, 'limit')
       if (limit > MAX_READ_LINES) throw new MultiRepositoryError(`limit must be at most ${MAX_READ_LINES}`, 'INVALID_READ_LIMIT')
-      const allLines = blob.stdout.split(/\r?\n/u)
+      const allLines = splitTextLines(blob.stdout)
       const lines = allLines.slice(offset - 1, offset - 1 + limit).map((text, index) => ({ number: offset + index, text }))
       return { path: gitPath, stage: entry.stage, offset, lines, totalLines: allLines.length }
     },
@@ -412,8 +412,24 @@ function createWorkingTreeReadTool(
       const offset = positiveLineNumber(args.offset, 1, 'offset')
       const limit = positiveLineNumber(args.limit, MAX_READ_LINES, 'limit')
       if (limit > MAX_READ_LINES) throw new MultiRepositoryError(`limit must be at most ${MAX_READ_LINES}`, 'INVALID_READ_LIMIT')
-      const content = await ctx.fs.readText(target, exec.signal)
-      const allLines = content.split(/\r?\n/u)
+      let bytes: Uint8Array
+      try {
+        bytes = await ctx.fs.readBytes(target, exec.signal, MAX_READ_FILE_BYTES)
+      } catch (error: unknown) {
+        if (error instanceof HarnessError && error.code === 'FS_TOO_LARGE') {
+          throw new MultiRepositoryError('file exceeds the repository analysis read limit', 'FILE_TOO_LARGE', { cause: error })
+        }
+        throw error
+      }
+      if (bytes.includes(0)) throw new MultiRepositoryError('binary files cannot be returned as repository text', 'FILE_NOT_TEXT')
+      let content: string
+      try {
+        content = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+      } catch (error: unknown) {
+        if (!(error instanceof TypeError)) throw error
+        throw new MultiRepositoryError('file is not valid UTF-8 text', 'FILE_NOT_TEXT', { cause: error })
+      }
+      const allLines = splitTextLines(content)
       const lines = allLines.slice(offset - 1, offset - 1 + limit).map((text, index) => ({ number: offset + index, text }))
       return { path: normalizeGitPath(canonicalPath), offset, lines, totalLines: allLines.length }
     },
@@ -492,17 +508,19 @@ async function repositoryReadApprovalDecision(
     displayReason: {
       en: [
         'Allow one read-only analysis of these two repositories?',
+        'Important: If sandbox restrictions are only partial, the app runs Git in a host process outside the operating-system sandbox.',
         `Repository 1: ${selection[0]}`,
         `Repository 2: ${selection[1]}`,
         `Task: ${args.task}`,
-        'After approval, this starts one read-only DSH child Session per repository. Children have no model-facing write, shell, process, further delegation, or sandbox-mode-change tool. When the sandbox reports partial enforcement, fixed, internally constructed Git reads run through the host subprocess provider and are not OS-confined.',
+        'After approval, one read-only DSH child Session starts per repository. The children cannot write files, run shell or process commands, delegate further work, or change sandbox settings.',
       ].join('\n'),
       zh: [
         '是否允许只读分析以下两个仓库？',
+        '重要：如果沙箱仅部分限制访问，应用会在操作系统沙箱之外的主机进程中运行 Git。',
         `仓库 1：${selection[0]}`,
         `仓库 2：${selection[1]}`,
         `任务：${args.task}`,
-        '批准后，每个仓库会启动一个只读 DSH 子级 Session。子级没有模型可调用的写入、Shell、进程、进一步委派或更改沙箱模式工具。当沙箱报告仅部分强制执行时，固定且由内部构造的 Git 只读命令会通过宿主 subprocess 提供方运行；这些读取不受操作系统级进程隔离。',
+        '批准后，每个仓库会启动一个只读 DSH 子级 Session。子级不能写入文件、运行 Shell 或进程命令、继续委派或更改沙箱设置。',
       ].join('\n'),
     },
   }
@@ -871,6 +889,12 @@ function enforceWorkerTool(execution: ToolExecution): PreToolDecision {
     return { kind: 'deny', reason: 'repository workers have read-only file tools; this operation is unavailable' }
   }
   return { kind: 'allow' }
+}
+
+function splitTextLines(text: string): string[] {
+  const lines = text.split(/\r?\n/u)
+  if (lines.at(-1) === '') lines.pop()
+  return lines
 }
 
 function renderStagedContent(value: unknown): string {

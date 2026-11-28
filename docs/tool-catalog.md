@@ -49,7 +49,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-experimental-tool-worktree` | `create_worktree` | `ctx.tools`, `ctx.worktrees`, `a calling Agent` | `tool/call`, `Git branch and checkout`, `working-directory/change`, `tool/result` | - | Enabled through the Change requests & worktrees bundle on Web and Desktop; other profiles can select the standalone bundle. Creates a new branch and checkout from a pinned local commit under existing write permissions, then changes the Session directory. Leaving retains the branch and checkout. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
-| `@deepseek-ai/dsh-tool-multi-repository` | `coordinate_repositories`, `read_staged_file`, `repository_list_files`, `repository_read_file` | `ctx.tools`, `ctx.agents`, `ctx.workspaceRegistry`, `ctx.subagents`, `ctx.sandbox`, `ctx.subprocess`, `ctx.fs`, `ctx.agentPresets` | `tool/call`, `tool/result`, `one read-only child Session per selected repository` | - | The tool requires an in-process DSH provider that supports a read-only policy pin and trusted tool restriction. It provides no write workflow; on Windows, fixed Git reads use the host process because ACL enforcement is partial, while the child has no subprocess tool. |
+| `@deepseek-ai/dsh-tool-multi-repository` | `coordinate_repositories`, `read_staged_file`, `repository_list_files`, `repository_read_file` | `ctx.tools`, `ctx.agents`, `ctx.workspaceRegistry`, `ctx.subagents`, `ctx.sandbox`, `ctx.subprocess`, `ctx.fs`, `ctx.agentPresets` | `tool/call`, `tool/result`, `one read-only child Session per selected repository` | - | The tool requires an in-process DSH provider that supports a read-only policy pin and trusted tool restriction. It provides no write workflow; when sandbox enforcement is partial, fixed, internally constructed Git reads run through the host process without OS-level process isolation; the child has no subprocess tool. |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
 
 <a id="deepseek-aidsh-plugin-manager"></a>
@@ -2753,7 +2753,7 @@ Read one bounded file from this selected repository working tree.
 
 Source: [`packages/workspace/tool-multi-repository/src/index.ts`](../packages/workspace/tool-multi-repository/src/index.ts)
 
-The tool requires an in-process DSH provider that supports a read-only policy pin and trusted tool restriction. It provides no write workflow; on Windows, fixed Git reads use the host process because ACL enforcement is partial, while the child has no subprocess tool.
+The tool requires an in-process DSH provider that supports a read-only policy pin and trusted tool restriction. It provides no write workflow; when sandbox enforcement is partial, fixed, internally constructed Git reads run through the host process without OS-level process isolation; the child has no subprocess tool.
 
 <a id="deepseek-aidsh-tool-web"></a>
 

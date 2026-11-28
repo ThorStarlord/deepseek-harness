@@ -215,6 +215,8 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
       expect(transcript).toContain(options.changeAlphaDuringRead === true && repo === 'alpha'
         ? 'changed during analysis' : `working-${repo}`)
       expect(transcript).toContain(`staged-${repo}`)
+      expect(transcript).toContain('src/core.ts (working tree; lines 1–1 of 1)')
+      expect(transcript).toContain('Staged index content for src/core.ts (stage 0; lines 1–1 of 1)')
       if (options.stagedPagination === true) {
         expect(transcript).toContain(`401: staged-${repo}-401`)
         expect(transcript).toContain(`402: staged-${repo}-402`)
@@ -424,7 +426,7 @@ describe('read-only multi-repository coordination', () => {
   it('returns later staged-file pages with line numbers and the total line count', async () => {
     const f = await setup({ stagedPagination: true })
     for (const [repo, path] of [['alpha', f.alphaPath], ['beta', f.betaPath]] as const) {
-      const content = Array.from({ length: 405 }, (_, index) => `staged-${repo}-${index + 1}`).join('\n')
+      const content = `${Array.from({ length: 405 }, (_, index) => `staged-${repo}-${index + 1}`).join('\n')}\n`
       await writeFile(join(path, 'src', 'long.ts'), content)
       await git(path, ['add', '--', 'src/long.ts'])
     }
@@ -700,14 +702,16 @@ describe('read-only multi-repository coordination', () => {
     expect(f.approvalRequests).toHaveLength(1)
     expect(f.approvalRequests[0]?.reason).toContain(f.alphaPath.replaceAll('\\', '\\\\'))
     expect(f.approvalRequests[0]?.reason).toContain(f.betaPath.replaceAll('\\', '\\\\'))
-    expect(f.approvalRequests[0]?.displayReason?.en).toContain('one read-only DSH child Session per repository')
-    expect(f.approvalRequests[0]?.displayReason?.en).toContain('no model-facing write, shell, process')
-    expect(f.approvalRequests[0]?.displayReason?.en).toContain('When the sandbox reports partial enforcement')
-    expect(f.approvalRequests[0]?.displayReason?.en).toContain('not OS-confined')
-    expect(f.approvalRequests[0]?.displayReason?.zh).toContain('每个仓库会启动一个只读 DSH 子级 Session')
-    expect(f.approvalRequests[0]?.displayReason?.zh).toContain('模型可调用的写入、Shell、进程')
-    expect(f.approvalRequests[0]?.displayReason?.zh).toContain('当沙箱报告仅部分强制执行时')
-    expect(f.approvalRequests[0]?.displayReason?.zh).toContain('不受操作系统级进程隔离')
+    const displayReason = f.approvalRequests[0]?.displayReason
+    const englishReason = displayReason?.en ?? ''
+    const chineseReason = displayReason?.zh ?? ''
+    expect(englishReason).toContain('Important: If sandbox restrictions are only partial')
+    expect(englishReason).toContain('children cannot write files, run shell or process commands')
+    expect(englishReason.indexOf('Important:')).toBeLessThan(englishReason.indexOf('Repository 1:'))
+    expect(englishReason).not.toContain('On Windows')
+    expect(chineseReason).toContain('\u91cd\u8981\uff1a\u5982\u679c\u6c99\u7bb1\u4ec5\u90e8\u5206\u9650\u5236\u8bbf\u95ee')
+    expect(chineseReason).toContain('\u5b50\u7ea7\u4e0d\u80fd\u5199\u5165\u6587\u4ef6')
+    expect(chineseReason.indexOf('\u91cd\u8981\uff1a')).toBeLessThan(chineseReason.indexOf('\u4ed3\u5e93 1\uff1a'))
     expect(f.starts).toHaveLength(2)
     expect(f.ends).toHaveLength(2)
     expect(new Set(f.starts.map(start => start.id)).size).toBe(2)
@@ -779,15 +783,28 @@ describe('read-only multi-repository coordination', () => {
       await symlink(f.thirdPath, join(repo, 'outside-link'), 'junction')
       await symlink(join(repo, '.git'), join(repo, 'git-link'), 'junction')
     }
+    const originalStat = f.ctx.fs.stat.bind(f.ctx.fs)
+    vi.spyOn(f.ctx.fs, 'stat').mockImplementation(async (target, signal) => {
+      const info = await originalStat(target, signal)
+      return info !== undefined && f.ctx.fs.processPath(target).endsWith('large.bin')
+        ? { version: info.version, type: info.type }
+        : info
+    })
+    const boundedReads = vi.spyOn(f.ctx.fs, 'readBytes')
     const signal = new AbortController().signal
     const largeTarget = await f.ctx.fs.resolve(join(f.alphaPath, 'large.bin'), { signal })
-    expect(await f.ctx.fs.stat(largeTarget, signal)).toMatchObject({ type: 'file', size: 1024 * 1024 + 1 })
+    const largeInfo = await f.ctx.fs.stat(largeTarget, signal)
+    expect(largeInfo).toMatchObject({ type: 'file' })
+    expect(largeInfo?.size).toBeUndefined()
     const before = await Promise.all([f.alphaPath, f.betaPath, f.thirdPath].map(snapshotRepository))
     f.parent.followup(createUserMessage({
       content: [{ type: 'text', text: 'Analyze Alpha and Beta and try the available file, shell, and delegation operations.' }],
       source: { kind: 'user' },
     }))
     await f.parent.whenIdle()
+    const largeReads = boundedReads.mock.calls.filter(([target]) => f.ctx.fs.processPath(target).endsWith('large.bin'))
+    expect(largeReads).toHaveLength(2)
+    expect(largeReads.every(([, , maxBytes]) => maxBytes === 1024 * 1024)).toBe(true)
     const childRequests = f.adapter.requests.filter(request => request.sessionId !== f.parentId)
     expect(childRequests).toHaveLength(8)
     for (const request of childRequests) expect(request.tools?.map(tool => tool.name).sort()).toEqual(REPO_READ_TOOLS)
@@ -965,6 +982,7 @@ describe('read-only multi-repository coordination', () => {
 
   it('keeps a live read when metadata cannot report an untracked version or file size', async () => {
     const f = await setup()
+    await writeFile(join(f.alphaPath, 'src', 'draft.ts'), 'draft-alpha')
     const originalLstat = f.ctx.fs.lstat.bind(f.ctx.fs)
     vi.spyOn(f.ctx.fs, 'lstat').mockImplementation(async (path, options, signal) => {
       if (path === 'src/draft.ts' && options?.cwd === f.alphaPath) return undefined
@@ -982,6 +1000,8 @@ describe('read-only multi-repository coordination', () => {
     const rows = (result as { repositories: readonly Record<string, unknown>[] }).repositories
     expect(rows[0]).toMatchObject({ sourceChanged: false, workspaceId: 'workspace-alpha' })
     expect(f.adapter.requests.some(request => JSON.stringify(request.messages).includes('draft-alpha'))).toBe(true)
+    expect(JSON.stringify(f.adapter.requests.filter(request => request.sessionId !== f.parentId)))
+      .toContain('src/draft.ts (working tree; lines 1–1 of 1)')
   }, 30_000)
 
   it('handles accepted read-only Git exit codes when collected output is absent', async () => {

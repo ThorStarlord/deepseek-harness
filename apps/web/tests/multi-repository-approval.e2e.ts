@@ -6,8 +6,10 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
-import type { Browser } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { expect, it } from 'vitest'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { PreToolDecision, ToolExecution, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import { textResponse, toolCallResponse } from '../../../packages/core/agent-loop/tests/mock-adapter.ts'
 import { fixtureUserPrompts, launchWebScaffold, webSnapshotMode } from './scaffold.ts'
 import { newEnglishPage } from './support.ts'
@@ -22,7 +24,9 @@ const MODE = webSnapshotMode()
 it.skipIf(MODE === 'record')('shows partial-enforcement limits before a repository-read decision', async () => {
   const fixtureRoot = await mkdtemp(join(tmpdir(), 'dsh-web-multirepository-approval-'))
   let browser: Browser | undefined
+  let page: Page | undefined
   let scaffold: Awaited<ReturnType<typeof launchWebScaffold>> | undefined
+  let turnSettled: Promise<unknown> | undefined
   let runFailure: unknown
   let runFailed = false
   try {
@@ -53,8 +57,24 @@ it.skipIf(MODE === 'record')('shows partial-enforcement limits before a reposito
     for (const [index, path] of repositories.entries()) {
       await scaffold.ctx.workspaceRegistry.create(path, index === 0 ? 'Alpha fixture' : 'Beta fixture')
     }
+    const probeCallId = ToolCallId('approval-copy-probe')
+    const probeDecision = await scaffold.ctx.waterfall('tools/pre-execute', {
+      name: 'coordinate_repositories',
+      callId: probeCallId,
+      rootCallId: probeCallId,
+      arguments: args,
+      agent: coordinator,
+      signal: new AbortController().signal,
+      token: Symbol('approval-copy-probe') as ToolExecutionToken,
+    } satisfies ToolExecution, () => Promise.resolve<PreToolDecision>({ kind: 'allow' }))
+    expect(probeDecision.kind).toBe('ask')
+    if (probeDecision.kind !== 'ask') throw new Error('read-only repository request was not presented for approval')
+    expect(probeDecision.displayReason?.en).toContain(
+      'Important: If sandbox restrictions are only partial',
+    )
     browser = await chromium.launch()
-    const page = await newEnglishPage(browser)
+    page = await newEnglishPage(browser)
+    await page.setViewportSize({ width: 900, height: 700 })
     await page.addInitScript((id) => {
       localStorage.setItem('dsh.sessions.current', JSON.stringify({ sessionId: id }))
     }, String(sessionId))
@@ -69,14 +89,54 @@ it.skipIf(MODE === 'record')('shows partial-enforcement limits before a reposito
     expect(selectedSessionId).toBe(String(sessionId))
 
     const settled = scaffold.whenTurnSettled(60_000)
+    turnSettled = settled
     const input = page.locator('[data-composer-input]').first()
     await input.fill(prompt)
     await input.press('Enter')
 
     const approval = page.locator('[data-approval-key]')
     await approval.waitFor({ timeout: 30_000 })
-    expect(await approval.getByText(/When the sandbox reports partial enforcement/u).isVisible()).toBe(true)
-    expect(await approval.getByText(/not OS-confined/u).isVisible()).toBe(true)
+    const partialWarning = 'Important: If sandbox restrictions are only partial, the app runs Git in a host process outside the operating-system sandbox.'
+    const approvalText = await approval.locator('[data-approval-scroll]').innerText()
+    expect(approvalText).toContain(partialWarning)
+    expect(approvalText.indexOf(partialWarning)).toBeLessThan(approvalText.indexOf('Repository 1:'))
+    const warningViewport = await approval.evaluate((root, phrase) => {
+      const scroll = root.querySelector<HTMLElement>('[data-approval-scroll]')
+      if (scroll === null) return undefined
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      const nodes: Text[] = []
+      let text = ''
+      let node: Node | null
+      while ((node = walker.nextNode()) !== null) {
+        if (node.nodeType !== Node.TEXT_NODE) continue
+        nodes.push(node as Text)
+        text += node.textContent ?? ''
+      }
+      const offset = text.indexOf(phrase)
+      if (offset < 0) return undefined
+      const locate = (position: number): { readonly node: Text; readonly offset: number } | undefined => {
+        let consumed = 0
+        for (const textNode of nodes) {
+          const length = textNode.textContent?.length ?? 0
+          if (position <= consumed + length) return { node: textNode, offset: position - consumed }
+          consumed += length
+        }
+        return undefined
+      }
+      const start = locate(offset)
+      const end = locate(offset + phrase.length)
+      if (start === undefined || end === undefined) return undefined
+      const range = document.createRange()
+      range.setStart(start.node, start.offset)
+      range.setEnd(end.node, end.offset)
+      const viewport = scroll.getBoundingClientRect()
+      const rects = [...range.getClientRects()]
+      return {
+        atTop: scroll.scrollTop === 0,
+        visible: rects.length > 0 && rects.every(rect => rect.top >= viewport.top && rect.bottom <= viewport.bottom),
+      }
+    }, partialWarning)
+    expect(warningViewport).toEqual({ atTop: true, visible: true })
     expect(await approval.getByText(/On Windows/u).count()).toBe(0)
     await approval.getByRole('button', { name: 'Reject' }).click()
 
@@ -93,6 +153,23 @@ it.skipIf(MODE === 'record')('shows partial-enforcement limits before a reposito
     runFailure = error
   } finally {
     const failures: unknown[] = runFailed ? [runFailure] : []
+    if (page !== undefined) {
+      try {
+        const reject = page.getByRole('button', { name: 'Reject' })
+        if (await reject.count() > 0) {
+          const actionable = await reject.evaluate(button => button instanceof HTMLButtonElement
+            && !button.disabled && button.getClientRects().length > 0)
+          if (actionable) await reject.click({ timeout: 2_000 })
+        }
+      } catch (error: unknown) {
+        failures.push(error)
+      }
+    }
+    if (turnSettled !== undefined) {
+      const settled = turnSettled.catch((error: unknown) => failures.push(error))
+      if (runFailed) await Promise.race([settled, new Promise<void>(resolve => setTimeout(resolve, 5_000))])
+      else await settled
+    }
     await Promise.resolve(browser?.close()).catch((error: unknown) => failures.push(error))
     await Promise.resolve(scaffold?.close()).catch((error: unknown) => failures.push(error))
     await rm(fixtureRoot, { recursive: true, force: true, maxRetries: 5 })
