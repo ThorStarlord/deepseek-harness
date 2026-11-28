@@ -129,3 +129,51 @@ it('keeps selection failures and oversized configuration from blocking a request
     preset: { status: 'unavailable', reason: 'agent-preset-registry-unavailable' },
   })
 })
+
+it('preserves unavailable classifications for oversized profile and preset identities', () => {
+  const context = new Context()
+  const oversized = 'x'.repeat(257)
+  const profileIdentity = captureActivityDelegationExecutionSelection(
+    { name: oversized, startedBundles: [] },
+    undefined,
+    context,
+  )
+  expect(profileIdentity.profile).toEqual({
+    status: 'unavailable', reason: 'profile-identity-exceeds-persistence-limit',
+  })
+
+  const oversizedPreset: Pick<AgentPresetRegistry, 'composedPreset' | 'inspectCompositions'> = {
+    composedPreset: () => oversized,
+    inspectCompositions: vi.fn(),
+  }
+  expect(captureActivityDelegationExecutionSelection(undefined, oversizedPreset, context).preset).toEqual({
+    status: 'unavailable', reason: 'preset-identity-exceeds-persistence-limit',
+  })
+  expect(oversizedPreset.inspectCompositions).not.toHaveBeenCalled()
+})
+
+it('keeps missing or oversized preset module details unavailable', () => {
+  const context = new Context()
+  const missing: Pick<AgentPresetRegistry, 'composedPreset' | 'inspectCompositions'> = {
+    composedPreset: () => 'review',
+    inspectCompositions: () => [],
+  }
+  const tooMany: Pick<AgentPresetRegistry, 'composedPreset' | 'inspectCompositions'> = {
+    composedPreset: () => 'review',
+    inspectCompositions: () => [{
+      id: 'review', modules: Array.from({ length: 257 }, (_, index) => ({ moduleName: `module-${index}` })),
+      leakedServices: [],
+    }],
+  }
+  const tooLongName: Pick<AgentPresetRegistry, 'composedPreset' | 'inspectCompositions'> = {
+    composedPreset: () => 'review',
+    inspectCompositions: () => [{ id: 'review', modules: [{ moduleName: 'x'.repeat(257) }], leakedServices: [] }],
+  }
+
+  for (const presets of [missing, tooMany, tooLongName]) {
+    expect(captureActivityDelegationExecutionSelection(undefined, presets, context).preset).toEqual({
+      status: 'selected', id: 'review', activeModules: null,
+      classification: 'unavailable', classificationSource: 'unavailable',
+    })
+  }
+})

@@ -8,6 +8,8 @@ import { ActivityId } from '@deepseek-ai/dsh-home-activity'
 import { ActivityAnnotationError, ActivityAnnotationStorageError } from '@deepseek-ai/dsh-home-activity/annotations'
 import { StorageError } from '@deepseek-ai/dsh-storage'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
+import { boundedSubcommandInput } from './bounded-subcommand-input.ts'
+import { parseActivitySubcommand } from './command-input.ts'
 
 const USAGE = 'Usage: /activity annotate <activity-id> <JSON> where JSON is {"text":"..."}'
 const MAX_INPUT_BYTES = 16_384
@@ -27,11 +29,10 @@ export async function executeActivityAnnotationCommand(
   ctx: Context,
   invocation: CommandInvocation,
 ): Promise<CommandResult | undefined> {
-  const parsed = parse(invocation.rawInput)
-  if (parsed === undefined) return undefined
-  if (parsed.kind === 'invalid') return { kind: 'error', text: parsed.message }
-  const activityId = z.uuid().safeParse(parsed.activityId)
-  if (!activityId.success) return { kind: 'error', text: `Activity id must be a UUID. ${USAGE}` }
+  const command = parseActivitySubcommand(invocation.rawInput, parse, USAGE)
+  if (command.kind === 'result') return command.result
+  const parsed = command.command
+  const activityId = command.activityId
 
   let input: unknown
   try {
@@ -45,7 +46,7 @@ export async function executeActivityAnnotationCommand(
   }
 
   try {
-    const saved = await ctx.homeActivityAnnotations.correct({ activityId: ActivityId(activityId.data), text: note.data.text })
+    const saved = await ctx.homeActivityAnnotations.correct({ activityId: ActivityId(activityId), text: note.data.text })
     return {
       kind: 'success',
       text: [
@@ -60,7 +61,7 @@ export async function executeActivityAnnotationCommand(
       const recovery = error.code === 'unknown-activity'
         ? 'Run /activity list to choose a saved Activity id.'
         : error.code === 'annotation-limit'
-          ? `Run /activity open ${activityId.data} to view the current note and latest ${MAX_RENDERED_REVISIONS} revisions; older revisions remain saved but are not shown by that command.`
+          ? `Run /activity open ${activityId} to view the current note and latest ${MAX_RENDERED_REVISIONS} revisions; older revisions remain saved but are not shown by that command.`
           : `Check the note text and retry. ${USAGE}`
       return { kind: 'error', text: `${error.message} ${recovery}` }
     }
@@ -68,7 +69,7 @@ export async function executeActivityAnnotationCommand(
       ctx.logger.warn('command-home-activity: annotation persistence failed: %o', error)
       return {
         kind: 'error',
-        text: `Activity annotation storage failed; persistence may be uncertain. Restart DSH, then run /activity open ${activityId.data} to inspect saved history before deciding whether to retry.`,
+        text: `Activity annotation storage failed; persistence may be uncertain. Restart DSH, then run /activity open ${activityId} to inspect saved history before deciding whether to retry.`,
       }
     }
     ctx.logger.warn('command-home-activity: annotation could not be recorded: %o', error)
@@ -118,14 +119,15 @@ export function renderActivityAnnotations(ctx: Context, activityId: ReturnType<t
 }
 
 function parse(rawInput: string): ParsedCommand | undefined {
-  if (Buffer.byteLength(rawInput, 'utf8') > MAX_INPUT_BYTES) {
-    return /^annotate(?:\s|$)/u.test(rawInput.trim())
-      ? { kind: 'invalid', message: `Activity annotation input must not exceed ${MAX_INPUT_BYTES} bytes. ${USAGE}` }
-      : undefined
-  }
-  const input = rawInput.trim()
-  if (!/^annotate(?:\s|$)/u.test(input)) return undefined
-  const match = /^annotate\s+(\S+)\s+([\s\S]+)$/u.exec(input)
+  const bounded = boundedSubcommandInput(
+    rawInput,
+    'annotate',
+    MAX_INPUT_BYTES,
+    `Activity annotation input must not exceed ${MAX_INPUT_BYTES} bytes. ${USAGE}`,
+  )
+  if (bounded === undefined) return undefined
+  if (bounded.kind === 'invalid') return { kind: 'invalid', message: bounded.message }
+  const match = /^annotate\s+(\S+)\s+([\s\S]+)$/u.exec(bounded.input)
   return match?.[1] === undefined || match[2] === undefined
     ? { kind: 'invalid', message: USAGE }
     : { kind: 'annotate', activityId: match[1], input: match[2] }

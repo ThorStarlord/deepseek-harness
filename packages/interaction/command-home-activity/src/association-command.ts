@@ -30,6 +30,10 @@ type AssociationCommand =
   | { readonly kind: 'unlink'; readonly activityId: string; readonly contextKind: 'workspace' | 'session'; readonly contextId: string }
   | { readonly kind: 'invalid'; readonly message: string }
 
+type ValidatedAssociationContext =
+  | { readonly kind: 'workspace'; readonly activityId: ReturnType<typeof ActivityId>; readonly contextId: ReturnType<typeof WorkspaceId> }
+  | { readonly kind: 'session'; readonly activityId: ReturnType<typeof ActivityId>; readonly contextId: ReturnType<typeof SessionId> }
+
 /**
  * Execute the `/activity` context commands.
  * @param ctx - Plugin context for Activity, Workspace, Session, and command services.
@@ -147,43 +151,65 @@ async function listSessions(ctx: Context): Promise<CommandResult> {
 }
 
 async function link(ctx: Context, command: Extract<AssociationCommand, { kind: 'link' }>): Promise<CommandResult> {
-  const activity = activityIdSchema.safeParse(command.activityId)
-  if (!activity.success) return { kind: 'error', text: `Activity id must be a UUID. ${ASSOCIATION_USAGE}` }
-  const contextId = command.contextKind === 'workspace'
-    ? workspaceIdSchema.safeParse(command.contextId)
-    : sessionIdSchema.safeParse(command.contextId)
-  if (!contextId.success) return { kind: 'error', text: `${command.contextKind === 'workspace' ? 'Workspace id must be a UUID.' : 'Session id must be one non-whitespace token of at most 256 characters.'} ${ASSOCIATION_USAGE}` }
+  const context = validateAssociationContext(command)
+  if (context.kind === 'invalid') return context.result
   try {
-    const changed = command.contextKind === 'workspace'
-      ? await ctx.homeActivityAssociations.linkWorkspace(ActivityId(activity.data), WorkspaceId(contextId.data))
-      : await ctx.homeActivityAssociations.linkSession(ActivityId(activity.data), SessionId(contextId.data))
+    const changed = context.value.kind === 'workspace'
+      ? await ctx.homeActivityAssociations.linkWorkspace(context.value.activityId, context.value.contextId)
+      : await ctx.homeActivityAssociations.linkSession(context.value.activityId, context.value.contextId)
     const state = changed ? 'linked' : 'already linked'
-    return { kind: 'success', text: `${command.contextKind === 'workspace' ? 'Workspace' : 'DSH Session'} ${command.contextId} ${state} to Activity ${activity.data}. This records a reference only; it does not start work or change permissions.` }
+    return { kind: 'success', text: `${command.contextKind === 'workspace' ? 'Workspace' : 'DSH Session'} ${command.contextId} ${state} to Activity ${context.value.activityId}. This records a reference only; it does not start work or change permissions.` }
   } catch (error: unknown) {
-    return associationFailure(ctx, error, activity.data, 'link')
+    return associationFailure(ctx, error, context.value.activityId, 'link')
   }
 }
 
 async function unlink(ctx: Context, command: Extract<AssociationCommand, { kind: 'unlink' }>): Promise<CommandResult> {
-  const activity = activityIdSchema.safeParse(command.activityId)
-  if (!activity.success) return { kind: 'error', text: `Activity id must be a UUID. ${ASSOCIATION_USAGE}` }
-  const contextId = command.contextKind === 'workspace'
-    ? workspaceIdSchema.safeParse(command.contextId)
-    : sessionIdSchema.safeParse(command.contextId)
-  if (!contextId.success) return { kind: 'error', text: `${command.contextKind === 'workspace' ? 'Workspace id must be a UUID.' : 'Session id must be one non-whitespace token of at most 256 characters.'} ${ASSOCIATION_USAGE}` }
+  const context = validateAssociationContext(command)
+  if (context.kind === 'invalid') return context.result
   try {
-    const changed = command.contextKind === 'workspace'
-      ? await ctx.homeActivityAssociations.unlinkWorkspace(ActivityId(activity.data), WorkspaceId(contextId.data))
-      : await ctx.homeActivityAssociations.unlinkSession(ActivityId(activity.data), SessionId(contextId.data))
+    const changed = context.value.kind === 'workspace'
+      ? await ctx.homeActivityAssociations.unlinkWorkspace(context.value.activityId, context.value.contextId)
+      : await ctx.homeActivityAssociations.unlinkSession(context.value.activityId, context.value.contextId)
     const target = command.contextKind === 'workspace' ? 'Workspace' : 'DSH Session'
     return {
       kind: 'success',
       text: changed
-        ? `Removed ${target} link ${command.contextId} from Activity ${activity.data}. The Activity, ${target === 'Workspace' ? 'Workspace record' : 'Session log'} remain unchanged.`
-        : `No ${target} link ${command.contextId} was saved for Activity ${activity.data}; no context was changed.`,
+        ? `Removed ${target} link ${command.contextId} from Activity ${context.value.activityId}. The Activity, ${target === 'Workspace' ? 'Workspace record' : 'Session log'} remain unchanged.`
+        : `No ${target} link ${command.contextId} was saved for Activity ${context.value.activityId}; no context was changed.`,
     }
   } catch (error: unknown) {
-    return associationFailure(ctx, error, activity.data, 'unlink')
+    return associationFailure(ctx, error, context.value.activityId, 'unlink')
+  }
+}
+
+function validateAssociationContext(
+  command: Pick<Extract<AssociationCommand, { kind: 'link' | 'unlink' }>, 'activityId' | 'contextKind' | 'contextId'>,
+): { readonly kind: 'invalid'; readonly result: CommandResult } | { readonly kind: 'valid'; readonly value: ValidatedAssociationContext } {
+  const activity = activityIdSchema.safeParse(command.activityId)
+  if (!activity.success) {
+    return { kind: 'invalid', result: { kind: 'error', text: `Activity id must be a UUID. ${ASSOCIATION_USAGE}` } }
+  }
+  if (command.contextKind === 'workspace') {
+    const context = workspaceIdSchema.safeParse(command.contextId)
+    if (!context.success) {
+      return { kind: 'invalid', result: { kind: 'error', text: `Workspace id must be a UUID. ${ASSOCIATION_USAGE}` } }
+    }
+    return {
+      kind: 'valid',
+      value: { kind: 'workspace', activityId: ActivityId(activity.data), contextId: WorkspaceId(context.data) },
+    }
+  }
+  const context = sessionIdSchema.safeParse(command.contextId)
+  if (!context.success) {
+    return {
+      kind: 'invalid',
+      result: { kind: 'error', text: `Session id must be one non-whitespace token of at most 256 characters. ${ASSOCIATION_USAGE}` },
+    }
+  }
+  return {
+    kind: 'valid',
+    value: { kind: 'session', activityId: ActivityId(activity.data), contextId: SessionId(context.data) },
   }
 }
 

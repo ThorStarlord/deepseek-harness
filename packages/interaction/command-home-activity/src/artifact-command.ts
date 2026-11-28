@@ -10,6 +10,8 @@ import { activityDelegationId } from '@deepseek-ai/dsh-home-activity/delegations
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { StorageError } from '@deepseek-ai/dsh-storage'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
+import { boundedSubcommandInput } from './bounded-subcommand-input.ts'
+import { parseActivitySubcommand, parseActivityJsonInput, commandUuid } from './command-input.ts'
 
 const USAGE = 'Usage: /activity artifact add <activity-id> <delegation-id> <workspace-id> <JSON>'
 const MAX_INPUT_BYTES = 16_384
@@ -34,30 +36,21 @@ export async function executeActivityArtifactCommand(
   ctx: Context,
   invocation: CommandInvocation,
 ): Promise<CommandResult | undefined> {
-  const parsed = parse(invocation.rawInput)
-  if (parsed === undefined) return undefined
-  if (parsed.kind === 'invalid') return { kind: 'error', text: parsed.message }
-  const activityId = z.uuid().safeParse(parsed.activityId)
-  if (!activityId.success) return { kind: 'error', text: `Activity id must be a UUID. ${USAGE}` }
-  const delegationId = z.uuid().safeParse(parsed.delegationId)
-  if (!delegationId.success) return { kind: 'error', text: `Delegation id must be a UUID. ${USAGE}` }
-  const workspaceId = z.uuid().safeParse(parsed.workspaceId)
-  if (!workspaceId.success) return { kind: 'error', text: `Workspace id must be a UUID. ${USAGE}` }
+  const command = parseActivitySubcommand(invocation.rawInput, parse, USAGE)
+  if (command.kind === 'result') return command.result
+  const parsed = command.command
+  const activityId = command.activityId
+  const delegationId = commandUuid(parsed.delegationId, 'Delegation id', USAGE)
+  if (!delegationId.success) return { kind: 'error', text: delegationId.message }
+  const workspaceId = commandUuid(parsed.workspaceId, 'Workspace id', USAGE)
+  if (!workspaceId.success) return { kind: 'error', text: workspaceId.message }
 
-  let input: unknown
-  try {
-    input = JSON.parse(parsed.input)
-  } catch {
-    return { kind: 'error', text: `Artifact details must be valid JSON. ${USAGE}` }
-  }
-  const details = artifactInputSchema.safeParse(input)
-  if (!details.success) {
-    return { kind: 'error', text: `Artifact details are invalid: ${details.error.issues.map(issue => issue.message).join('; ')}` }
-  }
+  const details = parseActivityJsonInput(parsed.input, 'Artifact', USAGE, artifactInputSchema)
+  if (!details.success) return { kind: 'error', text: details.message }
 
   try {
     const artifact = await ctx.homeActivityArtifacts.create({
-      activityId: ActivityId(activityId.data),
+      activityId: ActivityId(activityId),
       delegationId: activityDelegationId(delegationId.data),
       workspaceId: WorkspaceId(workspaceId.data),
       ...details.data,
@@ -82,21 +75,21 @@ export async function executeActivityArtifactCommand(
       const recovery = error.code === 'unknown-activity'
         ? 'Run /activity list to choose a saved Activity id.'
         : error.code === 'unknown-delegation'
-          ? `Run /activity open ${activityId.data} to choose a saved delegation id.`
+          ? `Run /activity open ${activityId} to choose a saved delegation id.`
           : error.code === 'delegation-activity-mismatch'
             ? 'Choose a delegation recorded for this Activity.'
             : error.code === 'workspace-not-linked'
-              ? `Link the intended Workspace first with /activity link ${activityId.data} workspace <workspace-id>.`
+              ? `Link the intended Workspace first with /activity link ${activityId} workspace <workspace-id>.`
               : error.code === 'unknown-workspace'
                 ? 'Run /activity workspaces to choose a registered Workspace id.'
                 : error.code === 'artifact-limit'
-                  ? `Run /activity open ${activityId.data} to inspect saved references.`
+                  ? `Run /activity open ${activityId} to inspect saved references.`
                   : `Check the label, location, and optional revision. ${USAGE}`
       return { kind: 'error', text: `${error.message} ${recovery}` }
     }
     if (error instanceof ActivityArtifactStorageError || error instanceof StorageError) {
       ctx.logger.warn('command-home-activity: artifact reference persistence failed: %o', error)
-      return { kind: 'error', text: `Artifact reference storage failed; no pointer was confirmed. Run /activity open ${activityId.data} before retrying.` }
+      return { kind: 'error', text: `Artifact reference storage failed; no pointer was confirmed. Run /activity open ${activityId} before retrying.` }
     }
     ctx.logger.warn('command-home-activity: artifact reference could not be recorded: %o', error)
     return { kind: 'error', text: 'The selected Activity, delegation, or Workspace could not be confirmed; no pointer was recorded.' }
@@ -150,14 +143,15 @@ export function renderActivityArtifacts(ctx: Context, activityId: ReturnType<typ
 }
 
 function parse(rawInput: string): ParsedCommand | undefined {
-  if (Buffer.byteLength(rawInput, 'utf8') > MAX_INPUT_BYTES) {
-    return /^artifact(?:\s|$)/u.test(rawInput.trim())
-      ? { kind: 'invalid', message: `Artifact command input must not exceed ${MAX_INPUT_BYTES} bytes. ${USAGE}` }
-      : undefined
-  }
-  const input = rawInput.trim()
-  if (!/^artifact(?:\s|$)/u.test(input)) return undefined
-  const match = /^artifact\s+add\s+(\S+)\s+(\S+)\s+(\S+)\s+([\s\S]+)$/u.exec(input)
+  const bounded = boundedSubcommandInput(
+    rawInput,
+    'artifact',
+    MAX_INPUT_BYTES,
+    `Artifact command input must not exceed ${MAX_INPUT_BYTES} bytes. ${USAGE}`,
+  )
+  if (bounded === undefined) return undefined
+  if (bounded.kind === 'invalid') return { kind: 'invalid', message: bounded.message }
+  const match = /^artifact\s+add\s+(\S+)\s+(\S+)\s+(\S+)\s+([\s\S]+)$/u.exec(bounded.input)
   return match?.[1] === undefined || match[2] === undefined || match[3] === undefined || match[4] === undefined
     ? { kind: 'invalid', message: USAGE }
     : { kind: 'add', activityId: match[1], delegationId: match[2], workspaceId: match[3], input: match[4] }

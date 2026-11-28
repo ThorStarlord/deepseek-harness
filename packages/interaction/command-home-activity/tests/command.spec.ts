@@ -29,8 +29,14 @@ import HomeActivityAssociationService, {
   HomeActivityAssociationError,
   HomeActivityAssociationStorageError,
 } from '@deepseek-ai/dsh-home-activity/associations'
-import HomeActivityArtifactService from '@deepseek-ai/dsh-home-activity/artifacts'
-import HomeActivityHandoffService from '@deepseek-ai/dsh-home-activity/handoffs'
+import HomeActivityArtifactService, {
+  ActivityArtifactError,
+  ActivityArtifactStorageError,
+} from '@deepseek-ai/dsh-home-activity/artifacts'
+import HomeActivityHandoffService, {
+  ActivityHandoffError,
+  ActivityHandoffStorageError,
+} from '@deepseek-ai/dsh-home-activity/handoffs'
 import HomeActivityReviewService, {
   ActivityReviewError,
   ActivityReviewStorageError,
@@ -700,6 +706,37 @@ it('keeps the active request guard until its turn ends when the command plugin i
   expect(guardDenial(test, 'shell', 'guard-shell-after-plugin-removal-turn-end')).toBeUndefined()
 })
 
+it('keeps an expired request restricted when another Session prunes pending assessments', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Expired assessment', objective: 'Keep an unfinished read-only assessment request scoped to its turn.',
+    boundaries: { inScope: ['Read the selected sources.'], outOfScope: ['Do not implement.'] },
+  })
+  const workspaceIds = [...test.workspaces.keys()]
+  const now = vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 10, 27, 12))
+  try {
+    for (const guard of test.toolGuards) {
+      expect(guard({ agent: undefined } as never)).toBeUndefined()
+    }
+    expect(await run(test, ` assess ${activity.id} ${workspaceIds[0]} ${workspaceIds[1]}`))
+      .toMatchObject({ kind: 'success' })
+    now.mockReturnValue(Date.UTC(2026, 10, 27, 12) + 45 * 60 * 1000 + 1)
+    expect(guardDenial(test, 'shell', 'expired-before-prune')).toContain('request expired')
+
+    expect(await run(test, ` assess ${activity.id} ${workspaceIds[0]} ${workspaceIds[1]}`, test.secondaryAgent))
+      .toMatchObject({ kind: 'success' })
+    expect(guardDenial(test, 'shell', 'expired-after-prune')).toContain('was canceled')
+    expect(guardDenial(test, 'shell', 'secondary-remains-active', test.secondaryAgent)).toContain('is active')
+
+    test.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(guardDenial(test, 'shell', 'released-after-turn-end')).toBeUndefined()
+    expect(guardDenial(test, 'shell', 'secondary-still-active', test.secondaryAgent)).toContain('is active')
+    test.secondarySession.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  } finally {
+    now.mockRestore()
+  }
+})
+
 it('rejects invalid repository selections before loading Skills or steering the Agent', async () => {
   const test = await harness()
   const activity = await test.ctx.homeActivities.create({
@@ -907,6 +944,36 @@ it('describes the visible annotation subset when the history limit is reached', 
   expect(result.text).toContain(
     `Run /activity open ${activity.id} to view the current note and latest 8 revisions; older revisions remain saved but are not shown by that command.`,
   )
+})
+
+it('keeps annotation validation and storage failures actionable without exposing diagnostics', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Annotation errors', objective: 'Keep user corrections distinct from provider reports.',
+    boundaries: { inScope: ['Record a correction.'], outOfScope: ['Do not rewrite provider history.'] },
+  })
+  const correct = vi.spyOn(test.ctx.homeActivityAnnotations, 'correct')
+  correct.mockRejectedValueOnce(new ActivityAnnotationError('unknown-activity', 'Activity was not found.'))
+  expect((await run(test, ` annotate ${activity.id} {"text":"A correction."}`)).text)
+    .toContain('Run /activity list to choose a saved Activity id.')
+  correct.mockRejectedValueOnce(new ActivityAnnotationError('invalid-annotation', 'Annotation rejected.'))
+  expect((await run(test, ` annotate ${activity.id} {"text":"A correction."}`)).text)
+    .toContain('Check the note text and retry. Usage: /activity annotate <activity-id> <JSON>')
+  correct.mockRejectedValueOnce(new StorageError('unknown-state', 'private note path'))
+  const storageFailure = await run(test, ` annotate ${activity.id} {"text":"A correction."}`)
+  expect(storageFailure.text).toContain('persistence may be uncertain')
+  expect(storageFailure.text).not.toContain('private note path')
+  correct.mockRejectedValueOnce(new Error('private annotation state'))
+  const unknownFailure = await run(test, ` annotate ${activity.id} {"text":"A correction."}`)
+  expect(unknownFailure.text).toContain('no annotation was recorded')
+  expect(unknownFailure.text).not.toContain('private annotation state')
+
+  vi.spyOn(test.ctx.homeActivityAnnotations, 'list').mockImplementation(() => {
+    throw new Error('private annotation history')
+  })
+  const opened = await run(test, ` open ${activity.id}`)
+  expect(opened.text).toContain('User annotations could not be read')
+  expect(opened.text).not.toContain('private annotation history')
 })
 
 it('links selected Workspaces and Sessions independently and reopens them from another Session', async () => {
@@ -1504,4 +1571,61 @@ it('validates review commands and reports safe selection, read, and write failur
   })
   expect((await run(test, ` open ${activity.id}`)).text)
     .toContain('User review state could not be read; no current disposition or evidence was confirmed.')
+})
+
+it('returns safe recovery instructions for artifact and handoff persistence failures', async () => {
+  const test = await harness()
+  const activity = await test.ctx.homeActivities.create({
+    name: 'Reference recovery', objective: 'Preserve user-linked artifact and external handoff records.',
+    boundaries: { inScope: ['Record references.'], outOfScope: ['Do not infer verification.'] },
+  })
+  const delegationId = randomUUID()
+  const workspaceId = '00000000-0000-4000-8000-000000000011'
+  const artifactInput = ` artifact add ${activity.id} ${delegationId} ${workspaceId} {"label":"Review","location":"reports/review.md"}`
+  const artifactCreate = vi.spyOn(test.ctx.homeActivityArtifacts, 'create')
+  const artifactFailures: readonly [ConstructorParameters<typeof ActivityArtifactError>[0], string][] = [
+    ['unknown-activity', 'Run /activity list to choose a saved Activity id.'],
+    ['unknown-delegation', `Run /activity open ${activity.id} to choose a saved delegation id.`],
+    ['delegation-activity-mismatch', 'Choose a delegation recorded for this Activity.'],
+    ['workspace-not-linked', `Link the intended Workspace first with /activity link ${activity.id} workspace <workspace-id>.`],
+    ['unknown-workspace', 'Run /activity workspaces to choose a registered Workspace id.'],
+    ['artifact-limit', `Run /activity open ${activity.id} to inspect saved references.`],
+    ['invalid-reference', 'Check the label, location, and optional revision.'],
+  ]
+  for (const [code, recovery] of artifactFailures) {
+    artifactCreate.mockRejectedValueOnce(new ActivityArtifactError(code, 'Artifact request rejected.'))
+    const result = await run(test, artifactInput)
+    expect(result.kind).toBe('error')
+    expect(result.text).toContain(recovery)
+  }
+  artifactCreate.mockRejectedValueOnce(new ActivityArtifactStorageError(new Error('private artifact path')))
+  expect((await run(test, artifactInput)).text).toContain('Artifact reference storage failed; no pointer was confirmed.')
+  artifactCreate.mockRejectedValueOnce(new StorageError('unknown-state', 'private artifact path'))
+  expect((await run(test, artifactInput)).text).toContain('Artifact reference storage failed; no pointer was confirmed.')
+  artifactCreate.mockRejectedValueOnce(new Error('private artifact state'))
+  const artifactUnknownFailure = await run(test, artifactInput)
+  expect(artifactUnknownFailure.text).toContain('no pointer was recorded')
+  expect(artifactUnknownFailure.text).not.toContain('private artifact state')
+
+  const handoffInput = ` handoff add ${activity.id} {"source":"External review","summary":"Review the report."}`
+  const handoffCreate = vi.spyOn(test.ctx.homeActivityHandoffs, 'create')
+  const handoffFailures: readonly [ConstructorParameters<typeof ActivityHandoffError>[0], string][] = [
+    ['unknown-activity', 'Run /activity list to choose a saved Activity id.'],
+    ['handoff-limit', `Run /activity open ${activity.id} to inspect recorded handoffs.`],
+    ['invalid-handoff', 'Check the source, summary, and artifact references.'],
+  ]
+  for (const [code, recovery] of handoffFailures) {
+    handoffCreate.mockRejectedValueOnce(new ActivityHandoffError(code, 'Handoff request rejected.'))
+    const result = await run(test, handoffInput)
+    expect(result.kind).toBe('error')
+    expect(result.text).toContain(recovery)
+  }
+  handoffCreate.mockRejectedValueOnce(new ActivityHandoffStorageError(new Error('private handoff path')))
+  expect((await run(test, handoffInput)).text).toContain('External handoff storage could not confirm the record.')
+  handoffCreate.mockRejectedValueOnce(new StorageError('unknown-state', 'private handoff path'))
+  expect((await run(test, handoffInput)).text).toContain('External handoff storage could not confirm the record.')
+  handoffCreate.mockRejectedValueOnce(new Error('private handoff state'))
+  const handoffUnknownFailure = await run(test, handoffInput)
+  expect(handoffUnknownFailure.text).toContain('no record was confirmed')
+  expect(handoffUnknownFailure.text).not.toContain('private handoff state')
 })
