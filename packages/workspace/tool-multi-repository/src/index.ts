@@ -495,14 +495,14 @@ async function repositoryReadApprovalDecision(
         `Repository 1: ${selection[0]}`,
         `Repository 2: ${selection[1]}`,
         `Task: ${args.task}`,
-        'After approval, this starts one read-only DSH child Session per repository. Children have no model-facing write, shell, process, further delegation, or sandbox-mode-change tool. On Windows, DSH may run fixed internal Git reads as the host process; those reads are not OS-confined.',
+        'After approval, this starts one read-only DSH child Session per repository. Children have no model-facing write, shell, process, further delegation, or sandbox-mode-change tool. When the sandbox reports partial enforcement, fixed, internally constructed Git reads run through the host subprocess provider and are not OS-confined.',
       ].join('\n'),
       zh: [
         '是否允许只读分析以下两个仓库？',
         `仓库 1：${selection[0]}`,
         `仓库 2：${selection[1]}`,
         `任务：${args.task}`,
-        '批准后，每个仓库会启动一个只读 DSH 子级 Session。子级没有模型可调用的写入、Shell、进程、进一步委派或更改沙箱模式工具。在 Windows 上，DSH 可能以宿主进程运行固定的内部 Git 只读命令；这些读取不受操作系统级进程隔离。',
+        '批准后，每个仓库会启动一个只读 DSH 子级 Session。子级没有模型可调用的写入、Shell、进程、进一步委派或更改沙箱模式工具。当沙箱报告仅部分强制执行时，固定且由内部构造的 Git 只读命令会通过宿主 subprocess 提供方运行；这些读取不受操作系统级进程隔离。',
       ].join('\n'),
     },
   }
@@ -960,9 +960,9 @@ async function runGit(
   assertReadOnlyGitCommand(args)
   const policy: SandboxPolicy = { mode: 'read-only', workspaceRoot: root }
   const confined = await ctx.sandbox.confine(['git', ...args], policy, signal)
-  // Windows' restricted token cannot read ordinary user-owned repository files.
-  // Keep Git internal: only fixed read verbs run on the host process, and no
-  // arbitrary subprocess tool is exposed to the delegated worker.
+  // Partial sandbox enforcement is not sufficient for these repository reads.
+  // Keep Git internal: only fixed read verbs run through the host subprocess
+  // provider, and no arbitrary subprocess tool is exposed to the worker.
   const argv = confined.enforcement === 'full' ? confined.argv : ['git', ...args]
   const handle = ctx.subprocess.spawn({
     argv,

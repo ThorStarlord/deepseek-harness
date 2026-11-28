@@ -68,7 +68,7 @@ The parent tool call uses the existing one-shot approval path before repository 
 
 The repository read tools check every requested path against that child's selected root, omit ignored and secret-like paths, and bound returned file content. The coordinator reports Git state independently for each root and returns both worker outcomes to the same parent Session.
 
-On Windows, the ACL sandbox reports partial enforcement and its restricted token cannot read ordinary user-owned repository files. Fixed, internally constructed Git read commands therefore run through the host subprocess provider; the child still receives no subprocess tool or caller-controlled command. These Git reads are not OS-confined on Windows. Tool-level file reads remain rooted at the selected Workspace, but this is not process-level read confinement.
+When the sandbox reports partial enforcement, fixed, internally constructed Git read commands run through the host subprocess provider; the child still receives no subprocess tool or caller-controlled command. These Git reads are not OS-confined. Tool-level file reads remain rooted at the selected Workspace, but this is not process-level read confinement.
 
 | File | Role |
 |---|---|
@@ -122,7 +122,7 @@ The schema remains a stable request prefix while the plugin registration is unch
 - **Live source** — workers read the current working tree and index over time, not an immutable snapshot. Concurrent edits can make findings stale; the returned state check is best-effort.
 - **Ignored and secret-like files** — ignored file contents are not automatically included. Secret-like paths and `.git` metadata are excluded from file reads.
 - **Path-based read containment** — the filesystem checks resolved paths inside each selected root, but its metadata does not detect hard-link aliases. A selected tree can contain an in-root hard link to data stored elsewhere, which DSH cannot identify as an external file.
-- **Windows OS confinement** — fixed Git inspection commands run as the host process because Windows ACL enforcement is partial. The child has no model-facing process tool, but Windows does not confine these internal Git reads at the process level. DSH file-read tools check containment within the selected root.
+- **OS confinement** — when a sandbox reports partial enforcement, fixed Git inspection commands run through the host subprocess provider. The child has no model-facing process tool, but the operating system does not confine these internal Git reads at the process level. DSH file-read tools check containment within the selected root.
 - **No write workflow** — this capability does not create clones or modify source files, the index, or Git state. Write-capable coordination remains unavailable pending separate security qualification.
 
 <a id="dev-note"></a>
