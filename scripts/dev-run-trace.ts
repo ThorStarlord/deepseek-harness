@@ -5,6 +5,7 @@ import { execa } from 'execa'
 import { performance } from 'node:perf_hooks'
 import { dirname, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import { assertNever } from '../packages/util/values/src/index.ts'
 
 const FORMAT_VERSION = 1
 const DEFAULT_TRACE_ROOT = '.artifacts/dev-run-traces'
@@ -219,6 +220,8 @@ export function parseTraceEvents(input: string): TraceEvent[] {
           status: value.status,
         })
         break
+      default:
+        assertNever(value, 'TraceEvent')
     }
   }
   assertEventPairs(events)
