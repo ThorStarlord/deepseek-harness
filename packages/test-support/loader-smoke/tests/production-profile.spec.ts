@@ -10,7 +10,7 @@ const overlayPath = fileURLToPath(new URL('./fixtures/production-profile.patch.y
 const ENVIRONMENT_KEYS = ['DSH_HOME', 'DSH_AGENTS_HOME', 'USERPROFILE', 'HOME'] as const
 const PROFILE_BOOT_TIMEOUT_MS = 30_000
 
-describe.sequential('bootProductionProfile', () => {
+describe('bootProductionProfile', { concurrent: false }, () => {
   it('rejects overlays outside the supported filename contract before loading a profile', async () => {
     await expect(bootProductionProfile({
       binName: 'loader-smoke-test',
