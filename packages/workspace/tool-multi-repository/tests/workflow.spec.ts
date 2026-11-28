@@ -675,6 +675,7 @@ describe('read-only multi-repository coordination', () => {
 
   it('rejects write, shell, child, and policy attempts from read-only workers', async () => {
     const f = await setup({ attemptForbiddenTools: true })
+    const spawn = vi.spyOn(f.ctx.subprocess, 'spawn')
     for (const repo of [f.alphaPath, f.betaPath]) {
       await writeFile(join(repo, 'private.pem'), 'fixture-private-key')
       await writeFile(join(repo, 'binary.bin'), Buffer.from([0, 255, 1]))
@@ -716,6 +717,7 @@ describe('read-only multi-repository coordination', () => {
         && event.data.message.toolCallId === toolCallId)
       expect(toolResultFor('read-git-alias')).toMatchObject({ data: { error: { code: 'PROTECTED_PATH_DENIED' } } })
       expect(toolResultFor('read-outside-alias')).toMatchObject({ data: { error: { code: 'OUTSIDE_REPOSITORY' } } })
+      expect(toolResultFor('read-ignored')).toMatchObject({ data: { error: { code: 'IGNORED_PATH_DENIED' } } })
       const attemptedCallIds = [
         'attempt-write', 'attempt-edit', 'attempt-patch', 'attempt-shell', 'attempt-pwsh',
         'attempt-child', 'attempt-coordination', 'attempt-policy-change', 'attempt-escalation',
@@ -726,8 +728,15 @@ describe('read-only multi-repository coordination', () => {
       expect(blockedResults.every(event => event.type === 'tool/result' && event.data.message.isError)).toBe(true)
       expect(blockedResults.some(event => event.type === 'tool/result' && event.data.error?.code === 'UNKNOWN_TOOL')).toBe(true)
     }
+    const checkedPaths = spawn.mock.calls
+      .map(([request]) => request.argv)
+      .filter(argv => argv.includes('check-ignore'))
+      .map(argv => argv.at(-1))
+    expect(checkedPaths).toContain('cache.ignored')
+    expect(checkedPaths).not.toContain('git-link/config')
+    expect(checkedPaths).not.toContain('outside-link/AGENTS.md')
     expect(await Promise.all([f.alphaPath, f.betaPath, f.thirdPath].map(snapshotRepository))).toEqual(before)
-  }, 30_000)
+  }, 90_000)
 
   it('returns an independent repository error without attributing it to the successful worker', async () => {
     const f = await setup({ failBeta: true })
@@ -830,6 +839,27 @@ describe('read-only multi-repository coordination', () => {
         expect.objectContaining({ workspaceId: 'workspace-alpha', gitCommandEnforcement: 'full' }),
         expect.objectContaining({ workspaceId: 'workspace-beta', gitCommandEnforcement: 'full' }),
       ]))
+  }, 30_000)
+
+  it('uses fixed host Git argv when the sandbox reports partial process enforcement', async () => {
+    const f = await setup()
+    vi.spyOn(f.ctx.sandbox, 'confine').mockImplementation(async argv => ({
+      argv: ['unavailable-sandbox-wrapper', ...argv],
+      enforcement: 'partial',
+      denialSignatures: [],
+      runnerFailureRules: [],
+    }))
+    const spawn = vi.spyOn(f.ctx.subprocess, 'spawn')
+
+    const result = await authorizeDirectCoordination(f, [f.alphaPath, f.betaPath], 'inspect under partial confinement')
+
+    expect((result as { repositories: readonly Record<string, unknown>[] }).repositories)
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ workspaceId: 'workspace-alpha', gitCommandEnforcement: 'partial' }),
+        expect.objectContaining({ workspaceId: 'workspace-beta', gitCommandEnforcement: 'partial' }),
+      ]))
+    expect(spawn.mock.calls.length).toBeGreaterThan(0)
+    expect(spawn.mock.calls.every(([request]) => request.argv[0] === 'git')).toBe(true)
   }, 30_000)
 
   it('keeps a live read when metadata cannot report an untracked version or file size', async () => {

@@ -383,15 +383,15 @@ function createWorkingTreeReadTool(
       if (isSensitivePath(requested) || isGitMetadataPath(requested)) {
         throw new MultiRepositoryError('secret files and Git metadata are excluded from repository analysis', 'PROTECTED_PATH_DENIED')
       }
-      if (await isIgnoredPath(ctx, root, requested, exec.signal)) {
-        throw new MultiRepositoryError('ignored files are excluded from repository analysis', 'IGNORED_PATH_DENIED')
-      }
       const target = await ctx.fs.resolve(requested, { cwd: root, signal: exec.signal })
       const rootTarget = await ctx.fs.resolve(root, { signal: exec.signal })
       if (!ctx.fs.contains(rootTarget, target)) throw new MultiRepositoryError('repository workers cannot read outside their selected Workspace', 'OUTSIDE_REPOSITORY')
       const canonicalPath = relative(root, ctx.fs.processPath(target))
       if (isSensitivePath(canonicalPath) || isGitMetadataPath(canonicalPath)) {
         throw new MultiRepositoryError('secret files and Git metadata are excluded from repository analysis', 'PROTECTED_PATH_DENIED')
+      }
+      if (await isIgnoredPath(ctx, root, normalizeGitPath(canonicalPath), exec.signal)) {
+        throw new MultiRepositoryError('ignored files are excluded from repository analysis', 'IGNORED_PATH_DENIED')
       }
       const info = await ctx.fs.stat(target, exec.signal)
       if (info?.type !== 'file') throw new MultiRepositoryError('repository read requires one regular file', 'FILE_NOT_FOUND')
