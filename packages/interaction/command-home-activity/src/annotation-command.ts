@@ -98,10 +98,7 @@ export function renderActivityAnnotations(ctx: Context, activityId: ReturnType<t
       'No annotation recorded. Use /activity annotate <activity-id> <JSON> to add a note.',
     ])
   }
-  const current = annotations.at(-1)
-  if (current === undefined) {
-    return Object.freeze(['User annotation history could not be read; no current note was confirmed.'])
-  }
+  const current = annotations[annotations.length - 1] as (typeof annotations)[number]
   const visibleAnnotations = annotations.slice(-MAX_RENDERED_REVISIONS)
   const olderRevisionCount = annotations.length - visibleAnnotations.length
   return Object.freeze([
