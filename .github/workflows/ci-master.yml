@@ -251,6 +251,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
           test -f apps/web/tests/minimal-preset.snapshot.ts
           test -f apps/web/tests/code-language.snapshot.ts
+          test -f apps/web/tests/present-svg.e2e.ts
           test -f apps/web/tests/replay-round-trip.e2e.ts
           test -f apps/web/tests/subagent-fork-schedule.snapshot.ts
 
@@ -308,7 +309,7 @@ jobs:
           SNAPSHOT_REPORT: ${{ runner.temp }}/web-selected-snapshots-vitest.json
         run: |
           set +e
-          pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/minimal-preset.snapshot.ts apps/web/tests/code-language.snapshot.ts apps/web/tests/subagent-fork-schedule.snapshot.ts --update --reporter=json --outputFile="$SNAPSHOT_REPORT"
+          pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/minimal-preset.snapshot.ts apps/web/tests/code-language.snapshot.ts apps/web/tests/present-svg.e2e.ts apps/web/tests/subagent-fork-schedule.snapshot.ts --update --reporter=json --outputFile="$SNAPSHOT_REPORT"
           snapshot_status=$?
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs'
@@ -317,6 +318,7 @@ jobs:
           const expected = [
             'minimal-preset.snapshot.ts',
             'code-language.snapshot.ts',
+            'present-svg.e2e.ts',
             'subagent-fork-schedule.snapshot.ts',
           ]
           const results = report.testResults.filter(result => expected.some(file => result.name.endsWith(file)))
@@ -345,6 +347,8 @@ jobs:
             apps/web/tests/code-language.snapshot.ts
             snapshots/web/code-language/**
             snapshots/web/fresh-round-trip/**
+            apps/web/tests/present-svg.e2e.ts
+            snapshots/web/present-svg/**
             apps/web/tests/subagent-fork-schedule.snapshot.ts
             snapshots/web/subagent-fork-schedule/**
 
