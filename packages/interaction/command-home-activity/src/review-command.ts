@@ -11,7 +11,7 @@ import type { ActivityDelegationId } from '@deepseek-ai/dsh-home-activity/delega
 import type { ActivityReviewDisposition, RecordActivityReviewRequest } from '@deepseek-ai/dsh-home-activity/reviews'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { boundedSubcommandInput } from './bounded-subcommand-input.ts'
-import { parseActivitySubcommand, parseActivityJsonInput, commandUuid } from './command-input.ts'
+import { parseActivityDelegationJsonCommand } from './command-input.ts'
 
 const USAGE = 'Usage: /activity review set <activity-id> <delegation-id> <JSON>'
 const MAX_INPUT_BYTES = 16_384
@@ -49,21 +49,17 @@ export async function executeActivityReviewCommand(
   ctx: Context,
   invocation: CommandInvocation,
 ): Promise<CommandResult | undefined> {
-  const command = parseActivitySubcommand(invocation.rawInput, parse, USAGE)
+  const command = parseActivityDelegationJsonCommand(
+    invocation.rawInput, parse, USAGE, 'Review', reviewInputSchema,
+  )
   if (command.kind === 'result') return command.result
-  const parsed = command.command
   const activityId = command.activityId
-  const delegationId = commandUuid(parsed.delegationId, 'Delegation id', USAGE)
-  if (!delegationId.success) return { kind: 'error', text: delegationId.message }
-
-  const details = parseActivityJsonInput(parsed.input, 'Review', USAGE, reviewInputSchema)
-  if (!details.success) return { kind: 'error', text: details.message }
 
   const request: RecordActivityReviewRequest = {
     activityId: ActivityId(activityId),
-    delegationId: activityDelegationId(delegationId.data),
-    disposition: details.data.disposition,
-    ...(details.data.evidence === undefined ? {} : { evidence: details.data.evidence }),
+    delegationId: activityDelegationId(command.delegationId),
+    disposition: command.data.disposition,
+    ...(command.data.evidence === undefined ? {} : { evidence: command.data.evidence }),
   }
   try {
     const review = await ctx.homeActivityReviews.record(request)
@@ -71,11 +67,11 @@ export async function executeActivityReviewCommand(
       kind: 'success',
       text: [
         `User disposition recorded: ${dispositionLabel(review.disposition)}.`,
-        details.data.evidence === undefined
+        command.data.evidence === undefined
           ? review.evidence.length === 0
             ? 'No verification evidence is currently recorded.'
             : 'No new verification evidence was supplied; previously recorded evidence was retained.'
-          : `User-supplied evidence recorded: ${details.data.evidence.source} reports ${details.data.evidence.result}. DSH did not verify its source or result.`,
+          : `User-supplied evidence recorded: ${command.data.evidence.source} reports ${command.data.evidence.result}. DSH did not verify its source or result.`,
         'The provider execution report was not changed.',
       ].join('\n'),
     }

@@ -21,6 +21,17 @@ export type ActivityJsonInputResult<T> =
   | { readonly success: true; readonly data: T }
   | { readonly success: false; readonly message: string }
 
+/** Result of parsing a delegation-backed Activity command with one JSON payload. */
+export type ActivityDelegationJsonCommandResult<TCommand, TPayload> =
+  | { readonly kind: 'result'; readonly result: CommandResult | undefined }
+  | {
+    readonly kind: 'command'
+    readonly command: TCommand
+    readonly activityId: string
+    readonly delegationId: string
+    readonly data: TPayload
+  }
+
 /** Parse a subcommand, return its simple feedback, or validate its Activity UUID.
  * @param rawInput - Raw command input received by the owning handler.
  * @param parse - Command-specific grammar parser.
@@ -82,4 +93,41 @@ export function parseActivityJsonInput<T>(
   return parsed.success
     ? { success: true, data: parsed.data }
     : { success: false, message: `${label} details are invalid: ${parsed.error.issues.map(issue => issue.message).join('; ')}` }
+}
+
+/** Parse a delegation-backed Activity subcommand and validate its JSON payload.
+ * @typeParam TCommand - Valid command fields returned by the command-specific parser.
+ * @typeParam TPayload - Command payload accepted by the command-owned schema.
+ * @param rawInput - Raw command input received by the owning handler.
+ * @param parse - Command-specific grammar parser.
+ * @param usage - Command usage string appended to identifier and JSON errors.
+ * @param label - User-facing payload label.
+ * @param schema - Owning command's payload schema.
+ * @returns Validated command data or command-owned feedback for unhandled or invalid input.
+ */
+export function parseActivityDelegationJsonCommand<
+  TCommand extends { readonly activityId: string; readonly delegationId: string; readonly input: string },
+  TPayload,
+>(
+  rawInput: string,
+  parse: (rawInput: string) => TCommand | { readonly kind: 'invalid'; readonly message: string } | undefined,
+  usage: string,
+  label: string,
+  schema: z.ZodType<TPayload>,
+): ActivityDelegationJsonCommandResult<TCommand, TPayload> {
+  const parsed = parseActivitySubcommand(rawInput, parse, usage)
+  if (parsed.kind === 'result') return parsed
+  const delegationId = commandUuid(parsed.command.delegationId, 'Delegation id', usage)
+  if (!delegationId.success) {
+    return { kind: 'result', result: { kind: 'error', text: delegationId.message } }
+  }
+  const details = parseActivityJsonInput(parsed.command.input, label, usage, schema)
+  if (!details.success) return { kind: 'result', result: { kind: 'error', text: details.message } }
+  return {
+    kind: 'command',
+    command: parsed.command,
+    activityId: parsed.activityId,
+    delegationId: delegationId.data,
+    data: details.data,
+  }
 }

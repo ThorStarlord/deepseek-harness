@@ -11,7 +11,7 @@ import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { StorageError } from '@deepseek-ai/dsh-storage'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { boundedSubcommandInput } from './bounded-subcommand-input.ts'
-import { parseActivitySubcommand, parseActivityJsonInput, commandUuid } from './command-input.ts'
+import { parseActivityDelegationJsonCommand, commandUuid } from './command-input.ts'
 
 const USAGE = 'Usage: /activity artifact add <activity-id> <delegation-id> <workspace-id> <JSON>'
 const MAX_INPUT_BYTES = 16_384
@@ -36,24 +36,21 @@ export async function executeActivityArtifactCommand(
   ctx: Context,
   invocation: CommandInvocation,
 ): Promise<CommandResult | undefined> {
-  const command = parseActivitySubcommand(invocation.rawInput, parse, USAGE)
+  const command = parseActivityDelegationJsonCommand(
+    invocation.rawInput, parse, USAGE, 'Artifact', artifactInputSchema,
+  )
   if (command.kind === 'result') return command.result
   const parsed = command.command
   const activityId = command.activityId
-  const delegationId = commandUuid(parsed.delegationId, 'Delegation id', USAGE)
-  if (!delegationId.success) return { kind: 'error', text: delegationId.message }
   const workspaceId = commandUuid(parsed.workspaceId, 'Workspace id', USAGE)
   if (!workspaceId.success) return { kind: 'error', text: workspaceId.message }
-
-  const details = parseActivityJsonInput(parsed.input, 'Artifact', USAGE, artifactInputSchema)
-  if (!details.success) return { kind: 'error', text: details.message }
 
   try {
     const artifact = await ctx.homeActivityArtifacts.create({
       activityId: ActivityId(activityId),
-      delegationId: activityDelegationId(delegationId.data),
+      delegationId: activityDelegationId(command.delegationId),
       workspaceId: WorkspaceId(workspaceId.data),
-      ...details.data,
+      ...command.data,
     })
     const delegation = ctx.homeActivityDelegations.get(artifact.delegationId)
     return {
