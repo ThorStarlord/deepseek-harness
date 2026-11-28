@@ -103,9 +103,11 @@ export function registerActivityStrategicBriefTool(ctx: Context): () => void {
     resourcesDisposed = true
     disposeSessionEvents()
     disposeGuard()
-    if (pendingRequestsByContext.get(ctx) === pending) pendingRequestsByContext.delete(ctx)
-    if (preparingAssessmentsByContext.get(ctx) === preparing) preparingAssessmentsByContext.delete(ctx)
-    preparationSettledByContext.delete(ctx)
+    if (pendingRequestsByContext.get(ctx) === pending) {
+      pendingRequestsByContext.delete(ctx)
+      preparingAssessmentsByContext.delete(ctx)
+      preparationSettledByContext.delete(ctx)
+    }
     pending.clear()
   }
   const onSaveSettled = (sessionId: string, request: PendingAssessment): void => {
@@ -150,14 +152,16 @@ function activityStrategicToolGuard(
     const sessionId = String(agent.session.id)
     const request = pending.get(sessionId)
     const preparation = getPreparingAssessments(ctx).get(sessionId)
-    if (request === undefined && preparation === undefined) return undefined
-    if ((request?.agentId ?? preparation?.agentId) !== String(agent.id)) {
-      return 'An Activity Strategic Brief is active in this Session for another Agent; model tool calls are blocked until it ends.'
-    }
-    if (preparation !== undefined && request === undefined) {
+    if (request === undefined) {
+      if (preparation === undefined) return undefined
+      if (preparation.agentId !== String(agent.id)) {
+        return 'An Activity Strategic Brief is active in this Session for another Agent; model tool calls are blocked until it ends.'
+      }
       return 'Activity Strategic Brief Skills are loading; model tool calls are blocked until setup completes or is canceled.'
     }
-    if (request === undefined) return undefined
+    if (request.agentId !== String(agent.id)) {
+      return 'An Activity Strategic Brief is active in this Session for another Agent; model tool calls are blocked until it ends.'
+    }
     if (request.cancelled) {
       if (request.coordinatorCallIds.size > 0) {
         return request.turnEnded
@@ -246,7 +250,7 @@ export async function executeActivityStrategicAssessment(
     ])
     signal.throwIfAborted()
   } catch (error: unknown) {
-    releasePreparingAssessment(ctx, sessionId, preparation)
+    releasePreparingAssessment(ctx, sessionId)
     if (preparation.controller.signal.aborted) {
       return { kind: 'error', text: 'The Activity Strategic Brief setup was canceled before repository analysis started.' }
     }
@@ -254,7 +258,7 @@ export async function executeActivityStrategicAssessment(
     return { kind: 'error', text: 'Sensemaking Skills could not be loaded. No strategic assessment was started.' }
   }
   if (skills[0] === undefined || skills[1] === undefined) {
-    releasePreparingAssessment(ctx, sessionId, preparation)
+    releasePreparingAssessment(ctx, sessionId)
     const missing = SENSEMAKING_SKILLS.filter((_, index) => skills[index] === undefined)
     return {
       kind: 'error',
@@ -267,7 +271,7 @@ export async function executeActivityStrategicAssessment(
   ] as const
   const combinedSkillBytes = definitions.reduce((total, definition) => total + Buffer.byteLength(definition.skill.content, 'utf8'), 0)
   if (combinedSkillBytes > MAX_BRIEF_BYTES) {
-    releasePreparingAssessment(ctx, sessionId, preparation)
+    releasePreparingAssessment(ctx, sessionId)
     return { kind: 'error', text: 'Loaded Sensemaking Skill instructions exceed the assessment context limit. No assessment was started.' }
   }
 
@@ -292,7 +296,7 @@ export async function executeActivityStrategicAssessment(
     cancelled: false,
     turnEnded: false,
   }
-  releasePreparingAssessment(ctx, sessionId, preparation)
+  releasePreparingAssessment(ctx, sessionId)
   pending.set(sessionId, request)
 
   const skillInstructions = definitions.map(({ name, skill }) => [
@@ -480,9 +484,8 @@ function getPreparingAssessments(ctx: Context): Map<string, PreparingAssessment>
   return preparing
 }
 
-function releasePreparingAssessment(ctx: Context, sessionId: string, preparation: PreparingAssessment): void {
+function releasePreparingAssessment(ctx: Context, sessionId: string): void {
   const preparing = getPreparingAssessments(ctx)
-  if (preparing.get(sessionId) !== preparation) return
   preparing.delete(sessionId)
   preparationSettledByContext.get(ctx)?.()
 }
@@ -523,7 +526,6 @@ function captureCoordinatorEvent(
     return
   }
   request.coordinatorReports.push({ repositories })
-  if (request.coordinatorReports.length > 8) request.coordinatorReports.shift()
 }
 
 function matchesSelectedWorkspaceRoots(argumentsJson: string, workspaces: readonly [Workspace, Workspace]): boolean {
