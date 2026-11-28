@@ -38,7 +38,6 @@ import HomeActivityDelegations, { ActivityDelegationError } from '@deepseek-ai/d
 import HomeActivityStrategicEpisodeService from '@deepseek-ai/dsh-home-activity/strategic-episodes'
 import HomeActivityReviewService from '@deepseek-ai/dsh-home-activity/reviews'
 import HomeActivityAnnotationService from '@deepseek-ai/dsh-home-activity/annotations'
-import HomeActivityStrategicEpisodeService from '@deepseek-ai/dsh-home-activity/strategic-episodes'
 import type { ActivityDelegation, ActivityDelegationUncertainty } from '@deepseek-ai/dsh-home-activity/delegations'
 import * as commandHomeActivity from '../src/index.ts'
 import { executeActivityDelegation, renderActivityDelegation } from '../src/delegation-command.ts'
