@@ -40,6 +40,21 @@ it('classifies only explicitly experimental package identities', () => {
   expect(isExplicitlyExperimentalPackage('cordis:experimental-loader')).toBe(false)
 })
 
+it('marks a selected profile experimental when its launch bundles include an experimental package', () => {
+  const selection = captureActivityDelegationExecutionSelection({
+    name: 'custom-review',
+    startedBundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-experimental-review'],
+  }, undefined, new Context())
+
+  expect(selection.profile).toEqual({
+    status: 'available',
+    name: 'custom-review',
+    startedBundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-experimental-review'],
+    classification: 'experimental',
+    classificationSource: 'experimental-package-metadata',
+  })
+})
+
 it('classifies a supported shipped profile and an unprefixed experimental preset module', () => {
   const context = new Context()
   const presets: Pick<AgentPresetRegistry, 'composedPreset' | 'inspectCompositions'> = {
@@ -128,4 +143,52 @@ it('keeps selection failures and oversized configuration from blocking a request
     },
     preset: { status: 'unavailable', reason: 'agent-preset-registry-unavailable' },
   })
+})
+
+it('preserves unavailable classifications for oversized profile and preset identities', () => {
+  const context = new Context()
+  const oversized = 'x'.repeat(257)
+  const profileIdentity = captureActivityDelegationExecutionSelection(
+    { name: oversized, startedBundles: [] },
+    undefined,
+    context,
+  )
+  expect(profileIdentity.profile).toEqual({
+    status: 'unavailable', reason: 'profile-identity-exceeds-persistence-limit',
+  })
+
+  const oversizedPreset: Pick<AgentPresetRegistry, 'composedPreset' | 'inspectCompositions'> = {
+    composedPreset: () => oversized,
+    inspectCompositions: vi.fn(),
+  }
+  expect(captureActivityDelegationExecutionSelection(undefined, oversizedPreset, context).preset).toEqual({
+    status: 'unavailable', reason: 'preset-identity-exceeds-persistence-limit',
+  })
+  expect(oversizedPreset.inspectCompositions).not.toHaveBeenCalled()
+})
+
+it('keeps missing or oversized preset module details unavailable', () => {
+  const context = new Context()
+  const missing: Pick<AgentPresetRegistry, 'composedPreset' | 'inspectCompositions'> = {
+    composedPreset: () => 'review',
+    inspectCompositions: () => [],
+  }
+  const tooMany: Pick<AgentPresetRegistry, 'composedPreset' | 'inspectCompositions'> = {
+    composedPreset: () => 'review',
+    inspectCompositions: () => [{
+      id: 'review', modules: Array.from({ length: 257 }, (_, index) => ({ moduleName: `module-${index}`, useHostBase: false })),
+      leakedServices: [],
+    }],
+  }
+  const tooLongName: Pick<AgentPresetRegistry, 'composedPreset' | 'inspectCompositions'> = {
+    composedPreset: () => 'review',
+    inspectCompositions: () => [{ id: 'review', modules: [{ moduleName: 'x'.repeat(257), useHostBase: false }], leakedServices: [] }],
+  }
+
+  for (const presets of [missing, tooMany, tooLongName]) {
+    expect(captureActivityDelegationExecutionSelection(undefined, presets, context).preset).toEqual({
+      status: 'selected', id: 'review', activeModules: null,
+      classification: 'unavailable', classificationSource: 'unavailable',
+    })
+  }
 })

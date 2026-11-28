@@ -15,6 +15,9 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from './types.ts'
 import type { SubprocessTerminalEnvironment, SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from './types.ts'
 
 export { DSH_ENV_PREFIX } from './types.ts'
+export { collectSubprocessResult } from './collect-subprocess-result.ts'
+export type { CollectedSubprocessResult } from './collect-subprocess-result.ts'
+export { readOnlyGitEnvironment } from './read-only-git-environment.ts'
 export type {
   CollectedOutput,
   DshEnvironment,

@@ -13,11 +13,3 @@ export function assertReadOnlyGitCommand(args: readonly string[]): void {
     throw new HarnessError('Repository review permits only fixed read-only Git commands.', 'REVIEW_GIT_COMMAND_DENIED')
   }
 }
-
-/** Select the platform null device used to disable global Git configuration and paging.
- * @param platform - host platform identifier.
- * @returns the platform's null device path.
- */
-export function gitNullDevice(platform: NodeJS.Platform): 'NUL' | '/dev/null' {
-  return platform === 'win32' ? 'NUL' : '/dev/null'
-}

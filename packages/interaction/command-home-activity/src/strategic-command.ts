@@ -80,20 +80,7 @@ type ActivityStrategicPendingRequests = Map<string, PendingAssessment>
 export function registerActivityStrategicBriefTool(ctx: Context): () => void {
   const pending: ActivityStrategicPendingRequests = new Map()
   const preparing = getPreparingAssessments(ctx)
-  const tool = createRecordTool(ctx, pending)
   const disposeGuard = ctx.tools.guard(activityStrategicToolGuard(ctx, pending))
-  const disposeTool = ctx.tools.register(tool, {
-    when: ({ agent }) => {
-      const request = pending.get(String(agent.session.id))
-      return request !== undefined
-        && request.agentId === String(agent.id)
-        && request.expiresAt > Date.now()
-        && !request.saveStarted
-        && !request.saved
-        && !request.cancelled
-        && request.coordinatorReports.length > 0
-    },
-  })
   const disposeSessionEvents = ctx.root.on('session/event', (session, event) => {
     captureCoordinatorEvent(pending, session.id, event)
     if (event.type === 'turn/end') {
@@ -116,11 +103,32 @@ export function registerActivityStrategicBriefTool(ctx: Context): () => void {
     resourcesDisposed = true
     disposeSessionEvents()
     disposeGuard()
-    if (pendingRequestsByContext.get(ctx) === pending) pendingRequestsByContext.delete(ctx)
-    if (preparingAssessmentsByContext.get(ctx) === preparing) preparingAssessmentsByContext.delete(ctx)
-    preparationSettledByContext.delete(ctx)
+    if (pendingRequestsByContext.get(ctx) === pending) {
+      pendingRequestsByContext.delete(ctx)
+      preparingAssessmentsByContext.delete(ctx)
+      preparationSettledByContext.delete(ctx)
+    }
     pending.clear()
   }
+  const onSaveSettled = (sessionId: string, request: PendingAssessment): void => {
+    if (pending.get(sessionId) === request && request.turnEnded && !request.saveStarted && request.coordinatorCallIds.size === 0) {
+      pending.delete(sessionId)
+    }
+    disposeDrainedRegistration()
+  }
+  const tool = createRecordTool(ctx, pending, onSaveSettled)
+  const disposeTool = ctx.tools.register(tool, {
+    when: ({ agent }) => {
+      const request = pending.get(String(agent.session.id))
+      return request !== undefined
+        && request.agentId === String(agent.id)
+        && request.expiresAt > Date.now()
+        && !request.saveStarted
+        && !request.saved
+        && !request.cancelled
+        && request.coordinatorReports.length > 0
+    },
+  })
   preparationSettledByContext.set(ctx, disposeDrainedRegistration)
   const dispose = (): void => {
     if (disposeRequested) return
@@ -144,14 +152,16 @@ function activityStrategicToolGuard(
     const sessionId = String(agent.session.id)
     const request = pending.get(sessionId)
     const preparation = getPreparingAssessments(ctx).get(sessionId)
-    if (request === undefined && preparation === undefined) return undefined
-    if ((request?.agentId ?? preparation?.agentId) !== String(agent.id)) {
-      return 'An Activity Strategic Brief is active in this Session for another Agent; model tool calls are blocked until it ends.'
-    }
-    if (preparation !== undefined && request === undefined) {
+    if (request === undefined) {
+      if (preparation === undefined) return undefined
+      if (preparation.agentId !== String(agent.id)) {
+        return 'An Activity Strategic Brief is active in this Session for another Agent; model tool calls are blocked until it ends.'
+      }
       return 'Activity Strategic Brief Skills are loading; model tool calls are blocked until setup completes or is canceled.'
     }
-    if (request === undefined) return undefined
+    if (request.agentId !== String(agent.id)) {
+      return 'An Activity Strategic Brief is active in this Session for another Agent; model tool calls are blocked until it ends.'
+    }
     if (request.cancelled) {
       if (request.coordinatorCallIds.size > 0) {
         return request.turnEnded
@@ -240,7 +250,7 @@ export async function executeActivityStrategicAssessment(
     ])
     signal.throwIfAborted()
   } catch (error: unknown) {
-    releasePreparingAssessment(ctx, sessionId, preparation)
+    releasePreparingAssessment(ctx, sessionId)
     if (preparation.controller.signal.aborted) {
       return { kind: 'error', text: 'The Activity Strategic Brief setup was canceled before repository analysis started.' }
     }
@@ -248,7 +258,7 @@ export async function executeActivityStrategicAssessment(
     return { kind: 'error', text: 'Sensemaking Skills could not be loaded. No strategic assessment was started.' }
   }
   if (skills[0] === undefined || skills[1] === undefined) {
-    releasePreparingAssessment(ctx, sessionId, preparation)
+    releasePreparingAssessment(ctx, sessionId)
     const missing = SENSEMAKING_SKILLS.filter((_, index) => skills[index] === undefined)
     return {
       kind: 'error',
@@ -261,7 +271,7 @@ export async function executeActivityStrategicAssessment(
   ] as const
   const combinedSkillBytes = definitions.reduce((total, definition) => total + Buffer.byteLength(definition.skill.content, 'utf8'), 0)
   if (combinedSkillBytes > MAX_BRIEF_BYTES) {
-    releasePreparingAssessment(ctx, sessionId, preparation)
+    releasePreparingAssessment(ctx, sessionId)
     return { kind: 'error', text: 'Loaded Sensemaking Skill instructions exceed the assessment context limit. No assessment was started.' }
   }
 
@@ -286,7 +296,7 @@ export async function executeActivityStrategicAssessment(
     cancelled: false,
     turnEnded: false,
   }
-  releasePreparingAssessment(ctx, sessionId, preparation)
+  releasePreparingAssessment(ctx, sessionId)
   pending.set(sessionId, request)
 
   const skillInstructions = definitions.map(({ name, skill }) => [
@@ -474,9 +484,8 @@ function getPreparingAssessments(ctx: Context): Map<string, PreparingAssessment>
   return preparing
 }
 
-function releasePreparingAssessment(ctx: Context, sessionId: string, preparation: PreparingAssessment): void {
+function releasePreparingAssessment(ctx: Context, sessionId: string): void {
   const preparing = getPreparingAssessments(ctx)
-  if (preparing.get(sessionId) !== preparation) return
   preparing.delete(sessionId)
   preparationSettledByContext.get(ctx)?.()
 }
@@ -517,7 +526,6 @@ function captureCoordinatorEvent(
     return
   }
   request.coordinatorReports.push({ repositories })
-  if (request.coordinatorReports.length > 8) request.coordinatorReports.shift()
 }
 
 function matchesSelectedWorkspaceRoots(argumentsJson: string, workspaces: readonly [Workspace, Workspace]): boolean {
@@ -646,7 +654,11 @@ function prunePending(pending: ActivityStrategicPendingRequests): void {
   }
 }
 
-function createRecordTool(ctx: Context, pending: ActivityStrategicPendingRequests): ToolDefinition {
+function createRecordTool(
+  ctx: Context,
+  pending: ActivityStrategicPendingRequests,
+  onSaveSettled: (sessionId: string, request: PendingAssessment) => void,
+): ToolDefinition {
   return {
     name: RECORD_TOOL,
     description: 'Save the source-grounded Activity Strategic Brief for the current explicit request. It records advice and never starts execution.',
@@ -744,15 +756,20 @@ function createRecordTool(ctx: Context, pending: ActivityStrategicPendingRequest
       try {
         const episode = await ctx.homeActivityStrategicEpisodes.record(report)
         request.saved = true
-        request.saveStarted = false
         return { saved: true, episodeId: episode.id, revision: episode.revision, recordedAt: episode.recordedAt }
       } catch (error: unknown) {
-        request.saveStarted = false
+        request.cancelled = true
         if (error instanceof ActivityStrategicEpisodeError || error instanceof ActivityStrategicEpisodeStorageError) {
           throw error
         }
         ctx.logger.warn('command-home-activity: strategic episode save failed: %o', error)
-        throw new Error('Activity Strategic Brief could not be confirmed in storage. Open the Activity before retrying.')
+        throw new Error(
+          'Activity Strategic Brief could not be confirmed in storage. '
+          + 'Open the Activity to inspect whether it was recorded before starting a new assessment.',
+        )
+      } finally {
+        request.saveStarted = false
+        onSaveSettled(sessionId, request)
       }
     },
   }

@@ -52,6 +52,8 @@ const { exitCode, signal } = await handle.done
 const output = handle.collected.stdout?.readFrom(0)
 ```
 
+For batch commands that need both exit facts and collected output after the managed process range exits, `collectSubprocessResult(handle, signal)` waits for `done` and `waitForExit()` before reading stdout and stderr. If cancellation interrupts the range wait, the helper throws the signal reason and does not return partial output. Other lifecycle failures propagate unchanged; the caller interprets exit codes, lossy output, and command-specific errors.
+
 ### Choosing how output is delivered
 
 - `'pipe'` hands you the raw stream for your own protocol framing — JSON-RPC for the LSP host, ndjson for the ACP backend.
@@ -76,6 +78,8 @@ For interactive programs, `spawnTerminal` allocates a real PTY: write text, read
 A terminal request can opt into `shellActivity`. `inspectActivity()` combines supported shell lifecycle evidence with owned-job observations and returns `idle`, `busy` or `unknown`, plus a handle-scoped revision. Unsupported or incomplete observations never imply idle; input invalidates existing prompt evidence. Opted-in terminals keep remaining work owned after the root shell exits instead of using that exit as permission to terminate descendants. Consumers own retention and cleanup deadlines.
 
 ### Environment every child starts from
+
+readOnlyGitEnvironment(process.platform) returns a fresh Git-specific environment that suppresses system and global configuration, hooks, fsmonitor, paging, prompts, and inherited repository selectors. It does not restrict command arguments or apply a sandbox; callers retain those checks and their output and lifecycle policies.
 
 Children never inherit the harness's ambient secrets: credential-shaped names and ambient `DSH_*` facts are scrubbed, and the caller's explicit `env` merges after that scrub. A deliberately forwarded credential or a current `DSH_*` deployment fact still reaches the child; an explicit `undefined` tombstone removes an ordinary ambient entry.
 

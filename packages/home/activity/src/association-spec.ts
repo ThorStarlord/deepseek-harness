@@ -11,7 +11,7 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 const activityIdSchema = z.uuid().transform(value => brandString<ActivityId>(value))
 const workspaceIdSchema = z.uuid().transform(value => brandString<WorkspaceId>(value))
 const sessionIdSchema = z.string().min(1).max(256).regex(/^\S+$/u).transform(value => brandString<SessionId>(value))
-const unique = <T extends string>(values: readonly T[]): boolean => new Set(values).size === values.length
+const unique = (values: readonly string[]): boolean => new Set(values).size === values.length
 
 /** Maximum number of Workspace or Session references stored for one Activity. */
 export const MAX_HOME_ACTIVITY_ASSOCIATIONS_PER_KIND = 256

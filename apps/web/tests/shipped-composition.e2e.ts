@@ -475,6 +475,7 @@ function assertLeanChildRecord(agent: Agent): void {
 const EXPECTED_TOOLS = [
   'ask_user_question',
   'bash',
+  'coordinate_repositories',
   'create_goal',
   'edit',
   'exit_plan_mode',
@@ -489,6 +490,10 @@ const EXPECTED_TOOLS = [
   'present',
   'read',
   'read_image',
+  'read_staged_file',
+  'record_activity_strategic_brief',
+  'repository_list_files',
+  'repository_read_file',
   'schedule_create',
   'schedule_edit',
   'schedule_list',

@@ -5,6 +5,7 @@ import { execa } from 'execa'
 import { performance } from 'node:perf_hooks'
 import { dirname, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
+import { assertNever } from '../packages/util/values/src/index.ts'
 
 const FORMAT_VERSION = 1
 const DEFAULT_TRACE_ROOT = '.artifacts/dev-run-traces'
@@ -169,80 +170,81 @@ export function parseTraceEvents(input: string): TraceEvent[] {
       throw new Error(`Trace line ${index + 1} is not valid JSON`)
     }
     if (!isTraceEvent(value)) throw new Error(`Trace line ${index + 1} does not match format version ${FORMAT_VERSION}`)
-    if (value.event === 'run-started' || value.event === 'run-finished') {
-      events.push({
-        version: FORMAT_VERSION,
-        event: value.event,
-        timestamp: value.timestamp,
-        processId: value.processId,
-        runId: value.runId,
-        taskId: value.taskId,
-        agentId: value.agentId,
-        ...(value.parentRunId === undefined ? {} : { parentRunId: value.parentRunId }),
-      })
-    } else if (value.event === 'operation-started') {
-      events.push({
-        version: FORMAT_VERSION,
-        event: value.event,
-        timestamp: value.timestamp,
-        processId: value.processId,
-        runId: value.runId,
-        operationId: value.operationId,
-        taskId: value.taskId,
-        agentId: value.agentId,
-        activity: value.activity,
-        dependsOn: [...value.dependsOn],
-        monotonicMs: value.monotonicMs,
-      })
-    } else if (value.event === 'span-started') {
-      events.push({
-        version: FORMAT_VERSION,
-        event: value.event,
-        timestamp: value.timestamp,
-        processId: value.processId,
-        runId: value.runId,
-        operationId: value.operationId,
-        taskId: value.taskId,
-        agentId: value.agentId,
-        activity: value.activity,
-        dependsOn: [...value.dependsOn],
-      })
-    } else if (value.event === 'operation-finished') {
-      events.push({
-        version: FORMAT_VERSION,
-        event: value.event,
-        timestamp: value.timestamp,
-        processId: value.processId,
-        runId: value.runId,
-        operationId: value.operationId,
-        taskId: value.taskId,
-        agentId: value.agentId,
-        activity: value.activity,
-        dependsOn: [...value.dependsOn],
-        durationMs: value.durationMs,
-        status: value.status,
-        ...(value.failureCode === undefined ? {} : { failureCode: value.failureCode }),
-        ...(typeof value.exitCode === 'number' || value.exitCode === null ? { exitCode: value.exitCode } : {}),
-        ...(typeof value.signal === 'string' || value.signal === null ? { signal: value.signal } : {}),
-      })
-    } else {
-      events.push({
-        version: FORMAT_VERSION,
-        event: value.event,
-        timestamp: value.timestamp,
-        processId: value.processId,
-        runId: value.runId,
-        operationId: value.operationId,
-        taskId: value.taskId,
-        agentId: value.agentId,
-        activity: value.activity,
-        dependsOn: [...value.dependsOn],
-        status: value.status,
-      })
+    switch (value.event) {
+      case 'run-started':
+        events.push({
+          ...traceCommonFields(value),
+          event: 'run-started',
+          ...(value.parentRunId === undefined ? {} : { parentRunId: value.parentRunId }),
+        })
+        break
+      case 'run-finished':
+        events.push({
+          ...traceCommonFields(value),
+          event: 'run-finished',
+          ...(value.parentRunId === undefined ? {} : { parentRunId: value.parentRunId }),
+        })
+        break
+      case 'operation-started':
+        events.push({
+          ...traceCommonFields(value),
+          ...operationCommonFields(value),
+          event: 'operation-started',
+          monotonicMs: value.monotonicMs,
+        })
+        break
+      case 'span-started':
+        events.push({
+          ...traceCommonFields(value),
+          ...operationCommonFields(value),
+          event: 'span-started',
+        })
+        break
+      case 'operation-finished':
+        events.push({
+          ...traceCommonFields(value),
+          ...operationCommonFields(value),
+          event: 'operation-finished',
+          durationMs: value.durationMs,
+          status: value.status,
+          ...(value.failureCode === undefined ? {} : { failureCode: value.failureCode }),
+          ...(typeof value.exitCode === 'number' || value.exitCode === null ? { exitCode: value.exitCode } : {}),
+          ...(typeof value.signal === 'string' || value.signal === null ? { signal: value.signal } : {}),
+        })
+        break
+      case 'span-finished':
+        events.push({
+          ...traceCommonFields(value),
+          ...operationCommonFields(value),
+          event: 'span-finished',
+          status: value.status,
+        })
+        break
+      default:
+        assertNever(value, 'TraceEvent')
     }
   }
   assertEventPairs(events)
   return events
+}
+
+function traceCommonFields(value: TraceEvent): Pick<RunEvent, 'version' | 'timestamp' | 'processId' | 'runId' | 'taskId' | 'agentId'> {
+  return {
+    version: FORMAT_VERSION,
+    timestamp: value.timestamp,
+    processId: value.processId,
+    runId: value.runId,
+    taskId: value.taskId,
+    agentId: value.agentId,
+  }
+}
+
+function operationCommonFields(value: OperationEvent) {
+  return {
+    operationId: value.operationId,
+    activity: value.activity,
+    dependsOn: [...value.dependsOn],
+  }
 }
 
 function assertEventPairs(events: TraceEvent[]): void {

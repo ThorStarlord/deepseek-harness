@@ -298,15 +298,15 @@ export class SubagentRuntime extends TypertRemoteService {
     }
     // oxlint-disable-next-line typescript/no-non-null-assertion -- registerProvider requires start when prepareContinuable is absent.
     const start = provider.start!.bind(provider)
-    let providerInvoked = false
+    const invocation = { providerInvoked: false }
     try {
       return await manager.startExternal(spec, (request) => {
         this.assertProviderCurrent(provider)
-        providerInvoked = true
+        invocation.providerInvoked = true
         return start(request)
       })
     } catch (error: unknown) {
-      if (!providerInvoked && !(error instanceof SubagentError && error.code === 'PROVIDER_CHANGED')) {
+      if (!invocation.providerInvoked && !(error instanceof SubagentError && error.code === 'PROVIDER_CHANGED')) {
         throw new SubagentError('external provider was not invoked before startup failed', 'NOT_DISPATCHED', { cause: error })
       }
       throw error

@@ -33,7 +33,9 @@ import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import HomeActivityService from '@deepseek-ai/dsh-home-activity'
 import HomeActivityAssociationService from '@deepseek-ai/dsh-home-activity/associations'
 import HomeActivityArtifactService from '@deepseek-ai/dsh-home-activity/artifacts'
+import HomeActivityHandoffService from '@deepseek-ai/dsh-home-activity/handoffs'
 import HomeActivityDelegations, { ActivityDelegationError } from '@deepseek-ai/dsh-home-activity/delegations'
+import HomeActivityStrategicEpisodeService from '@deepseek-ai/dsh-home-activity/strategic-episodes'
 import HomeActivityReviewService from '@deepseek-ai/dsh-home-activity/reviews'
 import HomeActivityAnnotationService from '@deepseek-ai/dsh-home-activity/annotations'
 import type { ActivityDelegation, ActivityDelegationUncertainty } from '@deepseek-ai/dsh-home-activity/delegations'
@@ -141,10 +143,12 @@ async function harness(adapter: DelegationAdapter, existingRoot?: string) {
   await ctx.plugin(StorageDomain, { backend: 'json' })
   await ctx.plugin(CommandRuntime)
   await ctx.plugin(HomeActivityService)
+  await ctx.plugin(HomeActivityStrategicEpisodeService)
   await ctx.plugin(HomeActivityDelegations)
   ctx.provide('workspaceRegistry', { get: () => undefined, list: () => [] } as never)
   await ctx.plugin(HomeActivityAssociationService)
   await ctx.plugin(HomeActivityArtifactService)
+  await ctx.plugin(HomeActivityHandoffService)
   await ctx.plugin(HomeActivityReviewService)
   await ctx.plugin(HomeActivityAnnotationService)
   await ctx.plugin(commandHomeActivity)
@@ -864,6 +868,164 @@ it('renders every saved delegation state with the right uncertainty and fact ref
   expect(reasonLines[2]).toContain('child was accepted, but saving its admission reference failed')
   expect(reasonLines[3]).toContain('Saving the provider report failed after the child Session was admitted')
   expect(reasonLines[4]).toContain('accepted activation did not provide a usable report')
+})
+
+it('renders legacy and captured DSH composition records with explicit availability', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  const activity = await ctx.homeActivities.create({
+    name: 'Saved runtime selection',
+    objective: 'Show only runtime facts retained with the request.',
+    boundaries: { inScope: ['Inspect recorded profile facts.'], outOfScope: ['Infer runtime permissions.'] },
+  })
+  const requested = await ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'spawn',
+    task: 'Inspect the saved runtime facts.',
+    parentSessionId: parent.session.id,
+  })
+  if (requested.request.provider !== 'spawn') throw new Error('This rendering case must use a DSH spawn request.')
+
+  const { request: savedRequest, ...savedDelegation } = requested
+  const legacyRequest = {
+    provider: 'spawn' as const,
+    task: savedRequest.task,
+    parentSessionId: savedRequest.parentSessionId,
+    requestedChildSessionId: savedRequest.requestedChildSessionId,
+    requestedAt: savedRequest.requestedAt,
+    source: savedRequest.source,
+  }
+  const legacy: ActivityDelegation = { ...savedDelegation, request: legacyRequest }
+  expect(renderActivityDelegation(legacy).join('\n'))
+    .toContain('Runtime profile and preset: unavailable (record predates profile and preset capture).')
+
+  const limitedSnapshot = {
+    provider: 'spawn',
+    profile: {
+      status: 'available', name: 'large-profile', startedBundles: null,
+      classification: 'unavailable', classificationSource: 'unavailable',
+    },
+    preset: { status: 'unavailable', reason: 'agent-preset-registry-unavailable' },
+  } satisfies NonNullable<ActivityDelegation['request']['executionSelection']>
+  const limitedText = renderActivityDelegation({
+    ...requested,
+    request: { ...requested.request, executionSelection: limitedSnapshot },
+  }).join('\n')
+  expect(limitedText).toContain('Profile bundles used at launch: unavailable (the bundle list exceeded the persistence limit).')
+  expect(limitedText).toContain('The product has no reliable stable or experimental classification for this profile bundle list.')
+  expect(limitedText).toContain('the Agent preset registry is unavailable')
+
+  const emptySnapshot = {
+    provider: 'spawn',
+    profile: {
+      status: 'available', name: 'minimal-profile', startedBundles: [],
+      classification: 'unavailable', classificationSource: 'unavailable',
+    },
+    preset: { status: 'selected', id: 'review', activeModules: null, classification: 'unavailable', classificationSource: 'unavailable' },
+  } satisfies NonNullable<ActivityDelegation['request']['executionSelection']>
+  const emptyText = renderActivityDelegation({
+    ...requested,
+    request: { ...requested.request, executionSelection: emptySnapshot },
+  }).join('\n')
+  expect(emptyText).toContain('Profile bundles used at launch: (none)')
+  expect(emptyText).toContain('Active preset modules: unavailable.')
+  expect(emptyText).toContain('The product supplied no stable classification for this preset composition.')
+
+  const noPresetSnapshot = {
+    provider: 'spawn',
+    profile: { status: 'unavailable', reason: 'runtime-profile-unavailable' },
+    preset: { status: 'none' },
+  } satisfies NonNullable<ActivityDelegation['request']['executionSelection']>
+  const noPresetText = renderActivityDelegation({
+    ...requested,
+    request: { ...requested.request, executionSelection: noPresetSnapshot },
+  }).join('\n')
+  expect(noPresetText).toContain('Active Agent preset: none.')
+
+  const selectedModules = [
+    '@deepseek-ai/dsh-experimental-review',
+    ...Array.from({ length: 12 }, (_, index) => `@deepseek-ai/dsh-module-${index}`),
+  ]
+  const selectedSnapshot = {
+    provider: 'spawn',
+    profile: {
+      status: 'available', name: 'experimental-profile',
+      startedBundles: ['@deepseek-ai/dsh-experimental-review'],
+      classification: 'experimental', classificationSource: 'experimental-package-metadata',
+    },
+    preset: { status: 'selected', id: 'review', activeModules: selectedModules, classification: 'experimental', classificationSource: 'experimental-package-metadata' },
+  } satisfies NonNullable<ActivityDelegation['request']['executionSelection']>
+  const selectedText = renderActivityDelegation({
+    ...requested,
+    request: { ...requested.request, executionSelection: selectedSnapshot },
+  }).join('\n')
+  expect(selectedText).toContain('The experimental classification comes from an explicitly experimental bundle in the launch list.')
+  expect(selectedText).toContain('The experimental classification comes from an explicitly experimental active module.')
+  expect(selectedText).toContain('@deepseek-ai/dsh-experimental-review')
+  expect(selectedText).toContain('(1 more recorded)')
+
+  const identityUnavailableSnapshot = {
+    provider: 'spawn',
+    profile: { status: 'unavailable', reason: 'profile-identity-exceeds-persistence-limit' },
+    preset: { status: 'unavailable', reason: 'preset-identity-exceeds-persistence-limit' },
+  } satisfies NonNullable<ActivityDelegation['request']['executionSelection']>
+  const identityText = renderActivityDelegation({
+    ...requested,
+    request: { ...requested.request, executionSelection: identityUnavailableSnapshot },
+  }).join('\n')
+  expect(identityText).toContain('the profile identity exceeded the persistence limit')
+  expect(identityText).toContain('the preset identity exceeded the persistence limit')
+
+  const moduleUnavailableSnapshot = {
+    provider: 'spawn',
+    profile: { status: 'unavailable', reason: 'runtime-profile-unavailable' },
+    preset: { status: 'unavailable', reason: 'preset-module-list-exceeds-persistence-limit' },
+  } satisfies NonNullable<ActivityDelegation['request']['executionSelection']>
+  const moduleUnavailableText = renderActivityDelegation({
+    ...requested,
+    request: { ...requested.request, executionSelection: moduleUnavailableSnapshot },
+  }).join('\n')
+  expect(moduleUnavailableText).toContain('the runtime did not provide profile metadata')
+  expect(moduleUnavailableText).toContain('the module list exceeded the persistence limit')
+})
+
+it('renders a one-shot external request as admitted with unknown outcome when its report is unavailable', async () => {
+  const { ctx, parent } = await harness(new DelegationAdapter([]))
+  const activity = await ctx.homeActivities.create({
+    name: 'External request status',
+    objective: 'Distinguish request, admission, and report. ',
+    boundaries: { inScope: ['Render the saved status.'], outOfScope: ['Retry an uncertain provider start.'] },
+  })
+  const requested = await ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'codex',
+    task: 'Review one checklist.',
+    parentSessionId: parent.session.id,
+  })
+  const requestedText = renderActivityDelegation(requested).join('\n')
+  expect(requestedText).toContain('Codex admission has not been confirmed.')
+  expect(requestedText).toContain('The Codex start outcome may be unknown.')
+
+  const admittedRequest = await ctx.homeActivityDelegations.createRequest({
+    activityId: activity.id,
+    provider: 'codex',
+    task: 'Review a second checklist.',
+    parentSessionId: parent.session.id,
+  })
+  const admission = {
+    provider: 'codex' as const,
+    providerRunId: 'codex-external-run',
+    admittedAt: new Date().toISOString(),
+    source: 'subagents.startActivation' as const,
+  }
+  await ctx.homeActivityDelegations.recordAdmitted(admittedRequest.id, admission)
+  const uncertain = await ctx.homeActivityDelegations.markUnconfirmed(
+    admittedRequest.id,
+    admission,
+    'codex-start-outcome-unknown',
+  )
+  const uncertainText = renderActivityDelegation(uncertain).join('\n')
+  expect(uncertainText).toContain('Status: DSH admitted one external Codex execution; its provider report is unconfirmed.')
+  expect(uncertainText).toContain('This Codex run is one-shot. Activity does not inspect its transcript, resume it, or roll back its effects')
 })
 
 it('records child and run references and clips a separately attributed provider report', async () => {

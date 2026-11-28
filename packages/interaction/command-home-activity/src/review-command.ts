@@ -10,6 +10,8 @@ import { activityDelegationId } from '@deepseek-ai/dsh-home-activity/delegations
 import type { ActivityDelegationId } from '@deepseek-ai/dsh-home-activity/delegations'
 import type { ActivityReviewDisposition, RecordActivityReviewRequest } from '@deepseek-ai/dsh-home-activity/reviews'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
+import { boundedSubcommandInput } from './bounded-subcommand-input.ts'
+import { parseActivityDelegationJsonCommand } from './command-input.ts'
 
 const USAGE = 'Usage: /activity review set <activity-id> <delegation-id> <JSON>'
 const MAX_INPUT_BYTES = 16_384
@@ -47,32 +49,17 @@ export async function executeActivityReviewCommand(
   ctx: Context,
   invocation: CommandInvocation,
 ): Promise<CommandResult | undefined> {
-  const parsed = parse(invocation.rawInput)
-  if (parsed === undefined) return undefined
-  if (parsed.kind === 'invalid') return { kind: 'error', text: parsed.message }
-  const activityId = z.uuid().safeParse(parsed.activityId)
-  if (!activityId.success) return { kind: 'error', text: `Activity id must be a UUID. ${USAGE}` }
-  const delegationId = z.uuid().safeParse(parsed.delegationId)
-  if (!delegationId.success) return { kind: 'error', text: `Delegation id must be a UUID. ${USAGE}` }
-
-  let input: unknown
-  try {
-    input = JSON.parse(parsed.input)
-  } catch (parseError: unknown) {
-    // Parser details can contain user-entered review text, so the command does not expose them.
-    void parseError
-    return { kind: 'error', text: `Review details must be valid JSON. ${USAGE}` }
-  }
-  const details = reviewInputSchema.safeParse(input)
-  if (!details.success) {
-    return { kind: 'error', text: `Review details are invalid: ${details.error.issues.map(issue => issue.message).join('; ')}` }
-  }
+  const command = parseActivityDelegationJsonCommand(
+    invocation.rawInput, parse, USAGE, 'Review', reviewInputSchema,
+  )
+  if (command.kind === 'result') return command.result
+  const activityId = command.activityId
 
   const request: RecordActivityReviewRequest = {
-    activityId: ActivityId(activityId.data),
-    delegationId: activityDelegationId(delegationId.data),
-    disposition: details.data.disposition,
-    ...(details.data.evidence === undefined ? {} : { evidence: details.data.evidence }),
+    activityId: ActivityId(activityId),
+    delegationId: activityDelegationId(command.delegationId),
+    disposition: command.data.disposition,
+    ...(command.data.evidence === undefined ? {} : { evidence: command.data.evidence }),
   }
   try {
     const review = await ctx.homeActivityReviews.record(request)
@@ -80,22 +67,22 @@ export async function executeActivityReviewCommand(
       kind: 'success',
       text: [
         `User disposition recorded: ${dispositionLabel(review.disposition)}.`,
-        details.data.evidence === undefined
+        command.data.evidence === undefined
           ? review.evidence.length === 0
             ? 'No verification evidence is currently recorded.'
             : 'No new verification evidence was supplied; previously recorded evidence was retained.'
-          : `User-supplied evidence recorded: ${details.data.evidence.source} reports ${details.data.evidence.result}. DSH did not verify its source or result.`,
+          : `User-supplied evidence recorded: ${command.data.evidence.source} reports ${command.data.evidence.result}. DSH did not verify its source or result.`,
         'The provider execution report was not changed.',
       ].join('\n'),
     }
   } catch (error: unknown) {
     if (error instanceof ActivityReviewError) {
-      const recovery = REVIEW_RECOVERY[error.code](activityId.data)
+      const recovery = REVIEW_RECOVERY[error.code](activityId)
       return { kind: 'error', text: `${error.message} ${recovery}` }
     }
     if (error instanceof ActivityReviewStorageError) {
       ctx.logger.warn('command-home-activity: review persistence failed: %o', error)
-      return { kind: 'error', text: `Activity review storage failed; no updated review was confirmed. Run /activity open ${activityId.data} before retrying.` }
+      return { kind: 'error', text: `Activity review storage failed; no updated review was confirmed. Run /activity open ${activityId} before retrying.` }
     }
     ctx.logger.warn('command-home-activity: review could not be recorded: %o', error)
     return { kind: 'error', text: 'The selected Activity and delegation could not be confirmed; no updated review was recorded.' }
@@ -145,14 +132,15 @@ export function renderActivityReview(
 }
 
 function parse(rawInput: string): ParsedReviewCommand | undefined {
-  if (Buffer.byteLength(rawInput, 'utf8') > MAX_INPUT_BYTES) {
-    return /^review(?:\s|$)/u.test(rawInput.trim())
-      ? { kind: 'invalid', message: `Activity review input must not exceed ${MAX_INPUT_BYTES} bytes. ${USAGE}` }
-      : undefined
-  }
-  const input = rawInput.trim()
-  if (!/^review(?:\s|$)/u.test(input)) return undefined
-  const match = /^review\s+set\s+(\S+)\s+(\S+)\s+([\s\S]+)$/u.exec(input)
+  const bounded = boundedSubcommandInput(
+    rawInput,
+    'review',
+    MAX_INPUT_BYTES,
+    `Activity review input must not exceed ${MAX_INPUT_BYTES} bytes. ${USAGE}`,
+  )
+  if (bounded === undefined) return undefined
+  if (bounded.kind === 'invalid') return { kind: 'invalid', message: bounded.message }
+  const match = /^review\s+set\s+(\S+)\s+(\S+)\s+([\s\S]+)$/u.exec(bounded.input)
   return match?.[1] === undefined || match[2] === undefined || match[3] === undefined
     ? { kind: 'invalid', message: USAGE }
     : { kind: 'set', activityId: match[1], delegationId: match[2], input: match[3] }

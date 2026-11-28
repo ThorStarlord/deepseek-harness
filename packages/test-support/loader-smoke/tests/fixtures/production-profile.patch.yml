@@ -1,0 +1,43 @@
+# Isolated overlay fixture for profile package-resolution tests.
+- id: headless-startup
+  disabled: true
+
+- id: headless-runner
+  disabled: true
+
+- id: llm-deepseek
+  disabled: true
+
+- id: agent-loop
+  disabled: true
+
+- insert:
+    - id: nested-package-group
+      name: 'vitest'
+      group: true
+      disabled: true
+      config:
+        - id: nested-scoped-plugin
+          name: 'tsx/esm'
+          disabled: true
+
+    - id: empty-package-group
+      name: 'vitest'
+      group: true
+      disabled: true
+
+    - id: relative-plugin-path
+      name: './local-plugin.ts'
+      disabled: true
+
+    - id: file-plugin-path
+      name: 'file:./local-plugin.ts'
+      disabled: true
+
+    - id: builtin-plugin-path
+      name: 'node:fs'
+      disabled: true
+
+    - id: duplicate-plugin-package
+      name: 'vitest'
+      disabled: true

@@ -7,7 +7,6 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import { StorageError } from '@deepseek-ai/dsh-storage'
-import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { SubagentError, type SubagentRunId } from '@deepseek-ai/dsh-subagent'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import { ActivityId } from '@deepseek-ai/dsh-home-activity'
@@ -23,6 +22,15 @@ import { captureActivityDelegationExecutionSelection } from './execution-selecti
 const MAX_TASK_BYTES = 4_096
 const MAX_RENDERED_SELECTION_NAMES = 12
 const DELEGATE_USAGE = 'Usage: /activity delegate <activity-id> spawn|codex|claude-code <one bounded task>'
+const uncertaintySources: Record<ActivityDelegationUncertainty['reason'], string> = {
+  'restart-before-admission-recorded': 'application restart recovery',
+  'restart-before-report-recorded': 'application restart recovery',
+  'admission-write-failed': 'Activity persistence',
+  'report-write-failed': 'Activity persistence',
+  'startup-result-rejected': 'activation result observer',
+  'codex-start-outcome-unknown': 'native Codex start response',
+  'claude-code-start-outcome-unknown': 'native Claude Code start response',
+}
 type SpawnExecutionSelectionSnapshot = Extract<
   NonNullable<ActivityDelegation['request']['executionSelection']>,
   { readonly provider: 'spawn' }
@@ -219,7 +227,7 @@ export function renderActivityDelegation(delegation: ActivityDelegation): readon
     `Delegation ${delegation.id}: provider ${delegation.request.provider}${isExternal ? ` (native ${providerLabel}, external one-shot)` : ''}`,
     `Requested task: ${delegation.request.task}`,
     `Requesting Session: ${delegation.request.parentSessionId}`,
-    ...renderExecutionSelection(delegation.request.provider, delegation.request.executionSelection),
+    ...renderExecutionSelection(delegation.request),
     isExternal
       ? externalExecutionPolicyMessage(delegation.request.provider)
       : 'Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.',
@@ -317,37 +325,23 @@ function reportedOutcome(stopReason: string): string {
  */
 function uncertaintySource(reason: ActivityDelegationUncertainty['reason'] | undefined): string {
   if (reason === undefined) return 'unavailable'
-  switch (reason) {
-    case 'restart-before-admission-recorded':
-    case 'restart-before-report-recorded': return 'application restart recovery'
-    case 'admission-write-failed':
-    case 'report-write-failed': return 'Activity persistence'
-    case 'startup-result-rejected': return 'activation result observer'
-    case 'codex-start-outcome-unknown': return 'native Codex start response'
-    case 'claude-code-start-outcome-unknown': return 'native Claude Code start response'
-    default: return assertNever(reason, 'Unknown Activity delegation uncertainty reason')
-  }
+  return uncertaintySources[reason]
 }
 
 /** Render saved DSH profile and preset facts without implying permission or capability guarantees.
- * @param provider - Provider that owns the delegation request.
- * @param selection - Captured runtime selection; absent on a legacy DSH record or an external request.
+ * @param request - Provider-specific request and captured runtime selection.
  * @returns Profile and preset lines displayed with the delegation lifecycle facts.
  */
-function renderExecutionSelection(
-  provider: ActivityDelegation['request']['provider'],
-  selection: ActivityDelegation['request']['executionSelection'],
-): readonly string[] {
-  if (provider !== 'spawn') {
-    const providerLabel = externalProviderLabel(provider)
+function renderExecutionSelection(request: ActivityDelegation['request']): readonly string[] {
+  if (request.provider !== 'spawn') {
+    const providerLabel = externalProviderLabel(request.provider)
     return [`Runtime profile and preset: unavailable (the native ${providerLabel} provider does not expose DSH composition).`]
   }
-  if (selection === undefined) return ['Runtime profile and preset: unavailable (record predates profile and preset capture).']
-  if (selection.provider !== 'spawn') {
-    const providerLabel = externalProviderLabel(selection.provider)
-    return [`Runtime profile and preset: unavailable (the native ${providerLabel} provider does not expose DSH composition).`]
-  }
-  const lines = [...renderProfileSelection(selection.profile), ...renderPresetSelection(selection.preset)]
+  if (request.executionSelection === undefined) return ['Runtime profile and preset: unavailable (record predates profile and preset capture).']
+  const lines = [
+    ...renderProfileSelection(request.executionSelection.profile),
+    ...renderPresetSelection(request.executionSelection.preset),
+  ]
   lines.push('These classifications do not establish sandbox isolation, permission enforcement, or Skill qualification.')
   return lines
 }
@@ -507,7 +501,7 @@ function renderAdmission(
     `Delegation ${unconfirmed ? 'admitted but not durably confirmed' : 'admitted'}: provider ${request.request.provider}${isExternal ? ` (native ${providerLabel}, external one-shot)` : ''}`,
     `Requested task: ${request.request.task}`,
     `Requesting Session: ${request.request.parentSessionId}`,
-    ...renderExecutionSelection(request.request.provider, request.request.executionSelection),
+    ...renderExecutionSelection(request.request),
     isExternal
       ? externalExecutionPolicyMessage(admission.provider)
       : 'Activity scope does not restrict child tools or permissions; DSH active runtime policy controls access.',

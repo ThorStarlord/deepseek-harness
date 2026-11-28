@@ -14,6 +14,7 @@ import type { ActivityId } from './types.ts'
 import type {} from './associations.ts'
 import type {} from './delegations.ts'
 import type {} from '@deepseek-ai/dsh-workspace'
+import { createActivityOperationQueue } from './operation-queue.ts'
 
 export type { ActivityArtifactId, ActivityArtifactReference, CreateActivityArtifactRequest } from './artifact-types.ts'
 export { activityArtifactReferenceSchema, homeActivityArtifactsDomain, MAX_HOME_ACTIVITY_ARTIFACTS_PER_ACTIVITY } from './artifact-spec.ts'
@@ -51,7 +52,7 @@ export class HomeActivityArtifactService extends Service {
   static inject = ['storageDomain', 'homeActivities', 'homeActivityDelegations', 'homeActivityAssociations', 'workspaceRegistry']
 
   private table?: KvTable<ActivityArtifactId, ActivityArtifactReference>
-  private operationTail: Promise<void> = Promise.resolve()
+  private readonly enqueue = createActivityOperationQueue()
 
   constructor(ctx: Context) {
     super(ctx, 'homeActivityArtifacts')
@@ -64,11 +65,11 @@ export class HomeActivityArtifactService extends Service {
   }
 
   /**
- * Record a user-linked pointer after confirming its Activity, delegation, and selected Workspace references.
+   * Record a user-linked pointer after confirming its Activity, delegation, and selected Workspace references.
    * @param request - User-supplied label, location, optional revision, and selected identities.
- * @returns The durable pointer; this does not confirm its Workspace matches execution or who produced it.
+   * @returns The durable pointer; this does not confirm its Workspace matches execution or who produced it.
    * @throws {ActivityArtifactError} when identities are missing, mismatched, or unlinked.
-   * @throws {ActivityArtifactStorageError} when pointer persistence fails.
+   * @throws {ActivityArtifactStorageError} when artifact storage cannot be read or written.
    */
   create(request: CreateActivityArtifactRequest): Promise<ActivityArtifactReference> {
     return this.enqueue(async () => {
@@ -89,7 +90,14 @@ export class HomeActivityArtifactService extends Service {
       if (this.ctx.workspaceRegistry.get(request.workspaceId) === undefined) {
         throw new ActivityArtifactError('unknown-workspace', `No Workspace has id ${request.workspaceId}.`)
       }
-      const current = [...this.requireTable().entries()].filter(([, artifact]) => artifact.activityId === request.activityId)
+      let current: ActivityArtifactReference[]
+      try {
+        current = [...this.requireTable().entries()]
+          .map(([, artifact]) => artifact)
+          .filter(artifact => artifact.activityId === request.activityId)
+      } catch (cause: unknown) {
+        throw new ActivityArtifactStorageError(cause)
+      }
       if (current.length >= MAX_HOME_ACTIVITY_ARTIFACTS_PER_ACTIVITY) {
         throw new ActivityArtifactError(
           'artifact-limit',
@@ -137,15 +145,8 @@ export class HomeActivityArtifactService extends Service {
         .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt) || String(left.id).localeCompare(String(right.id)))
         .map(freezeArtifact))
     } catch (cause: unknown) {
-      if (cause instanceof ActivityArtifactError) throw cause
       throw new ActivityArtifactStorageError(cause)
     }
-  }
-
-  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.operationTail.then(operation)
-    this.operationTail = result.then(() => {}, () => {})
-    return result
   }
 
   private requireTable(): KvTable<ActivityArtifactId, ActivityArtifactReference> {
