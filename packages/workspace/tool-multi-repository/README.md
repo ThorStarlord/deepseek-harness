@@ -32,7 +32,7 @@ Both selected paths must resolve to absolute registered Workspace roots and dist
 
 ### Repository state
 
-Each child receives one repository's root instructions, current branch and committed `HEAD`, staged paths, unstaged paths, untracked non-ignored paths, and an ignored-file count. Working-tree reads observe live file contents; staged reads use the Git index. DSH does not create an immutable snapshot, stash changes, or copy, commit, reset, or clean the source repositories.
+Each child receives one repository's root instructions, current branch and committed `HEAD`, staged paths, unstaged paths, untracked non-ignored paths, and an ignored-file count. Working-tree reads observe live file contents; staged reads use the Git index. Both file readers return line-numbered pages of at most 400 lines and include the total line count. File listings return at most 500 safe paths and report how many additional safe paths were omitted. DSH does not create an immutable snapshot, stash changes, or copy, commit, reset, or clean the source repositories.
 
 The result identifies each Workspace and Git directory, child Session, run, stop reason, and findings. It reports the observation interval and whether a final Git and filesystem check detected a source-state change. Treat findings as potentially stale when the source changed or could not be rechecked.
 
@@ -64,7 +64,7 @@ The Web application profile supplies the read-only preset and this tool. Other c
 <details>
 <summary>Implementation details</summary>
 
-The parent tool call uses the existing one-shot approval path before repository inspection. The coordinator then validates both Workspace identities and runs one child Session per root. Each child is pinned to the DSH `read-only` sandbox policy and receives only `repository_list_files`, `repository_read_file`, and `read_staged_file`. It has no generic filesystem, shell, subprocess, write, child-delegation, or sandbox-policy tool.
+The parent tool call uses the existing one-shot approval path before repository inspection. The coordinator then validates both Workspace identities and runs one child Session per root. Each child is pinned to the DSH `read-only` sandbox policy and receives only `repository_list_files`, `repository_read_file`, and `read_staged_file`. It has no model-facing generic filesystem, shell, process, write, child-delegation, or sandbox-policy tool.
 
 The repository read tools check every requested path against that child's selected root, omit ignored and secret-like paths, and bound returned file content. The coordinator reports Git state independently for each root and returns both worker outcomes to the same parent Session.
 

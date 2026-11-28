@@ -2684,7 +2684,7 @@ Source: [`packages/workspace/tool-multi-repository/src/index.ts`](../packages/wo
 
 ### `read_staged_file`
 
-Read the staged Git index version of one file without changing the index or working tree.
+Read a bounded, line-numbered page of the staged Git index version of one file. Use offset to retrieve later pages; the result reports the total line count. This does not change the index or working tree.
 
 ```json
 {
@@ -2693,6 +2693,14 @@ Read the staged Git index version of one file without changing the index or work
     "path": {
       "type": "string",
       "description": "One repository-relative file path."
+    },
+    "offset": {
+      "type": "number",
+      "description": "1-based first line to return; defaults to 1."
+    },
+    "limit": {
+      "type": "number",
+      "description": "Maximum lines to return; defaults to 400."
     }
   },
   "required": [

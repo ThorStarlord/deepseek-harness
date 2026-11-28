@@ -2691,7 +2691,7 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 
 ### `read_staged_file`
 
-读取一个文件在 Git 暂存索引中的版本，不更改索引或工作树。
+读取一个文件在 Git 暂存索引中的有界分页内容，每页附行号。使用 `offset` 获取后续页；结果会报告总行数。此操作不会更改索引或工作树。
 
 ```json
 {
@@ -2700,6 +2700,14 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
     "path": {
       "type": "string",
       "description": "One repository-relative file path."
+    },
+    "offset": {
+      "type": "number",
+      "description": "1-based first line to return; defaults to 1."
+    },
+    "limit": {
+      "type": "number",
+      "description": "Maximum lines to return; defaults to 400."
     }
   },
   "required": [

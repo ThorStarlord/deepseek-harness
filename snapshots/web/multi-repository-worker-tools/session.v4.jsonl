@@ -1,0 +1,5 @@
+{"type":"session","version":4,"id":"{{session:1}}","createdAt":1795800000000,"cwd":"{{cwd}}","isSeeded":false,"delegationDepth":0,"agentPreset":"standard"}
+{"type":"permission/preset","data":{"preset":"workspace-write"}}
+{"type":"sandbox/mode","data":{"mode":"workspace-write"}}
+{"type":"approval/policy","data":{"policy":"ask"}}
+{"type":"user/message","data":{"content":[{"type":"text","text":"Inspect the two selected repositories with read-only workers."}],"source":{"kind":"user","rpcId":"{{rpc:1}}","clientTimeZone":"{{clientTimeZone}}"},"role":"user","id":"{{message:1}}"},"surfaceOp":"append"}

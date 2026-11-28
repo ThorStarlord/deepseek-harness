@@ -61,6 +61,8 @@ interface WorkflowOptions {
   readonly noAlphaRootInstructions?: boolean
   readonly alphaRootMode?: 'ignored' | 'directory' | 'oversized' | 'outside-link' | 'claude'
   readonly malformedStagedIndex?: 'missing-separator' | 'missing-stage'
+  readonly stagedPagination?: boolean
+  readonly fileListOverflow?: boolean
   readonly hangChildren?: boolean
 }
 
@@ -200,7 +202,9 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
         { id: 'list-files', name: 'repository_list_files', args: {} },
         { id: 'read-nested-instructions', name: 'repository_read_file', args: { path: 'src/AGENTS.md' } },
         { id: 'read-live-tree', name: 'repository_read_file', args: { path: 'src/core.ts', offset: 1, limit: 10 } },
-        { id: 'read-staged-index', name: 'read_staged_file', args: { path: 'src/core.ts' } },
+        { id: 'read-staged-index', name: 'read_staged_file', args: options.stagedPagination === true
+          ? { path: 'src/long.ts', offset: 401, limit: 2 }
+          : { path: 'src/core.ts' } },
         { id: 'read-untracked', name: 'repository_read_file', args: { path: 'src/draft.ts' } },
       ])
     }
@@ -211,6 +215,14 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
       expect(transcript).toContain(options.changeAlphaDuringRead === true && repo === 'alpha'
         ? 'changed during analysis' : `working-${repo}`)
       expect(transcript).toContain(`staged-${repo}`)
+      if (options.stagedPagination === true) {
+        expect(transcript).toContain(`401: staged-${repo}-401`)
+        expect(transcript).toContain(`402: staged-${repo}-402`)
+        expect(transcript).toContain('lines 401–402 of 405')
+      }
+      if (options.fileListOverflow === true && repo === 'alpha') {
+        expect(transcript).toContain('1 additional safe paths omitted')
+      }
       expect(transcript).toContain(`draft-${repo}`)
       expect(transcript).toContain(`${instruction} ROOT INSTRUCTIONS NESTED`)
       expect(transcript).toContain('src/draft.ts')
@@ -246,6 +258,8 @@ async function setup(options: WorkflowOptions = {}): Promise<Fixture> {
           { id: 'staged-secret', name: 'read_staged_file', args: { path: 'private.pem' } },
           { id: 'staged-untracked', name: 'read_staged_file', args: { path: 'src/draft.ts' } },
           { id: 'staged-binary', name: 'read_staged_file', args: { path: 'binary.bin' } },
+          { id: 'staged-offset', name: 'read_staged_file', args: { path: 'src/core.ts', offset: 0 } },
+          { id: 'staged-limit', name: 'read_staged_file', args: { path: 'src/core.ts', limit: 401 } },
           { id: 'attempt-write', name: 'write', args: {
             file_path: join(thirdPath, 'forbidden.txt'), content: 'forbidden', sandbox_permissions: 'require_escalated',
           } },
@@ -385,13 +399,86 @@ describe('read-only multi-repository coordination', () => {
     )).toEqual({ kind: 'allow' })
   }, 30_000)
 
+  it('does not let one root Session consume another Session approval with a colliding call id', async () => {
+    const f = await setup()
+    const coordinator = f.ctx.tools.get('coordinate_repositories')
+    if (coordinator === undefined) throw new Error('coordinate_repositories tool is not mounted')
+    const callId = ToolCallId('same-fallback-call-id')
+    const args = { repositories: [f.alphaPath, f.betaPath] as const, task: 'inspect the same bounded task' }
+    const firstCall = directToolContext('coordinate_repositories', args, f.parent, callId)
+    expect(await f.parent.ctx.waterfall(
+      'tools/pre-execute', firstCall, () => Promise.resolve<PreToolDecision>({ kind: 'allow' }),
+    )).toMatchObject({ kind: 'ask' })
+
+    const second = await f.ctx.agentLoop.create(
+      SessionId(`unrelated-root-${randomUUID()}`), { provider: 'mock', model: 'mock' }, { cwd: f.thirdPath },
+    )
+    const collidingCall = directToolContext('coordinate_repositories', args, second, callId)
+    await expect(coordinator.execute(args, collidingCall)).rejects.toMatchObject({ code: 'READ_AUTHORIZATION_REQUIRED' })
+
+    await expect(coordinator.execute(args, firstCall)).resolves.toMatchObject({ repositories: expect.any(Array) })
+    expect(f.starts).toHaveLength(2)
+    expect(new Set(f.starts.map(start => start.id)).size).toBe(2)
+  }, 30_000)
+
+  it('returns later staged-file pages with line numbers and the total line count', async () => {
+    const f = await setup({ stagedPagination: true })
+    for (const [repo, path] of [['alpha', f.alphaPath], ['beta', f.betaPath]] as const) {
+      const content = Array.from({ length: 405 }, (_, index) => `staged-${repo}-${index + 1}`).join('\n')
+      await writeFile(join(path, 'src', 'long.ts'), content)
+      await git(path, ['add', '--', 'src/long.ts'])
+    }
+
+    f.parent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Compare Alpha and Beta staged file pages.' }], source: { kind: 'user' },
+    }))
+    await f.parent.whenIdle()
+    const childReads = f.adapter.requests.filter(request => request.sessionId !== f.parentId)
+      .map(request => JSON.stringify(request.messages))
+    expect(childReads.some(transcript => transcript.includes('401: staged-alpha-401')
+      && transcript.includes('402: staged-alpha-402') && transcript.includes('lines 401–402 of 405'))).toBe(true)
+    expect(childReads.some(transcript => transcript.includes('401: staged-beta-401')
+      && transcript.includes('402: staged-beta-402') && transcript.includes('lines 401–402 of 405'))).toBe(true)
+  }, 30_000)
+
+  it('states the number of safe paths omitted from an oversized file listing', async () => {
+    const f = await setup({ fileListOverflow: true })
+    await Promise.all(Array.from({ length: 496 }, (_, index) => writeFile(
+      join(f.alphaPath, `extra-${index}.txt`), `${index}\n`,
+    )))
+    f.parent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'Compare Alpha and Beta file listings.' }], source: { kind: 'user' },
+    }))
+    await f.parent.whenIdle()
+    expect(f.adapter.requests.some(request => request.sessionId !== f.parentId
+      && JSON.stringify(request.messages).includes('1 additional safe paths omitted'))).toBe(true)
+  }, 30_000)
+
   it('renders safe fallbacks for malformed tool output values', async () => {
     const f = await setup()
     const render = (name: string, value: JsonValue) => f.ctx.tools.get(name)?.output?.render?.({}, value)
     expect(render('read_staged_file', null)).toEqual([{ type: 'text', text: 'Staged index content is unavailable.' }])
     expect(render('repository_list_files', null)).toEqual([{ type: 'text', text: 'Repository file list is unavailable.' }])
-    expect(render('repository_list_files', { paths: ['src/core.ts', 42], totalFiles: 2 }))
-      .toEqual([{ type: 'text', text: 'Repository files (2; 0 secret-like or Git metadata paths omitted):\nsrc/core.ts' }])
+    expect(render('repository_list_files', { paths: ['src/core.ts', 42], totalFiles: 2, omittedPaths: 0 }))
+      .toEqual([{ type: 'text', text: 'Repository files (1 of 2; 0 additional safe paths omitted; 0 secret-like or Git metadata paths omitted):\nsrc/core.ts' }])
+    expect(render('repository_list_files', {
+      paths: ['src/core.ts'], totalFiles: 501, omittedPaths: 1, omittedSensitiveFiles: 2,
+    })).toEqual([{
+      type: 'text',
+      text: 'Repository files (1 of 501; 1 additional safe paths omitted; 2 secret-like or Git metadata paths omitted):\nsrc/core.ts',
+    }])
+    expect(render('read_staged_file', {
+      path: 'src/core.ts', stage: 0, offset: 401, totalLines: 405,
+      lines: [{ number: 401, text: 'staged line 401' }, { number: 402, text: 'staged line 402' }],
+    })).toEqual([{
+      type: 'text',
+      text: 'Staged index content for src/core.ts (stage 0; lines 401–402 of 405):\n401: staged line 401\n402: staged line 402',
+    }])
+    expect(render('read_staged_file', {
+      path: 'src/core.ts', stage: 0, offset: 401, totalLines: 400, lines: [{ number: '401', text: 42 }],
+    })).toEqual([{
+      type: 'text', text: 'Staged index content for src/core.ts (stage 0; no lines returned at offset 401 of 400):\n',
+    }])
     expect(render('repository_read_file', null)).toEqual([{ type: 'text', text: 'Working-tree file content is unavailable.' }])
     expect(render('repository_read_file', {
       path: 'src/core.ts', offset: 1, totalLines: 2, lines: [{ number: 1, text: 'ok' }, { number: '2', text: 42 }],
@@ -614,7 +701,13 @@ describe('read-only multi-repository coordination', () => {
     expect(f.approvalRequests[0]?.reason).toContain(f.alphaPath.replaceAll('\\', '\\\\'))
     expect(f.approvalRequests[0]?.reason).toContain(f.betaPath.replaceAll('\\', '\\\\'))
     expect(f.approvalRequests[0]?.displayReason?.en).toContain('one read-only DSH child Session per repository')
+    expect(f.approvalRequests[0]?.displayReason?.en).toContain('no model-facing write, shell, process')
+    expect(f.approvalRequests[0]?.displayReason?.en).toContain('On Windows')
+    expect(f.approvalRequests[0]?.displayReason?.en).toContain('not OS-confined')
     expect(f.approvalRequests[0]?.displayReason?.zh).toContain('每个仓库会启动一个只读 DSH 子级 Session')
+    expect(f.approvalRequests[0]?.displayReason?.zh).toContain('模型可调用的写入、Shell、进程')
+    expect(f.approvalRequests[0]?.displayReason?.zh).toContain('Windows')
+    expect(f.approvalRequests[0]?.displayReason?.zh).toContain('不受操作系统级进程隔离')
     expect(f.starts).toHaveLength(2)
     expect(f.ends).toHaveLength(2)
     expect(new Set(f.starts.map(start => start.id)).size).toBe(2)
@@ -700,7 +793,7 @@ describe('read-only multi-repository coordination', () => {
     for (const request of childRequests) expect(request.tools?.map(tool => tool.name).sort()).toEqual(REPO_READ_TOOLS)
     for (const child of f.childAgents.values()) {
       const results = child.session.snapshotEvents().filter(event => event.type === 'tool/result')
-      expect(results).toHaveLength(31)
+      expect(results).toHaveLength(33)
       const errorCodes = results.flatMap(event => event.type === 'tool/result' && event.data.error !== undefined
         ? [event.data.error.code] : [])
       const largeReadResult = results.find(event => event.type === 'tool/result' && event.data.message.toolCallId === 'read-large')
@@ -723,6 +816,8 @@ describe('read-only multi-repository coordination', () => {
       expect(toolResultFor('read-git-alias')).toMatchObject({ data: { error: { code: 'PROTECTED_PATH_DENIED' } } })
       expect(toolResultFor('read-outside-alias')).toMatchObject({ data: { error: { code: 'OUTSIDE_REPOSITORY' } } })
       expect(toolResultFor('read-ignored')).toMatchObject({ data: { error: { code: 'IGNORED_PATH_DENIED' } } })
+      expect(toolResultFor('staged-offset')).toMatchObject({ data: { error: { code: 'INVALID_READ_LIMIT' } } })
+      expect(toolResultFor('staged-limit')).toMatchObject({ data: { error: { code: 'INVALID_READ_LIMIT' } } })
       const attemptedCallIds = [
         'attempt-write', 'attempt-edit', 'attempt-patch', 'attempt-shell', 'attempt-pwsh',
         'attempt-child', 'attempt-coordination', 'attempt-policy-change', 'attempt-escalation',
