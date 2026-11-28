@@ -4270,7 +4270,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-tool-multi-repository`
 
 - `inject`: `tools` · `agents` · `workspaceRegistry` · `subagents` · `sandbox` · `subprocess` · `fs` · `agentPresets`
-- `source`: [`packages/workspace/tool-multi-repository/src/index.ts:26`](../packages/workspace/tool-multi-repository/src/index.ts)
+- `source`: [`packages/workspace/tool-multi-repository/src/index.ts:27`](../packages/workspace/tool-multi-repository/src/index.ts)
 
 ```ts config-catalog
 /** Read-only child composition used by repository analysis. */
